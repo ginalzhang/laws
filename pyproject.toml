@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "petition-verifier"
+version = "0.1.0"
+description = "Petition signature verification — OCR, voter roll matching, fraud detection"
+requires-python = ">=3.9"
+dependencies = [
+    # PDF processing
+    "pdf2image>=1.17.0",
+    "pytesseract>=0.3.13",
+    "Pillow>=10.0.0",
+    "pillow-heif>=0.16.0",
+    # Data / matching
+    "rapidfuzz>=3.0.0",
+    "usaddress>=0.5.10",
+    "pandas>=2.0.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9.0",
+    # API / CLI
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    # Models
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+reducto = ["requests>=2.31.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "reportlab>=4.0.0",   # for generating test PDFs
+    "faker>=24.0.0",
+]
+
+[project.scripts]
+pvfy = "petition_verifier.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/petition_verifier"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

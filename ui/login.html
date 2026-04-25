@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PetitionV">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <title>Login — Petition Verifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f5f7; color: #222;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    header {
+      background: #1a1a2e; color: #fff; padding: 14px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; }
+    header .subtitle { font-size: .78rem; color: #8888bb; margin-top: 2px; }
+
+    .login-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 40px 20px;
+    }
+    .login-card {
+      background: #fff; border-radius: 12px; padding: 40px 36px;
+      width: 100%; max-width: 400px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.10);
+    }
+    .login-card h2 {
+      font-size: 1.4rem; font-weight: 700; color: #1a1a2e; margin-bottom: 6px;
+    }
+    .login-card .tagline {
+      font-size: .85rem; color: #888; margin-bottom: 28px;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block; font-size: .78rem; font-weight: 600; color: #555;
+      margin-bottom: 5px;
+    }
+    .form-group input {
+      width: 100%; padding: 10px 12px; border: 1.5px solid #ddd;
+      border-radius: 7px; font-size: .9rem; font-family: inherit;
+      background: #fafafa; transition: border-color .15s;
+      outline: none;
+    }
+    .form-group input:focus { border-color: #1a1a2e; background: #fff; }
+    .btn-login {
+      width: 100%; padding: 12px; background: #1a1a2e; color: #fff;
+      border: none; border-radius: 7px; font-size: .95rem; font-weight: 600;
+      cursor: pointer; margin-top: 4px; transition: opacity .15s;
+    }
+    .btn-login:hover { opacity: .88; }
+    .btn-login:disabled { opacity: .5; cursor: not-allowed; }
+    .error-msg {
+      margin-top: 14px; padding: 10px 14px; background: #ffebee;
+      color: #c62828; border-radius: 6px; font-size: .85rem; display: none;
+    }
+    .error-msg.show { display: block; }
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite;
+      margin-right: 8px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Petition Verifier</h1>
+      <div class="subtitle">Workforce Management Platform</div>
+    </div>
+  </header>
+
+  <div class="login-wrap">
+    <div class="login-card">
+      <h2>Sign in</h2>
+      <p class="tagline">Enter your credentials to access the platform</p>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-login" id="loginBtn">Sign in</button>
+        <div class="error-msg" id="errorMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // If already logged in, redirect
+    const existingToken = localStorage.getItem('pv_token');
+    const existingRole = localStorage.getItem('pv_role');
+    if (existingToken && existingRole) {
+      if (existingRole === 'worker') {
+        window.location.href = '/static/worker.html';
+      } else {
+        window.location.href = '/static/dashboard.html';
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      const errorEl = document.getElementById('errorMsg');
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Signing in…';
+      errorEl.classList.remove('show');
+
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Login failed');
+        }
+        localStorage.setItem('pv_token', data.access_token);
+        localStorage.setItem('pv_role', data.role);
+        localStorage.setItem('pv_user_id', data.user_id);
+        localStorage.setItem('pv_full_name', data.full_name);
+
+        if (data.role === 'worker') {
+          window.location.href = '/static/worker.html';
+        } else {
+          window.location.href = '/static/dashboard.html';
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+      }
+    });
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

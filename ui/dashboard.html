@@ -1,0 +1,1882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PetitionV">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <title>Dashboard — Petition Verifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; color: #222; display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* Header */
+    header {
+      background: #1a1a2e; color: #fff; padding: 0 20px;
+      display: flex; align-items: center; gap: 16px; height: 54px;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    header h1 { font-size: 1rem; font-weight: 700; letter-spacing: .3px; }
+    header .subtitle { font-size: .72rem; color: #8888bb; }
+    header .user-info { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    header .user-badge { font-size: .78rem; color: #aaaacc; }
+    .btn-logout {
+      padding: 5px 14px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; border-radius: 5px; cursor: pointer; font-size: .78rem;
+    }
+    .btn-logout:hover { background: rgba(255,255,255,.2); }
+
+    /* Layout */
+    .layout { display: flex; margin-top: 54px; min-height: calc(100vh - 54px); }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px; background: #fff; border-right: 1px solid #e0e0e0;
+      position: fixed; top: 54px; bottom: 0; left: 0; overflow-y: auto;
+      z-index: 50;
+    }
+    .sidebar nav { padding: 12px 0; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 20px; cursor: pointer; font-size: .875rem;
+      color: #555; transition: all .12s; border-left: 3px solid transparent;
+      user-select: none;
+    }
+    .nav-item:hover { background: #f4f5f7; color: #1a1a2e; }
+    .nav-item.active { background: #eef0ff; color: #1a1a2e; font-weight: 600; border-left-color: #1a1a2e; }
+    .nav-item .icon { font-size: 1.1rem; width: 22px; text-align: center; }
+    .nav-divider { border-top: 1px solid #e0e0e0; margin: 8px 0; }
+
+    /* Main content */
+    .main { margin-left: 220px; flex: 1; padding: 24px; overflow-x: hidden; }
+
+    /* Sections */
+    .section { display: none; }
+    .section.active { display: block; }
+    .section-title { font-size: 1.25rem; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card {
+      background: #fff; border-radius: 10px; padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    .stat-card .label { font-size: .75rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+    .stat-card .value { font-size: 2rem; font-weight: 800; color: #1a1a2e; line-height: 1; }
+    .stat-card .sub { font-size: .78rem; color: #888; margin-top: 4px; }
+    .stat-card.green .value { color: #2e7d32; }
+    .stat-card.orange .value { color: #e65100; }
+    .stat-card.purple .value { color: #6a1b9a; }
+
+    /* Cards / panels */
+    .card {
+      background: #fff; border-radius: 10px; padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px;
+    }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .card-title { font-size: 1rem; font-weight: 700; color: #1a1a2e; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; }
+    thead { background: #f0f0f0; }
+    th { padding: 9px 12px; text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: #555; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; font-size: .85rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    }
+    .badge-green  { background: #e8f5e9; color: #2e7d32; }
+    .badge-orange { background: #fff3e0; color: #e65100; }
+    .badge-red    { background: #ffebee; color: #c62828; }
+    .badge-purple { background: #f3e5f5; color: #6a1b9a; }
+    .badge-blue   { background: #e3f2fd; color: #1565c0; }
+    .badge-gray   { background: #f5f5f5; color: #666; }
+    .badge-boss   { background: #fce4ec; color: #880e4f; }
+    .badge-admin  { background: #e8eaf6; color: #283593; }
+    .badge-worker { background: #e8f5e9; color: #1b5e20; }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer;
+      font-size: .85rem; font-weight: 600; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #1a1a2e; color: #fff; }
+    .btn-success { background: #2e7d32; color: #fff; }
+    .btn-danger  { background: #c62828; color: #fff; }
+    .btn-outline { background: #fff; color: #1a1a2e; border: 1.5px solid #1a1a2e; }
+    .btn-sm { padding: 5px 12px; font-size: .78rem; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 200; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 10px; padding: 28px 32px;
+      max-width: 500px; width: 94%; box-shadow: 0 8px 32px rgba(0,0,0,.18);
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+    .modal-close { float: right; cursor: pointer; color: #888; font-size: 1.2rem; margin-top: -4px; }
+    .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* Forms */
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: .78rem; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 9px 11px; border: 1.5px solid #ddd; border-radius: 6px;
+      font-size: .88rem; font-family: inherit; background: #fafafa; outline: none;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: #1a1a2e; background: #fff; }
+
+    /* Clock-in indicator */
+    .clocked-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+    .clocked-dot.in { background: #2e7d32; }
+    .clocked-dot.out { background: #ccc; }
+
+    /* Live feed */
+    .activity-item {
+      display: flex; align-items: center; gap: 12px; padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0; font-size: .85rem;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-time { font-size: .75rem; color: #888; width: 80px; flex-shrink: 0; }
+
+    /* Leaderboard */
+    .lb-grid { display: grid; gap: 12px; }
+    .lb-card {
+      background: #fff; border-radius: 10px; padding: 16px 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      display: flex; align-items: center; gap: 16px;
+    }
+    .lb-rank { font-size: 1.5rem; font-weight: 800; color: #1a1a2e; width: 36px; text-align: center; flex-shrink: 0; }
+    .lb-rank.gold { color: #f9a825; }
+    .lb-rank.silver { color: #9e9e9e; }
+    .lb-rank.bronze { color: #8d6e63; }
+    .lb-name { font-weight: 600; font-size: .95rem; }
+    .lb-stats { font-size: .78rem; color: #888; margin-top: 2px; }
+    .lb-sigs { margin-left: auto; text-align: right; }
+    .lb-sigs .num { font-size: 1.4rem; font-weight: 800; color: #2e7d32; line-height: 1; }
+    .lb-sigs .lbl { font-size: .7rem; color: #888; text-transform: uppercase; }
+
+    /* Payroll table money cells */
+    .money { font-variant-numeric: tabular-nums; font-family: monospace; }
+
+    /* Schedule grid */
+    .week-grid { display: grid; grid-template-columns: 140px repeat(7, 1fr); gap: 1px; background: #e0e0e0; border-radius: 8px; overflow: hidden; }
+    .wg-header { background: #f0f0f0; padding: 8px 10px; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #555; text-align: center; }
+    .wg-worker { background: #fafafa; padding: 8px 10px; font-size: .82rem; font-weight: 600; border-right: 1px solid #e0e0e0; }
+    .wg-cell { background: #fff; padding: 6px; min-height: 48px; }
+    .wg-shift { background: #e8f5e9; color: #2e7d32; border-radius: 4px; padding: 3px 7px; font-size: .72rem; font-weight: 600; }
+    .pending-req { background: #fff3e0; border: 1px solid #ffb74d; border-radius: 8px; padding: 14px 18px; margin-bottom: 10px; }
+    .pending-req .req-info { font-size: .85rem; margin-bottom: 8px; }
+    .pending-req .req-actions { display: flex; gap: 8px; }
+
+    /* Spinner */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,.1); border-top-color: #1a1a2e; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Empty states */
+    .empty { color: #888; font-size: .85rem; text-align: center; padding: 32px 0; }
+
+    /* Clocked-in list */
+    .clocked-list { display: flex; flex-wrap: wrap; gap: 10px; }
+    .clocked-chip { background: #e8f5e9; color: #1b5e20; border-radius: 20px; padding: 6px 14px; font-size: .82rem; display: flex; align-items: center; gap: 6px; }
+    .clocked-chip .elapsed { color: #555; }
+
+    /* Fraud scan */
+    .scan-drop {
+      border: 2px dashed #ccc; border-radius: 12px; padding: 40px 20px;
+      text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+      color: #888; font-size: .9rem;
+    }
+    .scan-drop:hover, .scan-drop.drag-over { border-color: #1a1a2e; background: #f0f0ff; color: #1a1a2e; }
+    .scan-drop input { display: none; }
+    .scan-drop .drop-icon { font-size: 2.5rem; margin-bottom: 8px; }
+    .scan-result-line {
+      padding: 10px 14px; border-radius: 8px; margin-bottom: 8px;
+      border: 1.5px solid #e0e0e0; font-size: .83rem;
+    }
+    .scan-result-line.flagged { border-color: #ffccbc; background: #fff8f5; }
+    .scan-result-line.clean   { border-color: #c8e6c9; background: #f1f8e9; }
+    .scan-result-line.blank   { border-color: #e0e0e0; background: #fafafa; color: #aaa; }
+    .scan-line-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    .scan-line-num  { font-weight: 800; color: #1a1a2e; min-width: 28px; }
+    .scan-line-name { font-weight: 600; flex: 1; }
+    .scan-line-addr { color: #666; font-size: .78rem; }
+    .scan-flag { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px;
+      border-radius: 10px; font-size: .72rem; font-weight: 600;
+      background: #ffebee; color: #c62828; }
+    .scan-flag.warn { background: #fff3e0; color: #e65100; }
+    .scan-summary-bar {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .scan-summary-stat { text-align: center; }
+    .scan-summary-stat .n { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+    .scan-summary-stat .l { font-size: .72rem; color: #888; text-transform: uppercase; }
+    .scan-summary-stat.red .n  { color: #c62828; }
+    .scan-summary-stat.green .n { color: #2e7d32; }
+    .scan-summary-stat.orange .n { color: #e65100; }
+
+    /* Fraud alert banner */
+    .fraud-banner {
+      background: #fff3e0; border-left: 4px solid #e65100;
+      border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;
+    }
+    .fraud-banner .fraud-title {
+      font-weight: 800; font-size: .95rem; color: #bf360c; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .fraud-worker {
+      background: #fff; border: 1.5px solid #ffccbc; border-radius: 8px;
+      padding: 12px 14px; margin-bottom: 10px;
+    }
+    .fraud-worker:last-child { margin-bottom: 0; }
+    .fraud-worker-name { font-weight: 700; font-size: .9rem; color: #1a1a2e; margin-bottom: 4px; }
+    .fraud-project {
+      font-size: .8rem; color: #555; padding: 6px 10px; margin-top: 6px;
+      background: #fff8f5; border-radius: 6px;
+    }
+    .fraud-project .pct { font-weight: 800; color: #c62828; }
+    .fraud-flags { font-size: .75rem; color: #888; margin-top: 3px; }
+    .fraud-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* P&L */
+    .pl-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: .88rem; }
+    .pl-row:last-child { border-bottom: none; }
+    .pl-row .pl-label { color: #555; }
+    .pl-row .pl-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pl-row.total .pl-value { font-size: 1.1rem; color: #1a1a2e; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ───────────────────────────────────────────────────────── -->
+  <div id="loginOverlay" style="display:none;position:fixed;inset:0;background:#1a1a2e;z-index:999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:14px;padding:40px 36px;width:340px;box-shadow:0 8px 40px rgba(0,0,0,.4);">
+      <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:6px;color:#1a1a2e">Petition Verifier</h2>
+      <p style="font-size:.82rem;color:#888;margin-bottom:24px">Sign in to continue</p>
+      <div style="margin-bottom:14px">
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Email</label>
+        <input id="loginEmail" type="email" placeholder="you@example.com"
+          style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Password</label>
+        <input id="loginPw" type="password" placeholder="••••••••"
+          style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
+      </div>
+      <div id="loginErr" style="color:#c62828;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
+      <button onclick="submitLogin()"
+        style="width:100%;padding:11px;background:#1a1a2e;color:#fff;border:none;border-radius:7px;font-size:.95rem;font-weight:600;cursor:pointer">
+        Sign In
+      </button>
+    </div>
+  </div>
+
+  <div id="appLayout" style="display:none;flex-direction:column;min-height:100vh">
+  <header>
+    <div>
+      <h1>Petition Verifier</h1>
+      <div class="subtitle">Admin Dashboard</div>
+    </div>
+    <div class="user-info">
+      <span class="user-badge" id="headerUser">Loading…</span>
+      <button class="btn-logout" onclick="doLogout()">Sign out</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <nav>
+        <div class="nav-item active" data-section="overview">
+          <span class="icon">🏠</span> Overview
+        </div>
+        <div class="nav-item" data-section="workers">
+          <span class="icon">👥</span> Workers
+        </div>
+        <div class="nav-item" data-section="schedule">
+          <span class="icon">📅</span> Schedule
+        </div>
+        <div class="nav-item" data-section="payroll">
+          <span class="icon">💰</span> Payroll
+        </div>
+        <div class="nav-item" data-section="leaderboard">
+          <span class="icon">🏆</span> Leaderboard
+        </div>
+        <div class="nav-item" data-section="petitions">
+          <span class="icon">📋</span> Petitions
+        </div>
+        <div class="nav-item" data-section="fraud-scan">
+          <span class="icon">🔍</span> Fraud Scan
+        </div>
+        <div class="nav-item" data-section="quick-entry">
+          <span class="icon">⚡</span> Quick Entry
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-item" data-section="pl" id="navPL">
+          <span class="icon">📊</span> P&amp;L
+        </div>
+        <div class="nav-item" data-section="settings" id="navSettings">
+          <span class="icon">⚙️</span> Settings
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+
+      <!-- ── FRAUD ALERTS (shown when applicable) ── -->
+      <div id="fraudAlertWrap" style="display:none">
+        <div class="fraud-banner">
+          <div class="fraud-title">⚠️ Fraud Suspected — Workers Not Paid Until Reviewed</div>
+          <div id="fraudAlertList"></div>
+        </div>
+      </div>
+
+      <!-- ── OVERVIEW ── -->
+      <section class="section active" id="section-overview">
+        <div class="section-title">Overview</div>
+        <div class="stat-grid" id="overviewStats">
+          <div class="stat-card"><div class="label">Clocked In Now</div><div class="value" id="statClockedIn">—</div></div>
+          <div class="stat-card green"><div class="label">Valid Sigs This Period</div><div class="value" id="statValidSigs">—</div></div>
+          <div class="stat-card orange"><div class="label">Est. Payroll</div><div class="value" id="statPayroll">—</div></div>
+          <div class="stat-card purple"><div class="label">Total Workers</div><div class="value" id="statWorkers">—</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Currently Clocked In</span>
+              <button class="btn btn-sm btn-outline" onclick="loadOverview()">Refresh</button>
+            </div>
+            <div id="clockedInList" class="clocked-list"><div class="empty">No one clocked in</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Recent Activity</span></div>
+            <div id="activityFeed"><div class="empty">No recent activity</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── WORKERS ── -->
+      <section class="section" id="section-workers">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Workers
+          <button class="btn btn-primary" onclick="openAddWorkerModal()">+ Add Worker</button>
+        </div>
+        <!-- bulk action bar, hidden until selections made -->
+        <div id="bulkBar" style="display:none;align-items:center;gap:12px;padding:10px 16px;background:#fff3e0;border:1.5px solid #ffb74d;border-radius:8px;margin-bottom:12px">
+          <span id="bulkCount" style="font-size:.88rem;font-weight:600;color:#e65100"></span>
+          <button class="btn btn-sm btn-danger" onclick="bulkRemove()">Remove selected</button>
+          <button class="btn btn-sm btn-outline" onclick="clearSelection()" style="margin-left:auto">Cancel</button>
+        </div>
+        <div class="card" style="padding:0">
+          <div style="overflow-x:auto">
+            <table id="workersTable">
+              <thead><tr>
+                <th style="width:36px"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
+                <th>Name</th><th>Role</th><th>Phone</th><th>Email</th>
+                <th>Status</th><th>Wage</th><th>Actions</th>
+              </tr></thead>
+              <tbody id="workersBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SCHEDULE ── -->
+      <section class="section" id="section-schedule">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Schedule
+          <span style="font-size:.75rem;color:#888;font-weight:400">Click a cell to schedule · Click a shift to remove</span>
+        </div>
+        <div class="card" id="pendingRequestsCard">
+          <div class="card-title" style="margin-bottom:14px">Pending Requests</div>
+          <div id="pendingRequests"><div class="empty">No pending requests</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Weekly Schedule</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-sm btn-outline" onclick="prevWeek()">← Prev</button>
+              <span id="weekLabel" style="font-size:.85rem;font-weight:600"></span>
+              <button class="btn btn-sm btn-outline" onclick="nextWeek()">Next →</button>
+            </div>
+          </div>
+          <div id="scheduleGrid" style="overflow-x:auto"></div>
+        </div>
+      </section>
+
+      <!-- ── PAYROLL ── -->
+      <section class="section" id="section-payroll">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Payroll
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-outline" id="btnNewPeriod" onclick="openNewPeriodModal()">+ New Pay Period</button>
+            <button class="btn btn-sm btn-primary" id="btnRunPayroll" onclick="runPayroll()">Run Payroll</button>
+          </div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <label style="font-size:.82rem;font-weight:600;color:#555">Pay Period:</label>
+            <select id="payPeriodSelect" onchange="loadPayroll()" style="padding:7px 10px;border:1.5px solid #ddd;border-radius:6px;font-size:.85rem">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr>
+                <th>Worker</th><th>Hours</th><th>Sigs</th><th>Valid Sigs</th>
+                <th>Validity%</th><th>Wage</th><th>Base Pay</th><th>Bonus</th>
+                <th>Gross</th><th>Tax</th><th>Net</th><th>Lunch?</th>
+              </tr></thead>
+              <tbody id="payrollBody"><tr><td colspan="12" class="empty">Select a pay period</td></tr></tbody>
+            </table>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:10px">
+            <button class="btn btn-sm btn-outline" onclick="exportPayrollCSV()">Export CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── LEADERBOARD ── -->
+      <section class="section" id="section-leaderboard">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Leaderboard
+          <span style="font-size:.75rem;color:#888">Auto-refreshes every 60s</span>
+        </div>
+        <div class="lb-grid" id="leaderboardGrid"><div class="empty">Loading…</div></div>
+      </section>
+
+      <!-- ── PETITIONS ── -->
+      <section class="section" id="section-petitions">
+        <div class="section-title">Petitions</div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:14px">Assign Project to Worker</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group" style="margin:0;min-width:200px">
+              <label>Project</label>
+              <select id="assignProjectSelect" style="width:100%;padding:9px 11px;border:1.5px solid #ddd;border-radius:6px;font-size:.85rem"></select>
+            </div>
+            <div class="form-group" style="margin:0;min-width:200px">
+              <label>Worker</label>
+              <select id="assignWorkerSelect" style="width:100%;padding:9px 11px;border:1.5px solid #ddd;border-radius:6px;font-size:.85rem"></select>
+            </div>
+            <button class="btn btn-primary" onclick="assignProject()">Assign</button>
+          </div>
+          <div id="assignMsg" style="margin-top:10px;font-size:.83rem"></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:14px">Project List</div>
+          <div id="petitionsList"></div>
+        </div>
+      </section>
+
+      <!-- ── FRAUD SCAN ── -->
+      <section class="section" id="section-fraud-scan">
+        <div class="section-title">Fraud Scan</div>
+        <div class="card" style="max-width:680px">
+          <div class="card-title" style="margin-bottom:12px">Upload a Petition Sheet to Scan</div>
+          <p style="font-size:.83rem;color:#666;margin-bottom:16px">
+            Drop any petition photo or PDF here. No voter roll needed — the AI checks
+            for same-city entries, addresses on the same block, consecutive house numbers,
+            duplicate names, and signatures signed all on the same date.
+          </p>
+          <label class="scan-drop" id="scanDrop">
+            <input type="file" id="scanFile" accept=".pdf,image/*">
+            <div class="drop-icon">🔍</div>
+            <div>Drop a petition here or <strong>click to choose</strong></div>
+            <div id="scanFileName" style="margin-top:6px;font-size:.78rem;color:#1a1a2e;font-weight:600"></div>
+          </label>
+          <div style="display:flex;gap:10px;margin-top:14px;align-items:center">
+            <button class="btn btn-primary" id="scanBtn" onclick="runFraudScan()" disabled>
+              Run Fraud Scan
+            </button>
+            <span id="scanSpinner" style="display:none"><span class="spinner"></span> Scanning…</span>
+          </div>
+        </div>
+
+        <div id="scanResults" style="display:none;margin-top:20px">
+          <div class="card" style="max-width:680px">
+            <div class="card-title" style="margin-bottom:14px">Results — <span id="scanResultFile"></span></div>
+            <div class="scan-summary-bar" id="scanSummaryBar"></div>
+            <div id="scanResultLines"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── QUICK ENTRY ── -->
+      <section class="section" id="section-quick-entry">
+        <div class="section-title">Quick Entry</div>
+        <div class="card" style="max-width:680px">
+          <div class="card-title" style="margin-bottom:8px">Enter worker info in plain text</div>
+          <p style="font-size:.82rem;color:#666;margin-bottom:14px">
+            Type worker times and/or signature counts — e.g.
+            <em>"Maria 9am-5pm 47 sigs"</em>, <em>"Worker 2: 10am to 6:30pm, 33 signatures"</em>, or include a date: <em>"Maria Apr 23 47 sigs"</em>
+          </p>
+          <textarea id="qeInput" rows="4" placeholder="e.g. Maria 9am-5pm 47 sigs&#10;Worker 3: 10am-4pm, 22 signatures&#10;Maria Apr 23 47 sigs&#10;Carlos 4/22 9am-5pm 33 sigs"
+            style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;font-family:inherit;resize:vertical;outline:none"
+            oninput="parseQuickEntry()"
+          ></textarea>
+          <div id="qePreview" style="margin-top:14px;display:none">
+            <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Parsed — confirm before submitting</div>
+            <div id="qeRows"></div>
+            <div style="margin-top:12px;display:flex;gap:10px">
+              <button class="btn btn-primary" onclick="submitQuickEntry()">Submit all</button>
+              <button class="btn btn-outline" onclick="clearQuickEntry()">Clear</button>
+            </div>
+          </div>
+          <div id="qeMsg" style="margin-top:10px;font-size:.83rem"></div>
+        </div>
+      </section>
+
+      <!-- ── P&L ── -->
+      <section class="section" id="section-pl">
+        <div class="section-title">Profit &amp; Loss</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:16px">Input Revenue</div>
+            <div class="form-group">
+              <label>Revenue (dollars)</label>
+              <input type="number" id="plRevenue" placeholder="e.g. 5000" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Pay Period</label>
+              <select id="plPeriodSelect" onchange="loadPL()" style="width:100%"></select>
+            </div>
+            <button class="btn btn-primary" onclick="loadPL()">Calculate</button>
+          </div>
+          <div class="card">
+            <div class="card-title" style="margin-bottom:16px">Summary</div>
+            <div id="plSummary"><div class="empty">Enter revenue to calculate</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:0">
+          <div class="card-title" style="margin-bottom:16px">Breakdown</div>
+          <canvas id="plChart" height="200"></canvas>
+        </div>
+      </section>
+
+      <!-- ── SETTINGS ── -->
+      <section class="section" id="section-settings">
+        <div class="section-title">Settings</div>
+        <div class="card" style="max-width:480px">
+          <div class="card-title" style="margin-bottom:16px">Pay Periods</div>
+          <div id="payPeriodsList"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Add Worker Modal -->
+  <div class="modal-overlay" id="addWorkerModal">
+    <div class="modal">
+      <span class="modal-close" onclick="closeModal('addWorkerModal')">✕</span>
+      <div class="modal-title">Add Worker</div>
+      <form id="addWorkerForm">
+        <div class="form-group"><label>Full Name *</label><input name="full_name" required></div>
+        <div class="form-group">
+          <label>Role *</label>
+          <select name="role">
+            <option value="petitioner">Petitioner</option>
+            <option value="field_manager">Field Manager</option>
+            <option value="office_worker">Office Worker</option>
+            <option value="worker">Worker (general)</option>
+            <option value="admin">Admin</option>
+            <option value="boss">Boss</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Phone</label><input name="phone" type="tel"></div>
+        <div class="form-group"><label>Email</label><input name="email" type="email"></div>
+        <div class="form-group"><label>Hourly Wage ($)</label><input name="hourly_wage" type="number" step="0.01" min="0" value="25"></div>
+        <div id="addWorkerError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="closeModal('addWorkerModal')">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="submitAddWorker()">Create Worker</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Shift Modal -->
+  <div class="modal-overlay" id="addShiftModal">
+    <div class="modal" style="max-width:360px">
+      <span class="modal-close" onclick="closeModal('addShiftModal')">✕</span>
+      <div class="modal-title" id="addShiftTitle">Add Shift</div>
+      <input type="hidden" id="addShiftWorkerId">
+      <input type="hidden" id="addShiftDate">
+      <div class="form-group">
+        <label>Start Time</label>
+        <input type="time" id="addShiftStart" value="09:00">
+      </div>
+      <p style="font-size:.8rem;color:#888;margin:0 0 14px">End time is open — clock out when done.</p>
+      <div id="addShiftError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('addShiftModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitAddShift()">Add Shift</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Worker Modal -->
+  <div class="modal-overlay" id="editWorkerModal">
+    <div class="modal">
+      <span class="modal-close" onclick="closeModal('editWorkerModal')">✕</span>
+      <div class="modal-title">Edit Worker</div>
+      <input type="hidden" id="editWorkerId">
+      <div class="form-group"><label>Full Name</label><input id="editWorkerName"></div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="editWorkerRole">
+          <option value="petitioner">Petitioner</option>
+          <option value="field_manager">Field Manager</option>
+          <option value="office_worker">Office Worker</option>
+          <option value="worker">Worker (general)</option>
+          <option value="admin">Admin</option>
+          <option value="boss">Boss</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Phone</label><input id="editWorkerPhone" type="tel"></div>
+      <div class="form-group"><label>Email</label><input id="editWorkerEmail" type="email"></div>
+      <div class="form-group"><label>Hourly Wage ($)</label><input id="editWorkerWage" type="number" step="0.01" min="0"></div>
+      <div id="editWorkerError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('editWorkerModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitEditWorker()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worker Detail Drawer -->
+  <div class="modal-overlay" id="workerDrawer">
+    <div class="modal" style="max-width:600px">
+      <span class="modal-close" onclick="closeModal('workerDrawer')">✕</span>
+      <div class="modal-title" id="drawerWorkerName">Worker Detail</div>
+      <div id="drawerContent"></div>
+    </div>
+  </div>
+
+  <!-- New Pay Period Modal -->
+  <div class="modal-overlay" id="newPeriodModal">
+    <div class="modal">
+      <span class="modal-close" onclick="closeModal('newPeriodModal')">✕</span>
+      <div class="modal-title">New Pay Period</div>
+      <div class="form-group"><label>Start Date</label><input type="date" id="periodStart"></div>
+      <div class="form-group"><label>End Date</label><input type="date" id="periodEnd"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('newPeriodModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="createPayPeriod()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  let _token = localStorage.getItem('pv_token') || '';
+  let _role  = localStorage.getItem('pv_role')  || '';
+  let _name  = localStorage.getItem('pv_name')  || '';
+
+  async function api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (_token) headers['Authorization'] = 'Bearer ' + _token;
+    const r = await fetch(path, { ...opts, headers });
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  }
+
+  function doLogout() {
+    localStorage.removeItem('pv_token');
+    localStorage.removeItem('pv_role');
+    localStorage.removeItem('pv_name');
+    _token = ''; _role = ''; _name = '';
+    showLoginScreen();
+  }
+
+  function showLoginScreen() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('appLayout').style.display = 'none';
+  }
+
+  function hideLoginScreen() {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appLayout').style.display = 'flex';
+  }
+
+  async function submitLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const pw    = document.getElementById('loginPw').value;
+    const errEl = document.getElementById('loginErr');
+    errEl.textContent = '';
+    try {
+      const data = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw }),
+      }).then(async r => {
+        if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
+        return r.json();
+      });
+      _token = data.access_token;
+      _role  = data.role;
+      _name  = data.full_name;
+      localStorage.setItem('pv_token', _token);
+      localStorage.setItem('pv_role',  _role);
+      localStorage.setItem('pv_name',  _name);
+      initAuth();
+    } catch(e) {
+      errEl.textContent = e.message;
+    }
+  }
+
+  // Allow Enter key on login form
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.getElementById('loginOverlay').style.display !== 'none') {
+      submitLogin();
+    }
+  });
+
+  function applyRoleVisibility() {
+    // field_manager: only sees Schedule
+    if (_role === 'field_manager') {
+      document.querySelectorAll('.nav-item').forEach(el => {
+        const s = el.dataset.section;
+        if (s && s !== 'schedule') el.style.display = 'none';
+      });
+      showSection('schedule');
+    }
+  }
+
+  function initAuth() {
+    if (!_token) { showLoginScreen(); return; }
+    hideLoginScreen();
+    document.getElementById('headerUser').textContent = _name || _role;
+    applyRoleVisibility();
+    loadOverview();
+    loadFraudAlerts();
+  }
+
+  function fmt(cents) { return '$' + (cents / 100).toFixed(2); }
+  function fmtPct(v)  { return v.toFixed(1) + '%'; }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  let currentSection = 'overview';
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const sec = el.dataset.section;
+      showSection(sec);
+    });
+  });
+
+  function showSection(sec) {
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const navEl = document.querySelector(`[data-section="${sec}"]`);
+    if (navEl) navEl.classList.add('active');
+    document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+    const secEl = document.getElementById(`section-${sec}`);
+    if (secEl) secEl.classList.add('active');
+    currentSection = sec;
+    loadSection(sec);
+  }
+
+  function loadSection(sec) {
+    switch(sec) {
+      case 'overview':   loadOverview(); break;
+      case 'workers':    loadWorkers(); break;
+      case 'schedule':   loadSchedule(); break;
+      case 'payroll':    loadPayPeriods(); break;
+      case 'leaderboard': loadLeaderboard(); break;
+      case 'petitions':  loadPetitions(); break;
+      case 'quick-entry': ensureQEWorkers(); break;
+      case 'pl':         loadPayPeriodsPL(); break;
+      case 'settings':   loadSettings(); break;
+    }
+  }
+
+  // ── Overview ───────────────────────────────────────────────────────────────
+  async function loadOverview() {
+    try {
+      const workers = await api('/workers');
+      const clocked = workers.filter(w => w.is_clocked_in);
+      document.getElementById('statClockedIn').textContent = clocked.length;
+      document.getElementById('statWorkers').textContent = workers.length;
+
+      const totalValid = workers.reduce((s, w) => s + (w.total_valid_sigs || 0), 0);
+      document.getElementById('statValidSigs').textContent = totalValid.toLocaleString();
+
+      const totalPay = workers.reduce((s, w) => s + (w.estimated_pay_cents || 0), 0);
+      document.getElementById('statPayroll').textContent = fmt(totalPay);
+
+      // Clocked-in list
+      const listEl = document.getElementById('clockedInList');
+      if (clocked.length === 0) {
+        listEl.innerHTML = '<div class="empty">No one clocked in</div>';
+      } else {
+        listEl.innerHTML = clocked.map(w => {
+          const elapsed = w.clock_in_time ? elapsedStr(w.clock_in_time) : '';
+          return `<div class="clocked-chip">
+            <span class="clocked-dot in"></span>
+            ${w.full_name} <span class="elapsed">${elapsed}</span>
+          </div>`;
+        }).join('');
+      }
+
+      // Recent shifts as activity
+      const shifts = await api('/shifts');
+      const recentEl = document.getElementById('activityFeed');
+      const recent = shifts.slice(0, 8);
+      if (recent.length === 0) {
+        recentEl.innerHTML = '<div class="empty">No activity yet</div>';
+      } else {
+        const wMap = {};
+        workers.forEach(w => wMap[w.id] = w.full_name);
+        recentEl.innerHTML = recent.map(s => {
+          const name = wMap[s.worker_id] || `Worker ${s.worker_id}`;
+          const action = s.clock_out ? `clocked out` : `clocked in`;
+          const time = s.clock_out
+            ? new Date(s.clock_out + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+            : new Date(s.clock_in + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          return `<div class="activity-item">
+            <span class="activity-time">${time}</span>
+            <span><strong>${name}</strong> ${action}</span>
+          </div>`;
+        }).join('');
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  function elapsedStr(isoStr) {
+    const ms = Date.now() - new Date(isoStr + 'Z').getTime();
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  // ── Workers ────────────────────────────────────────────────────────────────
+  let workersCache = [];
+
+  async function loadWorkers() {
+    const tbody = document.getElementById('workersBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="empty"><span class="spinner"></span>Loading…</td></tr>';
+    try {
+      const all = await api('/workers');
+      workersCache = all.filter(w => w.is_active);
+      renderWorkersTable();
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">Error: ${e.message}</td></tr>`;
+    }
+  }
+
+  function renderWorkersTable() {
+    const tbody = document.getElementById('workersBody');
+    if (workersCache.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No workers yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = workersCache.map(w => {
+      const ROLE_LABELS = {'field_manager':'Field Manager','office_worker':'Office Worker','petitioner':'Petitioner','worker':'Worker','admin':'Admin','boss':'Boss'};
+      const ROLE_COLORS = {'field_manager':'blue','office_worker':'purple','petitioner':'green','worker':'green','admin':'admin','boss':'boss'};
+      const roleLabel = ROLE_LABELS[w.role] || w.role;
+      const roleColor = ROLE_COLORS[w.role] || 'gray';
+      const statusDot = w.is_clocked_in
+        ? `<span class="clocked-dot in"></span>In`
+        : `<span class="clocked-dot out"></span>Out`;
+      return `<tr>
+        <td><input type="checkbox" class="worker-cb" value="${w.id}" onchange="onWorkerCheck()"></td>
+        <td style="font-weight:600">${w.full_name}</td>
+        <td><span class="badge badge-${roleColor}">${roleLabel}</span></td>
+        <td>${w.phone || '—'}</td>
+        <td>${w.email && !w.email.includes('@local') ? w.email : '—'}</td>
+        <td>${statusDot}</td>
+        <td>$${w.hourly_wage}/hr</td>
+        <td style="white-space:nowrap">
+          ${w.is_clocked_in
+            ? `<button class="btn btn-sm btn-danger" onclick="clockOut(${w.id})">Clock Out</button>`
+            : `<button class="btn btn-sm btn-success" onclick="clockIn(${w.id})">Clock In</button>`
+          }
+          <button class="btn btn-sm btn-outline" style="margin-left:4px" onclick="openEditWorker(${w.id})">Edit</button>
+          <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="removeWorker(${w.id},'${w.full_name.replace(/'/g,"\\'")}')">Remove</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openAddWorkerModal() {
+    document.getElementById('addWorkerForm').reset();
+    document.getElementById('addWorkerError').style.display = 'none';
+    openModal('addWorkerModal');
+  }
+
+  async function submitAddWorker() {
+    const form = document.getElementById('addWorkerForm');
+    const errEl = document.getElementById('addWorkerError');
+    errEl.style.display = 'none';
+    const fd = new FormData(form);
+    const data = Object.fromEntries(fd.entries());
+    if (!data.full_name.trim()) {
+      errEl.textContent = 'Full name is required.';
+      errEl.style.display = 'block';
+      return;
+    }
+    data.hourly_wage = parseFloat(data.hourly_wage) || 25;
+    try {
+      await api('/workers', { method: 'POST', body: JSON.stringify(data) });
+      closeModal('addWorkerModal');
+      loadWorkers();
+    } catch(err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function clockIn(workerId) {
+    try {
+      await api('/shifts/clock-in', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
+      loadWorkers();
+      loadOverview();
+    } catch(e) { alert(e.message); }
+  }
+
+  async function clockOut(workerId) {
+    try {
+      await api('/shifts/clock-out', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
+      loadWorkers();
+      loadOverview();
+    } catch(e) { alert(e.message); }
+  }
+
+  function getCheckedIds() {
+    return [...document.querySelectorAll('.worker-cb:checked')].map(cb => parseInt(cb.value));
+  }
+
+  function onWorkerCheck() {
+    const ids = getCheckedIds();
+    const bar = document.getElementById('bulkBar');
+    const all = document.getElementById('selectAll');
+    const total = document.querySelectorAll('.worker-cb').length;
+    bar.style.display = ids.length ? 'flex' : 'none';
+    document.getElementById('bulkCount').textContent = `${ids.length} worker${ids.length !== 1 ? 's' : ''} selected`;
+    all.indeterminate = ids.length > 0 && ids.length < total;
+    all.checked = ids.length === total;
+  }
+
+  function toggleSelectAll(cb) {
+    document.querySelectorAll('.worker-cb').forEach(el => el.checked = cb.checked);
+    onWorkerCheck();
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.worker-cb').forEach(el => el.checked = false);
+    document.getElementById('selectAll').checked = false;
+    onWorkerCheck();
+  }
+
+  async function bulkRemove() {
+    const ids = getCheckedIds();
+    if (!ids.length) return;
+    const names = ids.map(id => workersCache.find(w => w.id === id)?.full_name).join(', ');
+    if (!confirm(`Remove ${ids.length} worker${ids.length !== 1 ? 's' : ''}?\n\n${names}`)) return;
+    await Promise.all(ids.map(id => api(`/workers/${id}`, { method: 'DELETE' }).catch(() => {})));
+    clearSelection();
+    loadWorkers();
+  }
+
+  function openEditWorker(workerId) {
+    const w = workersCache.find(x => x.id === workerId);
+    if (!w) return;
+    document.getElementById('editWorkerId').value = w.id;
+    document.getElementById('editWorkerName').value = w.full_name;
+    document.getElementById('editWorkerRole').value = w.role;
+    document.getElementById('editWorkerPhone').value = w.phone || '';
+    document.getElementById('editWorkerEmail').value = (w.email && !w.email.includes('@local')) ? w.email : '';
+    document.getElementById('editWorkerWage').value = w.hourly_wage;
+    document.getElementById('editWorkerError').style.display = 'none';
+    openModal('editWorkerModal');
+  }
+
+  async function submitEditWorker() {
+    const id = document.getElementById('editWorkerId').value;
+    const errEl = document.getElementById('editWorkerError');
+    errEl.style.display = 'none';
+    const data = {
+      full_name:   document.getElementById('editWorkerName').value.trim(),
+      role:        document.getElementById('editWorkerRole').value,
+      phone:       document.getElementById('editWorkerPhone').value.trim(),
+      email:       document.getElementById('editWorkerEmail').value.trim(),
+      hourly_wage: parseFloat(document.getElementById('editWorkerWage').value) || 0,
+    };
+    if (!data.full_name) { errEl.textContent = 'Name is required.'; errEl.style.display = 'block'; return; }
+    try {
+      await api(`/workers/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+      closeModal('editWorkerModal');
+      loadWorkers();
+    } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
+
+  async function removeWorker(workerId, name) {
+    if (!confirm(`Remove ${name}? They won't appear in the workers list anymore.`)) return;
+    try {
+      await api(`/workers/${workerId}`, { method: 'DELETE' });
+      loadWorkers();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function editWage(workerId, currentWage) {
+    const val = prompt(`New hourly wage for worker ${workerId} (current: $${currentWage}):`, currentWage);
+    if (val === null) return;
+    const wage = parseFloat(val);
+    if (isNaN(wage) || wage <= 0) { alert('Invalid wage'); return; }
+    try {
+      await api(`/workers/${workerId}/wage`, { method: 'PATCH', body: JSON.stringify({ hourly_wage: wage }) });
+      loadWorkers();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function openWorkerDrawer(workerId) {
+    openModal('workerDrawer');
+    document.getElementById('drawerContent').innerHTML = '<span class="spinner"></span> Loading…';
+    try {
+      const [worker, projects, schedReqs, payPref] = await Promise.all([
+        api(`/workers/${workerId}`),
+        api(`/workers/${workerId}/projects`),
+        api(`/schedule?worker_id=${workerId}`).catch(() => []),
+        api('/payment-preferences').catch(() => null),
+      ]);
+      document.getElementById('drawerWorkerName').textContent = worker.full_name;
+      document.getElementById('drawerContent').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Email</div><div>${worker.email}</div></div>
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Role</div><div><span class="badge badge-${worker.role}">${worker.role}</span></div></div>
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Phone</div><div>${worker.phone || '—'}</div></div>
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Wage</div><div>$${worker.hourly_wage}/hr</div></div>
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Valid Sigs</div><div>${(worker.total_valid_sigs||0).toLocaleString()}</div></div>
+          <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Validity Rate</div><div>${fmtPct(worker.validity_rate||0)}</div></div>
+        </div>
+        <div style="font-weight:600;margin-bottom:8px">Projects (${projects.length})</div>
+        ${projects.length === 0 ? '<div class="empty">No projects assigned</div>' :
+          projects.map(p => `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:.83rem">
+            <strong>${p.project_id}</strong> — ${p.valid_sigs || 0} valid / ${p.total_sigs || 0} total sigs
+          </div>`).join('')}
+        <div style="font-weight:600;margin:14px 0 8px">Schedule Requests</div>
+        ${schedReqs.length === 0 ? '<div class="empty">No schedule requests</div>' :
+          schedReqs.slice(0,5).map(r => `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:.83rem">
+            Week of ${r.week_of} — ${r.preferred_days.join(', ')} — <span class="badge badge-${r.status==='approved'?'green':r.status==='rejected'?'red':'orange'}">${r.status}</span>
+          </div>`).join('')}
+      `;
+    } catch(e) {
+      document.getElementById('drawerContent').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    }
+  }
+
+  // ── Schedule ───────────────────────────────────────────────────────────────
+  let currentWeekOffset = 0;
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  function getWeekMonday(offset = 0) {
+    const d = new Date();
+    const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1 + offset * 7);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+
+  function fmtDate(d) {
+    return d.toISOString().split('T')[0];
+  }
+
+  async function loadSchedule() {
+    const monday = getWeekMonday(currentWeekOffset);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    document.getElementById('weekLabel').textContent =
+      `${fmtDate(monday)} — ${fmtDate(sunday)}`;
+
+    await loadPendingRequests();
+    await loadWeekGrid(monday);
+  }
+
+  async function loadPendingRequests() {
+    const reqs = await api('/schedule?status=pending').catch(() => []);
+    const el = document.getElementById('pendingRequests');
+    if (reqs.length === 0) {
+      el.innerHTML = '<div class="empty">No pending requests</div>';
+      return;
+    }
+    const workers = workersCache.length ? workersCache : await api('/workers').catch(() => []);
+    const wMap = {};
+    workers.forEach(w => wMap[w.id] = w.full_name);
+    el.innerHTML = reqs.map(r => `
+      <div class="pending-req">
+        <div class="req-info">
+          <strong>${wMap[r.worker_id] || 'Worker ' + r.worker_id}</strong>
+          — Week of ${r.week_of}<br>
+          Preferred: ${r.preferred_days.join(', ')} | Hours: ${r.preferred_hours || 'any'}<br>
+          ${r.notes ? `Notes: ${r.notes}` : ''}
+        </div>
+        <div class="req-actions">
+          <button class="btn btn-sm btn-success" onclick="updateSchedReq(${r.id}, 'approved')">Approve</button>
+          <button class="btn btn-sm btn-danger" onclick="updateSchedReq(${r.id}, 'rejected')">Reject</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function updateSchedReq(id, status) {
+    await api(`/schedule/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    loadSchedule();
+  }
+
+  async function loadWeekGrid(monday) {
+    const workers = workersCache.length ? workersCache : await api('/workers').catch(() => []);
+    const shifts = await api(`/shifts?date_from=${fmtDate(monday)}`).catch(() => []);
+
+    const gridEl = document.getElementById('scheduleGrid');
+    if (workers.length === 0) { gridEl.innerHTML = '<div class="empty">No workers</div>'; return; }
+
+    let html = '<div class="week-grid" style="grid-template-columns: 140px repeat(7, 1fr)">';
+    html += '<div class="wg-header">Worker</div>';
+    DAYS.forEach((d, i) => {
+      const date = new Date(monday); date.setDate(monday.getDate() + i);
+      html += `<div class="wg-header">${d}<br><span style="font-weight:400;font-size:.7rem">${date.getMonth()+1}/${date.getDate()}</span></div>`;
+    });
+
+    workers.forEach(w => {
+      html += `<div class="wg-worker">${w.full_name}</div>`;
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday); date.setDate(monday.getDate() + i);
+        const dateStr = fmtDate(date);
+        const dayShifts = shifts.filter(s => s.worker_id === w.id && s.clock_in.startsWith(dateStr));
+        if (dayShifts.length > 0) {
+          html += '<div class="wg-cell">';
+          dayShifts.forEach(s => {
+            const inTime = s.clock_in.split('T')[1]?.slice(0,5) || '';
+            const outTime = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : 'active';
+            const label = s.hours ? `${inTime}–${outTime}` : 'Active';
+            html += `<div class="wg-shift" style="cursor:pointer" title="Click to remove" onclick="removeShift(${s.id})">${label}</div>`;
+          });
+          html += '</div>';
+        } else {
+          html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openAddShift(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${dateStr}')" title="Add shift">
+            <div style="color:#ccc;font-size:1.2rem;text-align:center;line-height:36px">+</div>
+          </div>`;
+        }
+      }
+    });
+    html += '</div>';
+    gridEl.innerHTML = html;
+  }
+
+  function openAddShift(workerId, workerName, dateStr) {
+    document.getElementById('addShiftWorkerId').value = workerId;
+    document.getElementById('addShiftDate').value = dateStr;
+    document.getElementById('addShiftTitle').textContent = `Add Shift — ${workerName} (${dateStr})`;
+    document.getElementById('addShiftError').style.display = 'none';
+    openModal('addShiftModal');
+  }
+
+  async function submitAddShift() {
+    const workerId = document.getElementById('addShiftWorkerId').value;
+    const date     = document.getElementById('addShiftDate').value;
+    const start    = document.getElementById('addShiftStart').value;
+    const errEl    = document.getElementById('addShiftError');
+    errEl.style.display = 'none';
+    if (!start) {
+      errEl.textContent = 'Please enter a start time.';
+      errEl.style.display = 'block';
+      return;
+    }
+    try {
+      await api('/shifts/clock-in-at', {
+        method: 'POST',
+        body: JSON.stringify({ worker_id: parseInt(workerId), clock_in: `${date}T${start}:00` }),
+      });
+      closeModal('addShiftModal');
+      loadSchedule();
+      loadWorkers();
+    } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
+
+  async function removeShift(shiftId) {
+    if (!confirm('Remove this shift?')) return;
+    try {
+      await api(`/shifts/${shiftId}`, { method: 'DELETE' });
+      loadSchedule();
+      loadWorkers();
+    } catch(e) { alert(e.message); }
+  }
+
+  function prevWeek() { currentWeekOffset--; loadSchedule(); }
+  function nextWeek() { currentWeekOffset++; loadSchedule(); }
+
+  // ── Payroll ────────────────────────────────────────────────────────────────
+  let payPeriodsCache = [];
+  let payrollDataCache = [];
+
+  async function loadPayPeriods() {
+    try {
+      payPeriodsCache = await api('/payroll/periods');
+      const sel = document.getElementById('payPeriodSelect');
+      if (payPeriodsCache.length === 0) {
+        sel.innerHTML = '<option value="">No pay periods</option>';
+        return;
+      }
+      sel.innerHTML = payPeriodsCache.map(p =>
+        `<option value="${p.id}">${p.start_date} — ${p.end_date} [${p.status}]</option>`
+      ).join('');
+      loadPayroll();
+    } catch(e) { console.error(e); }
+  }
+
+  async function loadPayroll() {
+    const periodId = document.getElementById('payPeriodSelect').value;
+    if (!periodId) return;
+    const tbody = document.getElementById('payrollBody');
+    tbody.innerHTML = '<tr><td colspan="12" class="empty"><span class="spinner"></span> Loading…</td></tr>';
+    try {
+      const records = await api(`/payroll/records?pay_period_id=${periodId}`);
+      payrollDataCache = records;
+      if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12" class="empty">No records. Run payroll to calculate.</td></tr>';
+        return;
+      }
+      const workers = workersCache.length ? workersCache : await api('/workers').catch(() => []);
+      const wMap = {}; workers.forEach(w => wMap[w.id] = w.full_name);
+      tbody.innerHTML = records.map(r => `<tr>
+        <td><strong>${wMap[r.worker_id] || 'Worker ' + r.worker_id}</strong></td>
+        <td>${r.total_hours.toFixed(1)}</td>
+        <td>${r.total_signatures}</td>
+        <td>${r.valid_signatures}</td>
+        <td>${fmtPct(r.validity_rate)}</td>
+        <td class="money">$${r.hourly_wage_used.toFixed(2)}</td>
+        <td class="money">${fmt(r.base_pay_cents)}</td>
+        <td class="money">${fmt(r.bonus_cents)}</td>
+        <td class="money"><strong>${fmt(r.gross_cents)}</strong></td>
+        <td class="money" style="color:#c62828">${fmt(r.tax_cents)}</td>
+        <td class="money"><strong>${fmt(r.net_cents)}</strong></td>
+        <td>${r.earns_lunch ? '🥪 Yes' : '—'}</td>
+      </tr>`).join('');
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="12" class="empty">Error: ${e.message}</td></tr>`;
+    }
+  }
+
+  async function runPayroll() {
+    const periodId = document.getElementById('payPeriodSelect').value;
+    if (!periodId) { alert('Select a pay period first'); return; }
+    if (!confirm('Run payroll for all workers? This will close the pay period.')) return;
+    try {
+      const result = await api(`/payroll/run/${periodId}`, { method: 'POST' });
+      alert(`Payroll complete! ${result.workers_processed} workers processed. Total gross: ${fmt(result.total_gross_cents)}`);
+      loadPayroll();
+      loadPayPeriods();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  function exportPayrollCSV() {
+    if (payrollDataCache.length === 0) { alert('No data to export'); return; }
+    const headers = ['worker_id','total_hours','total_signatures','valid_signatures','validity_rate','hourly_wage_used','base_pay_cents','bonus_cents','gross_cents','tax_cents','net_cents','earns_lunch'];
+    const rows = payrollDataCache.map(r => headers.map(h => r[h]).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'payroll.csv';
+    a.click();
+  }
+
+  function openNewPeriodModal() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('periodStart').value = today;
+    document.getElementById('periodEnd').value = today;
+    openModal('newPeriodModal');
+  }
+
+  async function createPayPeriod() {
+    const start = document.getElementById('periodStart').value;
+    const end = document.getElementById('periodEnd').value;
+    if (!start || !end) { alert('Please enter both dates'); return; }
+    try {
+      await api('/payroll/periods', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
+      closeModal('newPeriodModal');
+      loadPayPeriods();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  // ── Leaderboard ────────────────────────────────────────────────────────────
+  let lbInterval = null;
+
+  async function loadLeaderboard() {
+    const el = document.getElementById('leaderboardGrid');
+    try {
+      const data = await api('/leaderboard');
+      if (data.leaderboard.length === 0) {
+        el.innerHTML = '<div class="empty">No data yet</div>';
+        return;
+      }
+      el.innerHTML = data.leaderboard.map(e => {
+        const rankClass = e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : '';
+        const tierBadge = {
+          'Top Performer': 'badge-green', 'Gold': 'badge-orange', 'Silver': 'badge-gray',
+          'Bronze': 'badge-orange', 'Starting': 'badge-gray', 'No shifts': 'badge-gray'
+        }[e.tier_label] || 'badge-gray';
+        return `<div class="lb-card">
+          <div class="lb-rank ${rankClass}">#${e.rank}</div>
+          <div>
+            <div class="lb-name">${e.full_name} ${e.is_clocked_in ? '<span class="clocked-dot in" style="width:7px;height:7px"></span>' : ''}</div>
+            <div class="lb-stats">${e.total_hours.toFixed(1)}h · ${fmtPct(e.validity_rate)} valid · ${e.sigs_per_hour.toFixed(1)} sig/h</div>
+            <span class="badge ${tierBadge}" style="margin-top:4px">${e.tier_label}</span>
+          </div>
+          <div class="lb-sigs">
+            <div class="num">${e.valid_sigs.toLocaleString()}</div>
+            <div class="lbl">valid sigs</div>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      el.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    }
+
+    // Auto-refresh
+    if (lbInterval) clearInterval(lbInterval);
+    if (currentSection === 'leaderboard') {
+      lbInterval = setInterval(loadLeaderboard, 60000);
+    }
+  }
+
+  // ── Petitions ──────────────────────────────────────────────────────────────
+  async function loadPetitions() {
+    try {
+      const [projects, workers] = await Promise.all([
+        fetch('/projects').then(r => r.json()),
+        api('/workers'),
+      ]);
+
+      const projSel = document.getElementById('assignProjectSelect');
+      projSel.innerHTML = projects.map(p => `<option value="${p.id}">${p.id} (${p.approved} approved)</option>`).join('');
+
+      const wkrSel = document.getElementById('assignWorkerSelect');
+      wkrSel.innerHTML = workers.filter(w => !['boss'].includes(w.role)).map(w => `<option value="${w.id}">${w.full_name}</option>`).join('');
+
+      const el = document.getElementById('petitionsList');
+      if (projects.length === 0) {
+        el.innerHTML = '<div class="empty">No projects yet</div>';
+        return;
+      }
+      // Get all worker project assignments
+      const assignments = {};
+      for (const w of workers) {
+        const wps = await api(`/workers/${w.id}/projects`).catch(() => []);
+        wps.forEach(wp => assignments[wp.project_id] = w.full_name);
+      }
+      el.innerHTML = `<table><thead><tr><th>Project ID</th><th>County</th><th>Approved</th><th>Total Lines</th><th>Assigned To</th><th>Created</th></tr></thead><tbody>
+        ${projects.map(p => `<tr>
+          <td><strong>${p.id}</strong></td>
+          <td>${p.county || '—'}</td>
+          <td>${p.approved}</td>
+          <td>${p.total_lines}</td>
+          <td>${assignments[p.id] || '<span style="color:#888">Unassigned</span>'}</td>
+          <td>${p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  async function assignProject() {
+    const projectId = document.getElementById('assignProjectSelect').value;
+    const workerId = parseInt(document.getElementById('assignWorkerSelect').value);
+    if (!projectId || !workerId) { alert('Select project and worker'); return; }
+    const msgEl = document.getElementById('assignMsg');
+    try {
+      await fetch(`/projects/${projectId}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ worker_id: workerId }),
+      });
+      msgEl.style.color = '#2e7d32';
+      msgEl.textContent = `Project ${projectId} assigned successfully`;
+      loadPetitions();
+    } catch(e) {
+      msgEl.style.color = '#c62828';
+      msgEl.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  // ── P&L ───────────────────────────────────────────────────────────────────
+  async function loadPayPeriodsPL() {
+    const periods = await api('/payroll/periods').catch(() => []);
+    const sel = document.getElementById('plPeriodSelect');
+    sel.innerHTML = `<option value="">All time</option>` +
+      periods.map(p => `<option value="${p.id}">${p.start_date} — ${p.end_date}</option>`).join('');
+  }
+
+  async function loadPL() {
+    const revInput = parseFloat(document.getElementById('plRevenue').value || '0');
+    const revCents = Math.round(revInput * 100);
+    const periodId = document.getElementById('plPeriodSelect').value;
+    const url = `/payroll/p-and-l?revenue_cents=${revCents}` + (periodId ? `&pay_period_id=${periodId}` : '');
+    try {
+      const data = await api(url);
+      const el = document.getElementById('plSummary');
+      el.innerHTML = `
+        <div class="pl-row"><span class="pl-label">Revenue</span><span class="pl-value">${fmt(data.revenue_cents)}</span></div>
+        <div class="pl-row"><span class="pl-label">Labor Cost (Gross)</span><span class="pl-value" style="color:#c62828">${fmt(data.total_labor_gross_cents)}</span></div>
+        <div class="pl-row"><span class="pl-label">Margin</span><span class="pl-value" style="color:${data.margin_cents >= 0 ? '#2e7d32' : '#c62828'}">${fmt(data.margin_cents)} ${data.margin_pct !== null ? `(${data.margin_pct}%)` : ''}</span></div>
+        <div class="pl-row"><span class="pl-label">Total Valid Sigs</span><span class="pl-value">${data.total_valid_signatures.toLocaleString()}</span></div>
+        <div class="pl-row"><span class="pl-label">Cost Per Sig</span><span class="pl-value">${fmt(data.cost_per_sig_cents)}</span></div>
+        <div class="pl-row"><span class="pl-label">Total Hours</span><span class="pl-value">${data.total_hours.toFixed(1)}</span></div>
+        <div class="pl-row"><span class="pl-label">Workers</span><span class="pl-value">${data.worker_count}</span></div>
+      `;
+      drawPLChart(data, revCents);
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  function drawPLChart(data, revCents) {
+    const canvas = document.getElementById('plChart');
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.parentElement.clientWidth - 48;
+    canvas.height = 200;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const categories = ['Revenue', 'Labor (Gross)', 'Net Pay', 'Tax', 'Bonus'];
+    const values = [revCents, data.total_labor_gross_cents, data.total_labor_net_cents, data.tax_cents || 0, data.bonus_cents || 0];
+    const colors = ['#1565c0', '#c62828', '#2e7d32', '#e65100', '#6a1b9a'];
+    const max = Math.max(...values, 1);
+    const barW = (canvas.width - 80) / categories.length - 10;
+    const chartH = canvas.height - 40;
+
+    categories.forEach((cat, i) => {
+      const x = 40 + i * (barW + 10);
+      const h = (values[i] / max) * chartH;
+      const y = chartH - h + 10;
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(x, y, barW, h);
+      ctx.fillStyle = '#333';
+      ctx.font = '11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(cat, x + barW / 2, canvas.height - 5);
+      ctx.fillText(fmt(values[i]), x + barW / 2, y - 4);
+    });
+  }
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+  async function loadSettings() {
+    const periods = await api('/payroll/periods').catch(() => []);
+    const el = document.getElementById('payPeriodsList');
+    if (periods.length === 0) { el.innerHTML = '<div class="empty">No pay periods</div>'; return; }
+    el.innerHTML = periods.map(p => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:.85rem">
+        <span>${p.start_date} — ${p.end_date}</span>
+        <span class="badge badge-${p.status==='open'?'green':p.status==='closed'?'orange':'blue'}">${p.status}</span>
+      </div>
+    `).join('');
+  }
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target === el) el.classList.remove('open');
+    });
+  });
+
+  // ── Fraud scan ─────────────────────────────────────────────────────────────
+  const FLAG_LABELS = {
+    same_city:            'Same city on most lines',
+    nearby_address:       'Addresses on same block',
+    consecutive_addresses:'Consecutive house numbers',
+    duplicate_name:       'Duplicate name',
+    duplicate_address:    'Duplicate address',
+    same_date:            'Same date on all lines',
+    no_signature:         'No signature',
+  };
+  const FLAG_SERIOUS = new Set(['same_city','consecutive_addresses','duplicate_name','same_date']);
+
+  // File picker + drag-and-drop
+  const scanFile = document.getElementById('scanFile');
+  const scanDrop = document.getElementById('scanDrop');
+  const scanBtn  = document.getElementById('scanBtn');
+
+  scanFile.addEventListener('change', () => {
+    if (scanFile.files[0]) {
+      document.getElementById('scanFileName').textContent = scanFile.files[0].name;
+      scanBtn.disabled = false;
+    }
+  });
+  scanDrop.addEventListener('dragover', (e) => { e.preventDefault(); scanDrop.classList.add('drag-over'); });
+  scanDrop.addEventListener('dragleave', () => scanDrop.classList.remove('drag-over'));
+  scanDrop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    scanDrop.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer(); dt.items.add(file); scanFile.files = dt.files;
+    document.getElementById('scanFileName').textContent = file.name;
+    scanBtn.disabled = false;
+  });
+
+  async function runFraudScan() {
+    const file = scanFile.files[0];
+    if (!file) return;
+    scanBtn.disabled = true;
+    document.getElementById('scanSpinner').style.display = 'inline-flex';
+    document.getElementById('scanResults').style.display = 'none';
+
+    try {
+      const fd = new FormData();
+      fd.append('petition', file, file.name);
+      const res = await fetch('/fraud-scan', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      renderFraudScanResults(data, file.name);
+    } catch(err) {
+      showToast('Scan failed: ' + err.message, '#c62828');
+    } finally {
+      scanBtn.disabled = false;
+      document.getElementById('scanSpinner').style.display = 'none';
+    }
+  }
+
+  function renderFraudScanResults(data, filename) {
+    const s = data.summary;
+    document.getElementById('scanResultFile').textContent = filename;
+
+    // Summary bar
+    const bar = document.getElementById('scanSummaryBar');
+    const flagTotal = Object.values(s.flag_counts || {}).reduce((a,b) => a+b, 0);
+    bar.innerHTML = `
+      <div class="scan-summary-stat red"><div class="n">${s.suspicious_lines}</div><div class="l">Suspicious lines</div></div>
+      <div class="scan-summary-stat green"><div class="n">${s.clean_lines}</div><div class="l">Clean lines</div></div>
+      <div class="scan-summary-stat orange"><div class="n">${s.blank_lines}</div><div class="l">Blank lines</div></div>
+      <div class="scan-summary-stat"><div class="n">${s.filled_lines}</div><div class="l">Filled lines</div></div>
+      ${Object.entries(s.flag_counts || {}).map(([k,v]) =>
+        `<div class="scan-summary-stat ${FLAG_SERIOUS.has(k)?'red':'orange'}">
+          <div class="n">${v}</div><div class="l">${FLAG_LABELS[k]||k.replace(/_/g,' ')}</div>
+        </div>`
+      ).join('')}
+    `;
+
+    // Line-by-line results
+    const linesEl = document.getElementById('scanResultLines');
+    const lines = data.lines || [];
+    if (!lines.length) {
+      linesEl.innerHTML = '<div class="empty">No lines extracted</div>';
+    } else {
+      linesEl.innerHTML = lines.map(line => {
+        const isBlank    = line.flags.some(f => f.code === 'blank_line');
+        const isFlagged  = line.flagged && !isBlank;
+        const cls = isBlank ? 'blank' : isFlagged ? 'flagged' : 'clean';
+        const flagHtml = (line.flags || [])
+          .filter(f => f.code !== 'blank_line')
+          .map(f => `<span class="scan-flag ${FLAG_SERIOUS.has(f.code)?'':'warn'}">${FLAG_LABELS[f.code]||f.code}</span>`)
+          .join('');
+        return `
+          <div class="scan-result-line ${cls}">
+            <div class="scan-line-header">
+              <span class="scan-line-num">${line.line_number}</span>
+              <span class="scan-line-name">${line.raw_name || '<em style="color:#aaa">blank</em>'}</span>
+              ${isFlagged ? '⚠️' : isBlank ? '' : '✓'}
+            </div>
+            ${line.raw_address ? `<div class="scan-line-addr">${line.raw_address}${line.raw_date ? ' · ' + line.raw_date : ''}</div>` : ''}
+            ${flagHtml ? `<div style="margin-top:5px">${flagHtml}</div>` : ''}
+            ${(line.flags||[]).filter(f=>f.code!=='blank_line').map(f =>
+              `<div style="font-size:.75rem;color:#888;margin-top:2px">${f.description}</div>`
+            ).join('')}
+          </div>`;
+      }).join('');
+    }
+
+    document.getElementById('scanResults').style.display = 'block';
+  }
+
+  // ── Fraud alerts ───────────────────────────────────────────────────────────
+  async function loadFraudAlerts() {
+    const role = localStorage.getItem('pv_role');
+    if (role !== 'boss' && role !== 'admin') return;
+
+    const alerts = await api('/fraud-alerts').catch(() => []);
+    if (!alerts || alerts.length === 0) return;
+
+    const wrap = document.getElementById('fraudAlertWrap');
+    const list = document.getElementById('fraudAlertList');
+    wrap.style.display = 'block';
+
+    list.innerHTML = alerts.map(a => {
+      const projectsHtml = a.projects.map(p => {
+        const FLAG_LABELS = {
+          same_city:          'same city on most lines',
+          nearby_address:     'addresses on same block',
+          consecutive_addresses: 'consecutive house numbers',
+          duplicate_name:     'duplicate names',
+          duplicate_address:  'duplicate addresses',
+          same_date:          'identical dates on all lines',
+          no_signature:       'missing signatures',
+        };
+        const flagList = Object.entries(p.flag_counts)
+          .map(([k, v]) => `${FLAG_LABELS[k] || k.replace(/_/g,' ')} ×${v}`)
+          .join(' · ');
+        return `
+          <div class="fraud-project">
+            <strong>${p.project_id}</strong> — ${p.county || 'Unknown county'} · ${p.cause || ''}
+            <span class="pct">${p.flagged_pct}% flagged</span>
+            (${p.flagged_lines} of ${p.total_lines} lines)
+            ${flagList ? `<div class="fraud-flags">${flagList}</div>` : ''}
+          </div>`;
+      }).join('');
+
+      return `
+        <div class="fraud-worker">
+          <div class="fraud-worker-name">⚠ ${a.worker_name} <span style="font-weight:400;font-size:.8rem;color:#888">${a.email}</span></div>
+          ${projectsHtml}
+          <div class="fraud-actions">
+            <button class="btn btn-sm btn-danger" onclick="flagWorker(${a.worker_id}, '${a.worker_name}')">
+              Don't pay this worker
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="dismissFraudAlert(${a.worker_id}, this)">
+              Dismiss (pay normally)
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function flagWorker(workerId, name) {
+    if (!confirm(`Mark ${name} as NOT paid this period due to suspected fraud?`)) return;
+    // Deactivate prevents payroll inclusion — boss can reactivate later
+    api(`/workers/${workerId}/deactivate`, { method: 'PATCH' })
+      .then(() => {
+        showToast(`${name} marked inactive — excluded from payroll.`, '#c62828');
+        loadFraudAlerts();
+      })
+      .catch(err => showToast(err.message, '#c62828'));
+  }
+
+  function dismissFraudAlert(workerId, btn) {
+    btn.closest('.fraud-worker').style.opacity = '.4';
+    btn.closest('.fraud-worker').style.pointerEvents = 'none';
+    // If all dismissed, hide the banner
+    const remaining = document.querySelectorAll('.fraud-worker:not([style*="opacity"])');
+    if (remaining.length === 0) document.getElementById('fraudAlertWrap').style.display = 'none';
+    showToast('Alert dismissed — worker will be paid normally.', '#2e7d32');
+  }
+
+  function showToast(msg, color = '#1a1a2e') {
+    let t = document.getElementById('dashToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'dashToast';
+      t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:#fff;padding:10px 20px;border-radius:8px;font-size:.85rem;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.background = color;
+    t.style.opacity = '1';
+    setTimeout(() => { t.style.opacity = '0'; }, 3500);
+  }
+
+  // ── Quick Entry ────────────────────────────────────────────────────────────
+  let qeWorkers = [];
+
+  async function ensureQEWorkers() {
+    if (!qeWorkers.length) qeWorkers = await api('/workers').catch(() => []);
+  }
+
+  function parseTime(str, dateStr) {
+    let h, m = 0;
+    const isPM = /pm/i.test(str), isAM = /am/i.test(str);
+    const clean = str.replace(/[apm\s]/gi, '');
+    if (clean.includes(':')) { [h, m] = clean.split(':').map(Number); }
+    else { h = parseInt(clean); }
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    if (!isPM && !isAM && h > 0 && h < 8) h += 12; // assume pm for low numbers with no suffix
+    return `${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`;
+  }
+
+  const MONTH_MAP = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+    january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+
+  function parseDate(text) {
+    // Returns "YYYY-MM-DD" or null
+    const now = new Date();
+    const curYear = now.getFullYear();
+
+    // "Apr 23", "April 23 2024", "April 23, 2024"
+    const named = text.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b/i);
+    if (named) {
+      const mon = MONTH_MAP[named[1].toLowerCase().slice(0,3)];
+      const day = parseInt(named[2]);
+      const year = named[3] ? parseInt(named[3]) : curYear;
+      return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+    // "4/23", "04/23", "4-23", "4/23/2024"
+    const slash = text.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+    if (slash) {
+      const mon = parseInt(slash[1]), day = parseInt(slash[2]);
+      if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+        let year = slash[3] ? parseInt(slash[3]) : curYear;
+        if (year < 100) year += 2000;
+        return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      }
+    }
+    return null;
+  }
+
+  function parseLine(text, workers) {
+    const now2 = new Date();
+    const today = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}-${String(now2.getDate()).padStart(2,'0')}`;
+
+    // Extract date first (so we can use it for time range and sig date)
+    const sigDate = parseDate(text) || today;
+
+    let workerId = null, workerName = null;
+
+    // Match by full name (longest match first)
+    const sorted = [...workers].sort((a,b) => b.full_name.length - a.full_name.length);
+    for (const w of sorted) {
+      if (text.toLowerCase().includes(w.full_name.toLowerCase())) {
+        workerId = w.id; workerName = w.full_name; break;
+      }
+    }
+    // Fall back to "Worker N" pattern
+    if (!workerId) {
+      const wm = text.match(/worker\s*(\d+)/i);
+      if (wm) {
+        const target = parseInt(wm[1]);
+        const match = workers.find(w => w.full_name.toLowerCase().includes(`worker ${target}`) || w.id === target);
+        if (match) { workerId = match.id; workerName = match.full_name; }
+      }
+    }
+    if (!workerId) return null;
+
+    // Time range (use sigDate as the date for the shift)
+    let clockIn = null, clockOut = null;
+    const tm = text.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|-|through)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+    if (tm) { clockIn = parseTime(tm[1], sigDate); clockOut = parseTime(tm[2], sigDate); }
+
+    // Sig count
+    let sigCount = null;
+    const sm = text.match(/(\d+)\s*(?:sigs?|signatures?)/i);
+    if (sm) sigCount = parseInt(sm[1]);
+
+    if (!clockIn && !sigCount) return null;
+    return { workerId, workerName, clockIn, clockOut, sigCount, sigDate };
+  }
+
+  let qeParsed = [];
+
+  async function parseQuickEntry() {
+    await ensureQEWorkers();
+    const raw = document.getElementById('qeInput').value;
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    qeParsed = lines.map(l => parseLine(l, qeWorkers)).filter(Boolean);
+
+    const preview = document.getElementById('qePreview');
+    const rowsEl  = document.getElementById('qeRows');
+    if (!qeParsed.length) { preview.style.display = 'none'; return; }
+
+    rowsEl.innerHTML = qeParsed.map((p, i) => {
+      const timeStr = p.clockIn
+        ? `${p.clockIn.split('T')[1].slice(0,5)} → ${p.clockOut.split('T')[1].slice(0,5)}`
+        : '—';
+      const hoursStr = p.clockIn
+        ? ((new Date(p.clockOut) - new Date(p.clockIn)) / 3600000).toFixed(2) + ' hrs'
+        : '';
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 12px;background:#f9f9fb;border-radius:7px;margin-bottom:6px;font-size:.85rem">
+          <span style="font-weight:600;min-width:120px">${p.workerName}</span>
+          <span style="color:#777;font-size:.78rem;min-width:80px">${p.sigDate}</span>
+          <span style="color:#555;min-width:130px">${timeStr} ${hoursStr ? '<span style="color:#888;font-size:.78rem">'+hoursStr+'</span>' : ''}</span>
+          <span style="color:#2e7d32;font-weight:600">${p.sigCount != null ? p.sigCount + ' sigs' : ''}</span>
+          <span style="margin-left:auto;font-size:.75rem;color:#aaa">line ${i+1}</span>
+        </div>`;
+    }).join('');
+    preview.style.display = 'block';
+  }
+
+  async function submitQuickEntry() {
+    if (!qeParsed.length) return;
+    const msgEl = document.getElementById('qeMsg');
+    msgEl.textContent = 'Submitting…';
+    let ok = 0, errs = [];
+
+    for (const p of qeParsed) {
+      try {
+        if (p.clockIn && p.clockOut) {
+          await api('/shifts/manual', {
+            method: 'POST',
+            body: JSON.stringify({ worker_id: p.workerId, clock_in: p.clockIn, clock_out: p.clockOut }),
+          });
+          ok++;
+        }
+        if (p.sigCount != null) {
+          await api(`/workers/${p.workerId}/manual-sigs`, {
+            method: 'POST',
+            body: JSON.stringify({ sig_count: p.sigCount, notes: 'Quick entry', date: p.sigDate }),
+          });
+          ok++;
+        }
+      } catch (e) { errs.push(`${p.workerName}: ${e.message}`); }
+    }
+
+    if (errs.length) {
+      msgEl.style.color = '#c62828';
+      msgEl.textContent = 'Some errors: ' + errs.join(' | ');
+    } else {
+      msgEl.style.color = '#2e7d32';
+      msgEl.textContent = `Done — ${ok} entr${ok === 1 ? 'y' : 'ies'} saved.`;
+      clearQuickEntry();
+    }
+    loadOverview();
+  }
+
+  function clearQuickEntry() {
+    document.getElementById('qeInput').value = '';
+    document.getElementById('qePreview').style.display = 'none';
+    qeParsed = [];
+  }
+
+  // Unregister any cached service workers so we always get the latest dashboard
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+
+  initAuth();
+  </script>
+  </div><!-- /appLayout -->
+</body>
+</html>

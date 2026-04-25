@@ -1,0 +1,4 @@
+[2026-04-25T02:48:21.527Z] GET http://localhost:8000/static/dashboard.html → 200 (3ms, 74247B)
+[2026-04-25T02:48:21.540Z] GET http://localhost:8000/auth/dev-token → 200 (13ms, 230B)
+[2026-04-25T02:48:21.558Z] GET http://localhost:8000/workers → 500 (3ms, 21B)
+[2026-04-25T02:48:21.558Z] GET http://localhost:8000/fraud-alerts → 500 (2ms, 21B)

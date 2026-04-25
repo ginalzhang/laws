@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PetitionV">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <title>Worker — Petition Verifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; color: #222; }
+
+    header {
+      background: #1a1a2e; color: #fff; padding: 0 20px;
+      display: flex; align-items: center; gap: 16px; height: 54px;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    header h1 { font-size: 1rem; font-weight: 700; }
+    header .subtitle { font-size: .72rem; color: #8888bb; }
+    header .user-info { margin-left: auto; font-size: .78rem; color: #aaaacc; }
+
+    .container { max-width: 680px; margin: 0 auto; padding: 20px 16px 60px; }
+
+    /* Sections */
+    .section { margin-bottom: 20px; }
+    .card {
+      background: #fff; border-radius: 12px; padding: 20px 22px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px;
+    }
+    .card-title { font-size: 1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 14px; }
+
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat-tile { text-align: center; padding: 16px 10px; }
+    .stat-tile .num { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+    .stat-tile .lbl { font-size: .72rem; color: #888; text-transform: uppercase; margin-top: 4px; }
+    .stat-tile.green .num { color: #2e7d32; }
+    .stat-tile.blue .num  { color: #1565c0; }
+    .stat-tile.orange .num { color: #e65100; }
+    .stat-tile.purple .num { color: #6a1b9a; }
+
+    /* Progress bar */
+    .progress-wrap { margin: 12px 0; }
+    .progress-label { display: flex; justify-content: space-between; font-size: .78rem; color: #555; margin-bottom: 5px; }
+    .progress-bar { height: 10px; background: #e0e0e0; border-radius: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #2e7d32, #4caf50); transition: width .5s; }
+    .tier-info { font-size: .82rem; color: #555; margin-top: 6px; }
+    .tier-info strong { color: #1a1a2e; }
+
+    /* Leaderboard position */
+    .lb-pos { text-align: center; padding: 20px; }
+    .lb-pos .rank { font-size: 3rem; font-weight: 800; color: #1a1a2e; line-height: 1; }
+    .lb-pos .of { font-size: 1rem; color: #888; }
+
+    /* Schedule */
+    .day-checkbox-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+    .day-check { position: relative; }
+    .day-check input { display: none; }
+    .day-check label {
+      display: block; text-align: center; padding: 8px 4px;
+      border: 1.5px solid #ddd; border-radius: 7px; cursor: pointer;
+      font-size: .82rem; font-weight: 500; transition: all .12s;
+    }
+    .day-check input:checked + label { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+
+    /* Forms */
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: .78rem; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 9px 11px; border: 1.5px solid #ddd; border-radius: 7px;
+      font-size: .88rem; font-family: inherit; background: #fafafa; outline: none;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: #1a1a2e; background: #fff; }
+
+    /* Buttons */
+    .btn {
+      padding: 10px 22px; border-radius: 7px; border: none; cursor: pointer;
+      font-size: .9rem; font-weight: 600; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #1a1a2e; color: #fff; }
+    .btn-success { background: #2e7d32; color: #fff; }
+    .btn-danger  { background: #c62828; color: #fff; }
+    .btn-outline { background: #fff; color: #1a1a2e; border: 1.5px solid #1a1a2e; }
+    .btn-full { width: 100%; }
+    .btn-sm { padding: 6px 14px; font-size: .8rem; }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: .72rem; font-weight: 600; text-transform: uppercase; }
+    .badge-green  { background: #e8f5e9; color: #2e7d32; }
+    .badge-orange { background: #fff3e0; color: #e65100; }
+    .badge-red    { background: #ffebee; color: #c62828; }
+    .badge-gray   { background: #f5f5f5; color: #666; }
+
+    /* Project list */
+    .project-item { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .project-item:last-child { border-bottom: none; }
+    .project-id { font-weight: 600; font-size: .88rem; }
+    .project-meta { font-size: .78rem; color: #888; margin-top: 2px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #1a1a2e; color: #fff; padding: 10px 20px; border-radius: 8px;
+      font-size: .85rem; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+      opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Empty */
+    .empty { color: #888; font-size: .85rem; text-align: center; padding: 20px 0; }
+
+    /* Spinner */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,.1); border-top-color: #1a1a2e; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Section header */
+    .section-header { display: flex; align-items: center; gap: 10px; font-size: .72rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .8px; padding: 16px 0 6px; }
+    .section-header::after { content: ''; flex: 1; height: 1px; background: #e0e0e0; }
+
+    /* Install banner */
+    .install-banner {
+      background: #1a1a2e; color: #fff; padding: 14px 16px;
+      display: flex; align-items: flex-start; gap: 12px;
+      position: relative;
+    }
+    .install-banner .install-icon { font-size: 1.6rem; flex-shrink: 0; margin-top: 2px; }
+    .install-banner .install-text { flex: 1; font-size: .82rem; line-height: 1.45; }
+    .install-banner .install-text strong { display: block; margin-bottom: 3px; font-size: .88rem; }
+    .install-banner .install-btn {
+      background: #fff; color: #1a1a2e; border: none; border-radius: 6px;
+      padding: 7px 14px; font-size: .82rem; font-weight: 700; cursor: pointer;
+      white-space: nowrap; align-self: center; flex-shrink: 0;
+    }
+    .install-banner .close-btn {
+      position: absolute; top: 8px; right: 10px; background: none; border: none;
+      color: #8888bb; font-size: 1rem; cursor: pointer; padding: 2px 6px;
+    }
+    /* Safe area padding for notched phones */
+    .container { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+    header { padding-top: env(safe-area-inset-top); }
+  </style>
+</head>
+<body>
+  <!-- Install banner (hidden until triggered) -->
+  <div class="install-banner" id="installBanner" style="display:none">
+    <div class="install-icon">📲</div>
+    <div class="install-text" id="installText">
+      <strong>Install this app</strong>
+      Add to your home screen for quick access in the field.
+    </div>
+    <button class="install-btn" id="installBtn">Install</button>
+    <button class="close-btn" onclick="dismissInstall()">✕</button>
+  </div>
+
+  <header>
+    <div>
+      <h1>Petition Verifier</h1>
+      <div class="subtitle">Worker Portal</div>
+    </div>
+    <div class="user-info" id="headerUser">Loading…</div>
+  </header>
+
+  <div class="container">
+
+    <!-- MY STATS -->
+    <div class="section-header">My Stats</div>
+    <div class="card">
+      <div class="card-title">This Period</div>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-tile green"><div class="num" id="statValidSigs">—</div><div class="lbl">Valid Sigs</div></div>
+        <div class="stat-tile blue"><div class="num" id="statValidity">—</div><div class="lbl">Validity Rate</div></div>
+        <div class="stat-tile orange"><div class="num" id="statEstPay">—</div><div class="lbl">Est. Net Pay</div></div>
+        <div class="stat-tile purple"><div class="num" id="statHours">—</div><div class="lbl">Total Hours</div></div>
+      </div>
+      <div class="progress-wrap" id="bonusProgress">
+        <div class="progress-label">
+          <span>Bonus Tier Progress</span>
+          <span id="progressLabel">—</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        <div class="tier-info" id="tierInfo">Loading…</div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD POSITION -->
+    <div class="section-header">Leaderboard</div>
+    <div class="card">
+      <div class="lb-pos">
+        <div class="rank" id="myRank">—</div>
+        <div class="of" id="myRankOf">of — workers this period</div>
+      </div>
+    </div>
+
+    <!-- MY SCHEDULE -->
+    <div class="section-header">My Schedule</div>
+    <div class="card">
+      <div class="card-title">This Week's Shifts</div>
+      <div id="myShifts"><div class="empty"><span class="spinner"></span></div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Request Schedule for Next Week</div>
+      <form id="scheduleForm">
+        <div class="form-group">
+          <label>Preferred Days</label>
+          <div class="day-checkbox-grid">
+            <div class="day-check"><input type="checkbox" name="days" value="Monday" id="dMon"><label for="dMon">Mon</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Tuesday" id="dTue"><label for="dTue">Tue</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Wednesday" id="dWed"><label for="dWed">Wed</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Thursday" id="dThu"><label for="dThu">Thu</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Friday" id="dFri"><label for="dFri">Fri</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Saturday" id="dSat"><label for="dSat">Sat</label></div>
+            <div class="day-check"><input type="checkbox" name="days" value="Sunday" id="dSun"><label for="dSun">Sun</label></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Preferred Hours (e.g. "9am-1pm")</label>
+          <input type="text" name="preferred_hours" placeholder="9am-1pm">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea name="notes" rows="2" placeholder="Anything your manager should know…" style="resize:vertical"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
+      </form>
+      <div id="myScheduleRequests" style="margin-top:14px"></div>
+    </div>
+
+    <!-- MY SHEETS -->
+    <div class="section-header">My Sheets</div>
+    <div class="card">
+      <div class="card-title">Submitted Sheets</div>
+      <div id="myProjects"><div class="empty"><span class="spinner"></span></div></div>
+      <div style="margin-top:14px">
+        <div class="card-title" style="margin-bottom:10px">Submit a Petition Sheet</div>
+        <form id="uploadForm">
+          <div class="form-group">
+            <label>Petition Sheet</label>
+            <div style="display:flex;gap:8px;margin-bottom:6px">
+              <label style="flex:1;text-align:center;padding:10px;border:1.5px dashed #ccc;border-radius:8px;cursor:pointer;font-size:.82rem;color:#555">
+                📁 Choose file
+                <input type="file" name="petition" id="petitionFile" accept=".pdf,image/*" required style="display:none">
+              </label>
+              <label style="flex:1;text-align:center;padding:10px;border:1.5px dashed #ccc;border-radius:8px;cursor:pointer;font-size:.82rem;color:#555" id="cameraLabel">
+                📷 Take photo
+                <input type="file" name="petition" id="petitionCamera" accept="image/*" capture="environment" style="display:none">
+              </label>
+            </div>
+            <div id="fileChosen" style="font-size:.78rem;color:#888;min-height:18px"></div>
+          </div>
+          <div class="form-group"><label>County</label><input type="text" name="county" placeholder="e.g. Los Angeles"></div>
+          <div class="form-group">
+            <label>My signature count <span style="font-weight:400;color:#888">(optional — enter if you think the system will miscount)</span></label>
+            <input type="number" name="manual_sig_count" min="0" placeholder="e.g. 47">
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Upload &amp; Process</button>
+        </form>
+        <div id="uploadStatus" style="margin-top:10px;font-size:.83rem"></div>
+      </div>
+    </div>
+
+    <!-- PAYMENT PREFERENCES -->
+    <div class="section-header">Payment Preferences</div>
+    <div class="card">
+      <div class="card-title">How would you like to be paid?</div>
+      <form id="paymentForm">
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select name="method" id="payMethod">
+            <option value="check">Check</option>
+            <option value="zelle">Zelle</option>
+            <option value="venmo">Venmo</option>
+            <option value="direct_deposit">Direct Deposit</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Details (phone, email, or account info)</label>
+          <input type="text" name="details" id="payDetails" placeholder="e.g. +1-555-1234 for Zelle">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Preferences</button>
+      </form>
+    </div>
+
+    <!-- LOGOUT -->
+    <div style="text-align:center;margin-top:8px;padding-bottom:20px">
+      <button class="btn btn-danger" onclick="logout()">Sign Out</button>
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  // ── Service worker ─────────────────────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+
+  // ── PWA install prompt ─────────────────────────────────────────────────────
+  let _deferredPrompt = null;
+  const _dismissed = sessionStorage.getItem('pv_install_dismissed');
+
+  // Android / Chrome: capture the native install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredPrompt = e;
+    if (!_dismissed) showInstallBanner('android');
+  });
+
+  function showInstallBanner(platform) {
+    const banner = document.getElementById('installBanner');
+    const text   = document.getElementById('installText');
+    const btn    = document.getElementById('installBtn');
+    if (platform === 'ios') {
+      text.innerHTML = '<strong>Install this app</strong>Tap <strong>Share</strong> then <strong>"Add to Home Screen"</strong> to get quick access.';
+      btn.style.display = 'none';
+    } else {
+      btn.onclick = async () => {
+        _deferredPrompt.prompt();
+        const { outcome } = await _deferredPrompt.userChoice;
+        if (outcome === 'accepted') dismissInstall();
+        _deferredPrompt = null;
+      };
+    }
+    banner.style.display = 'flex';
+  }
+
+  function dismissInstall() {
+    document.getElementById('installBanner').style.display = 'none';
+    sessionStorage.setItem('pv_install_dismissed', '1');
+  }
+
+  // iOS: show manual instructions if not already installed as standalone
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone;
+  if (isIos && !isStandalone && !_dismissed) {
+    showInstallBanner('ios');
+  }
+
+  // ── Dual file input (choose file vs camera) ───────────────────────────────
+  function syncFileInput(src, dst) {
+    const file = src.files[0];
+    if (!file) return;
+    // Transfer to the other input's form field name so FormData picks it up
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    dst.files = dt.files;
+    document.getElementById('fileChosen').textContent = file.name;
+  }
+  document.getElementById('petitionFile').addEventListener('change', function() {
+    syncFileInput(this, document.getElementById('petitionCamera'));
+  });
+  document.getElementById('petitionCamera').addEventListener('change', function() {
+    syncFileInput(this, document.getElementById('petitionFile'));
+  });
+
+  // ── Auth guard ─────────────────────────────────────────────────────────────
+  const token = localStorage.getItem('pv_token');
+  const role  = localStorage.getItem('pv_role');
+  const userId = parseInt(localStorage.getItem('pv_user_id') || '0');
+  const fullName = localStorage.getItem('pv_full_name') || '';
+
+  if (!token) window.location.href = '/static/login.html';
+  if (role === 'admin' || role === 'boss') window.location.href = '/static/dashboard.html';
+
+  document.getElementById('headerUser').textContent = fullName;
+
+  function api(path, opts = {}) {
+    return fetch(path, {
+      ...opts,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+    }).then(async r => {
+      if (r.status === 401) { logout(); throw new Error('Unauthorized'); }
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || `HTTP ${r.status}`);
+      }
+      return r.json();
+    });
+  }
+
+  function logout() {
+    localStorage.clear();
+    window.location.href = '/static/login.html';
+  }
+
+  function fmt(cents) { return '$' + (cents / 100).toFixed(2); }
+  function fmtPct(v)  { return v.toFixed(1) + '%'; }
+
+  function showToast(msg, color = '#1a1a2e') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.background = color;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  async function loadStats() {
+    try {
+      const preview = await api('/payroll/preview');
+      document.getElementById('statValidSigs').textContent = preview.valid_signatures.toLocaleString();
+      document.getElementById('statValidity').textContent = fmtPct(preview.validity_rate);
+      document.getElementById('statEstPay').textContent = fmt(preview.net_cents);
+      document.getElementById('statHours').textContent = preview.total_hours.toFixed(1);
+
+      // Bonus progress: based on sigs per last shift
+      const validSigs = preview.valid_signatures;
+      // Use avg sigs per shift
+      const shiftCount = (preview.shift_breakdown || []).length;
+      const avgSigsPerShift = shiftCount > 0 ? Math.round(validSigs / shiftCount) : 0;
+
+      // Weekday tiers: 0,40,50,60,70,80
+      const tiers = [
+        { threshold: 80, label: '$60 bonus + lunch', next: null },
+        { threshold: 70, label: '$40 bonus', next: 80 },
+        { threshold: 60, label: '$20 bonus', next: 70 },
+        { threshold: 50, label: 'Free lunch', next: 60 },
+        { threshold: 40, label: 'Base pay', next: 50 },
+        { threshold: 0,  label: 'Below threshold', next: 40 },
+      ];
+
+      let currentTier = tiers.find(t => avgSigsPerShift >= t.threshold) || tiers[tiers.length - 1];
+      let pct = 0;
+      let nextLabel = 'Max tier reached';
+      if (currentTier.next !== null) {
+        pct = (avgSigsPerShift - currentTier.threshold) / (currentTier.next - currentTier.threshold) * 100;
+        pct = Math.min(100, Math.max(0, pct));
+        nextLabel = `${avgSigsPerShift}/${currentTier.next} sigs to ${tiers.find(t => t.threshold === currentTier.next)?.label}`;
+      } else {
+        pct = 100;
+      }
+
+      document.getElementById('progressFill').style.width = `${pct}%`;
+      document.getElementById('progressLabel').textContent = `${Math.round(pct)}%`;
+      document.getElementById('tierInfo').innerHTML =
+        `Current: <strong>${currentTier.label}</strong> (avg ${avgSigsPerShift} sigs/shift) — ${nextLabel}`;
+    } catch(e) { console.error(e); }
+  }
+
+  // ── Leaderboard position ───────────────────────────────────────────────────
+  async function loadLeaderboardPos() {
+    try {
+      const data = await api('/leaderboard');
+      document.getElementById('myRank').textContent = data.my_rank !== null ? `#${data.my_rank}` : '—';
+      document.getElementById('myRankOf').textContent = `of ${data.total_workers} workers this period`;
+    } catch(e) { console.error(e); }
+  }
+
+  // ── Schedule ───────────────────────────────────────────────────────────────
+  async function loadMyShifts() {
+    const today = new Date();
+    const dayOfWeek = today.getDay() || 7;
+    const monday = new Date(today); monday.setDate(today.getDate() - dayOfWeek + 1); monday.setHours(0,0,0,0);
+    const shifts = await api(`/shifts?date_from=${monday.toISOString().split('T')[0]}T00:00:00`).catch(() => []);
+    const myShifts = shifts.filter(s => s.worker_id === userId);
+    const el = document.getElementById('myShifts');
+    if (myShifts.length === 0) {
+      el.innerHTML = '<div class="empty">No shifts this week</div>';
+      return;
+    }
+    el.innerHTML = myShifts.map(s => {
+      const inTime = new Date(s.clock_in + 'Z').toLocaleString();
+      const outTime = s.clock_out ? new Date(s.clock_out + 'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Active';
+      return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:.85rem">
+        <strong>${inTime}</strong> → ${outTime}
+        ${s.hours ? `(${s.hours.toFixed(1)}h)` : ''}
+        ${s.is_weekend ? '<span class="badge badge-orange">Weekend</span>' : ''}
+        ${s.approved ? '<span class="badge badge-green">Approved</span>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function loadMyScheduleRequests() {
+    const reqs = await api('/schedule').catch(() => []);
+    const el = document.getElementById('myScheduleRequests');
+    if (reqs.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div style="font-size:.78rem;font-weight:600;color:#555;margin-bottom:6px;text-transform:uppercase">My Requests</div>` +
+      reqs.slice(0, 5).map(r => `
+        <div style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:.82rem;display:flex;align-items:center;gap:8px">
+          Week of ${r.week_of} — ${r.preferred_days.join(', ')}
+          <span class="badge badge-${r.status==='approved'?'green':r.status==='rejected'?'red':'orange'}">${r.status}</span>
+        </div>
+      `).join('');
+  }
+
+  document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const days = fd.getAll('days');
+    if (days.length === 0) { showToast('Select at least one day', '#e65100'); return; }
+    const monday = new Date();
+    const dow = monday.getDay() || 7;
+    monday.setDate(monday.getDate() - dow + 1 + 7); // next week's Monday
+    const weekOf = monday.toISOString().split('T')[0];
+    try {
+      await api('/schedule', {
+        method: 'POST',
+        body: JSON.stringify({
+          week_of: weekOf,
+          preferred_days: days,
+          preferred_hours: fd.get('preferred_hours') || '',
+          notes: fd.get('notes') || '',
+        }),
+      });
+      showToast('Schedule request submitted!', '#2e7d32');
+      e.target.reset();
+      loadMyScheduleRequests();
+    } catch(err) { showToast(err.message, '#c62828'); }
+  });
+
+  // ── Petitions ──────────────────────────────────────────────────────────────
+  async function loadMyProjects() {
+    const wps = await api(`/workers/${userId}/projects`).catch(() => []);
+    const el = document.getElementById('myProjects');
+    if (wps.length === 0) {
+      el.innerHTML = '<div class="empty">No sheets submitted yet</div>';
+      return;
+    }
+    el.innerHTML = wps.map(wp => {
+      const ocrCount = wp.signed_sigs !== undefined ? wp.signed_sigs : (wp.total_sigs || 0);
+      const manualBadge = wp.manual_sig_count !== null && wp.manual_sig_count !== undefined
+        ? `<span class="badge badge-orange" title="Your hand-count">My count: ${wp.manual_sig_count}</span>`
+        : '';
+      return `
+        <div class="project-item">
+          <div class="project-id" style="display:flex;align-items:center;gap:8px">
+            ${wp.project_id}
+            ${manualBadge}
+          </div>
+          <div class="project-meta">
+            AI counted: ${ocrCount} signatures · Submitted ${wp.assigned_at ? new Date(wp.assigned_at).toLocaleDateString() : '—'}
+          </div>
+          <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+            <input type="number" min="0" placeholder="Correct count…" id="cnt-${wp.project_id}"
+              style="width:130px;padding:5px 8px;border:1.5px solid #ddd;border-radius:6px;font-size:.82rem"
+              value="${wp.manual_sig_count !== null && wp.manual_sig_count !== undefined ? wp.manual_sig_count : ''}">
+            <button class="btn btn-outline btn-sm" onclick="saveCount('${wp.project_id}')">Save my count</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function saveCount(projectId) {
+    const input = document.getElementById(`cnt-${projectId}`);
+    const val = parseInt(input.value);
+    if (isNaN(val) || val < 0) { showToast('Enter a valid number', '#e65100'); return; }
+    try {
+      await api(`/worker/projects/${projectId}/count`, {
+        method: 'PATCH',
+        body: JSON.stringify({ count: val }),
+      });
+      showToast('Count saved!', '#2e7d32');
+      loadMyProjects();
+    } catch(err) { showToast(err.message, '#c62828'); }
+  }
+
+  document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    // Build FormData manually — two file inputs share the name "petition",
+    // pick whichever one has a file chosen.
+    const fileInput   = document.getElementById('petitionFile');
+    const cameraInput = document.getElementById('petitionCamera');
+    const chosenFile  = (cameraInput.files[0]) || (fileInput.files[0]);
+    if (!chosenFile) { showToast('Choose a file or take a photo first', '#e65100'); return; }
+
+    const rawFd = new FormData(e.target);
+    const fd = new FormData();
+    fd.append('petition', chosenFile, chosenFile.name);
+    if (rawFd.get('county'))          fd.append('county', rawFd.get('county'));
+    if (rawFd.get('manual_sig_count')) fd.append('manual_sig_count', rawFd.get('manual_sig_count'));
+
+    const statusEl = document.getElementById('uploadStatus');
+    statusEl.style.color = '#555';
+    statusEl.textContent = 'Uploading and processing…';
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/worker/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Upload failed');
+      }
+      const data = await res.json();
+      const projectId = data.project_id;
+      const cause = data.cause ? ` · ${data.cause}` : '';
+
+      statusEl.style.color = '#2e7d32';
+      if (data.is_continuation) {
+        statusEl.innerHTML = data.new_signatures > 0
+          ? `<strong>Same sheet recognized!</strong> You added ${data.new_signatures} new signature${data.new_signatures !== 1 ? 's' : ''}. ${data.already_counted} were already counted by someone else. Total on this sheet: ${data.total_on_sheet}${cause}.`
+          : `<strong>Same sheet recognized</strong> — no new signatures found. All ${data.already_counted} were already counted${cause}.`;
+      } else {
+        statusEl.textContent = `Sheet submitted! ${data.new_signatures} signature${data.new_signatures !== 1 ? 's' : ''} found${cause}.`;
+      }
+      e.target.reset();
+      document.getElementById('fileChosen').textContent = '';
+      loadMyProjects();
+    } catch(err) {
+      statusEl.style.color = '#c62828';
+      statusEl.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ── Payment preferences ────────────────────────────────────────────────────
+  async function loadPaymentPrefs() {
+    try {
+      const pref = await api('/payment-preferences');
+      if (pref) {
+        document.getElementById('payMethod').value = pref.method || 'check';
+        document.getElementById('payDetails').value = pref.details || '';
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  document.getElementById('paymentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api('/payment-preferences', {
+        method: 'PUT',
+        body: JSON.stringify({
+          method: fd.get('method'),
+          details: fd.get('details') || '',
+        }),
+      });
+      showToast('Payment preferences saved!', '#2e7d32');
+    } catch(err) { showToast(err.message, '#c62828'); }
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    await Promise.all([
+      loadStats(),
+      loadLeaderboardPos(),
+      loadMyShifts(),
+      loadMyScheduleRequests(),
+      loadMyProjects(),
+      loadPaymentPrefs(),
+    ]);
+  }
+
+  init();
+  </script>
+</body>
+</html>

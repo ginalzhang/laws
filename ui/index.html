@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Petition Signature Verifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; color: #222; }
+
+    /* ── Header ── */
+    header {
+      background: #1a1a2e; color: #fff; padding: 14px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; }
+    header .subtitle { font-size: .78rem; color: #8888bb; margin-top: 2px; }
+
+    /* ── Valid counter banner ── */
+    .valid-banner {
+      background: linear-gradient(135deg, #1b5e20, #2e7d32);
+      color: #fff; padding: 16px 24px;
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    }
+    .valid-banner .big-num {
+      font-size: 3rem; font-weight: 800; line-height: 1;
+    }
+    .valid-banner .big-label {
+      font-size: .9rem; font-weight: 600; opacity: .85; margin-top: 2px;
+    }
+    .banner-stats {
+      display: flex; gap: 20px; flex-wrap: wrap; margin-left: auto;
+    }
+    .banner-stat { text-align: center; }
+    .banner-stat .n { font-size: 1.6rem; font-weight: 700; }
+    .banner-stat .l { font-size: .72rem; opacity: .75; text-transform: uppercase; letter-spacing: .5px; }
+    .banner-stat.review .n   { color: #ffe082; }
+    .banner-stat.rejected .n { color: #ef9a9a; }
+    .banner-stat.dupes .n    { color: #ce93d8; }
+
+    /* ── Upload panel ── */
+    .upload-panel {
+      background: #fff; border-bottom: 1px solid #e0e0e0;
+      padding: 16px 24px;
+    }
+    .upload-panel summary {
+      cursor: pointer; font-weight: 600; font-size: .9rem; color: #1a1a2e;
+      user-select: none; list-style: none; display: flex; align-items: center; gap: 8px;
+    }
+    .upload-panel summary::before { content: '▶'; font-size: .7rem; transition: transform .2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    .upload-form {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+      margin-top: 16px;
+    }
+    @media (max-width: 700px) { .upload-form { grid-template-columns: 1fr; } }
+    .form-group label {
+      display: block; font-size: .78rem; font-weight: 600; color: #555; margin-bottom: 4px;
+    }
+    .form-group input[type=text],
+    .form-group input[type=file],
+    .form-group select {
+      width: 100%; padding: 8px 10px; border: 1.5px solid #ddd; border-radius: 6px;
+      font-size: .88rem; font-family: inherit; background: #fafafa;
+    }
+    .form-group input[type=file] { padding: 6px; cursor: pointer; }
+    .photo-preview {
+      margin-top: 8px; max-height: 140px; border-radius: 6px;
+      border: 1px solid #ddd; display: none; object-fit: contain; width: 100%;
+    }
+    .upload-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+    .btn-upload {
+      background: #1a1a2e; color: #fff; border: none; padding: 10px 24px;
+      border-radius: 6px; cursor: pointer; font-size: .9rem; font-weight: 600;
+    }
+    .btn-upload:disabled { opacity: .5; cursor: not-allowed; }
+    .upload-status { font-size: .83rem; color: #555; }
+    .upload-status.error   { color: #c62828; }
+    .upload-status.success { color: #2e7d32; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      background: #fff; border-bottom: 1px solid #e0e0e0;
+      padding: 10px 24px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .project-select-wrap { display: flex; align-items: center; gap: 8px; }
+    .project-select-wrap label { font-size: .82rem; font-weight: 600; color: #555; }
+    .project-select-wrap select {
+      background: #fff; border: 1.5px solid #ddd; padding: 6px 10px;
+      border-radius: 6px; font-size: .85rem;
+    }
+    .filter-btn {
+      padding: 5px 14px; border-radius: 20px; border: 1.5px solid #ccc;
+      background: #fff; cursor: pointer; font-size: .85rem; font-weight: 500;
+      transition: all .15s;
+    }
+    .filter-btn.active   { border-color: transparent; color: #fff; }
+    .filter-btn.all      { background: #555; color: #fff; border-color: #555; }
+    .filter-btn.approved { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+    .filter-btn.review   { background: #e65100; border-color: #e65100; color: #fff; }
+    .filter-btn.rejected { background: #c62828; border-color: #c62828; color: #fff; }
+    .filter-btn.duplicate{ background: #6a1b9a; border-color: #6a1b9a; color: #fff; }
+    .filter-btn:not(.active):hover { border-color: #999; }
+    .export-btn {
+      margin-left: auto; padding: 6px 16px; background: #1a1a2e; color: #fff;
+      border: none; border-radius: 6px; cursor: pointer; font-size: .83rem;
+    }
+
+    /* ── Table ── */
+    main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+    table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    thead { background: #f0f0f0; }
+    th { padding: 10px 12px; text-align: left; font-size: .78rem; text-transform: uppercase; letter-spacing: .5px; color: #555; font-weight: 600; }
+    td { padding: 10px 12px; font-size: .85rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    }
+    .badge-approved  { background: #e8f5e9; color: #2e7d32; }
+    .badge-review    { background: #fff3e0; color: #e65100; }
+    .badge-rejected  { background: #ffebee; color: #c62828; }
+    .badge-duplicate { background: #f3e5f5; color: #6a1b9a; }
+
+    .conf-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+    .conf-bar { flex: 1; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 3px; }
+    .conf-num  { font-size: .78rem; color: #555; width: 34px; text-align: right; flex-shrink: 0; }
+
+    .action-btn {
+      padding: 4px 10px; border-radius: 4px; border: 1px solid #ddd;
+      background: #fff; cursor: pointer; font-size: .78rem;
+    }
+    .action-btn:hover { background: #f5f5f5; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 10px; padding: 28px 32px;
+      max-width: 540px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,.18);
+    }
+    .modal h2 { font-size: 1rem; margin-bottom: 6px; }
+    .modal .voter-info {
+      font-size: .82rem; color: #555; margin-bottom: 16px;
+      padding: 10px; background: #f9f9f9; border-radius: 6px; line-height: 1.6;
+    }
+    .modal label { display: block; font-size: .82rem; font-weight: 600; color: #555; margin-bottom: 4px; margin-top: 2px; }
+    .modal input, .modal textarea, .modal select {
+      width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: .88rem; margin-bottom: 12px; font-family: inherit;
+    }
+    .modal textarea { resize: vertical; min-height: 60px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .btn-primary { background: #1a1a2e; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: .88rem; }
+    .btn-cancel  { background: #fff; color: #555; border: 1px solid #ddd; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: .88rem; }
+
+    .empty { text-align: center; padding: 60px; color: #aaa; font-size: .95rem; }
+
+    .pagination { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
+    .page-btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; }
+    .page-btn.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Batch progress ── */
+    .batch-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;
+      background: #f9f9f9; border: 1px solid #e8e8e8; font-size: .85rem;
+    }
+    .batch-item .batch-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+    .batch-item .batch-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .batch-item .batch-result { font-size: .78rem; color: #555; flex-shrink: 0; }
+    .batch-item.pending  { opacity: .5; }
+    .batch-item.running  { border-color: #90caf9; background: #e3f2fd; }
+    .batch-item.done     { border-color: #a5d6a7; background: #e8f5e9; }
+    .batch-item.error    { border-color: #ef9a9a; background: #ffebee; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div><h1>Petition Signature Verifier</h1></div>
+    <div class="subtitle">Voter roll matching · Duplicate detection · Staff review</div>
+  </div>
+</header>
+
+<!-- Valid signature counter -->
+<div class="valid-banner" id="validBanner" style="display:none">
+  <div>
+    <div class="big-num" id="bannerApproved">0</div>
+    <div class="big-label">Valid Signatures</div>
+  </div>
+  <div class="banner-stats">
+    <div class="banner-stat review">
+      <div class="n" id="bannerReview">0</div>
+      <div class="l">Needs Review</div>
+    </div>
+    <div class="banner-stat rejected">
+      <div class="n" id="bannerRejected">0</div>
+      <div class="l">Rejected</div>
+    </div>
+    <div class="banner-stat dupes">
+      <div class="n" id="bannerDupes">0</div>
+      <div class="l">Duplicates</div>
+    </div>
+    <div class="banner-stat">
+      <div class="n" id="bannerTotal">0</div>
+      <div class="l">Total Lines</div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload panel -->
+<div class="upload-panel">
+  <details>
+    <summary>Scan New Petition (with Voter Roll)</summary>
+    <form class="upload-form" id="uploadForm" onsubmit="submitPetition(event)">
+
+      <div class="form-group">
+        <label>Petition Photos or PDFs * <span style="font-weight:400;color:#888">(select multiple)</span></label>
+        <input type="file" id="petitionFile"
+               accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tiff,.tif"
+               multiple required>
+        <div style="font-size:.72rem;color:#888;margin-top:4px">
+          Accepts photos (JPG, PNG, HEIC) or PDF &middot; Select multiple files to batch process
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Voter Roll CSV *</label>
+        <input type="file" id="voterRollFile" accept=".csv" required>
+        <div style="font-size:.72rem;color:#888;margin-top:4px">
+          Required columns: voter_id, last_name, first_name, street_address
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>County</label>
+        <input type="text" id="countyInput" placeholder="e.g. Los Angeles County">
+      </div>
+
+      <div class="form-group">
+        <label>Project ID (optional)</label>
+        <input type="text" id="projectIdInput" placeholder="Auto-generated if blank">
+      </div>
+
+      <div class="upload-actions">
+        <button type="submit" class="btn-upload" id="uploadBtn">Process Petitions</button>
+        <span class="upload-status" id="uploadStatus"></span>
+      </div>
+      <div id="batchProgress" style="display:none;margin-top:16px;"></div>
+    </form>
+  </details>
+</div>
+
+<!-- Fraud scan panel -->
+<div class="upload-panel" style="border-top: 2px solid #ffebee;">
+  <details>
+    <summary style="color:#c62828;">&#9888; Fraud Scan (no voter roll needed)</summary>
+    <div style="margin-top:16px;max-width:480px;">
+      <div class="form-group">
+        <label>Petition Photos or PDFs <span style="font-weight:400;color:#888">(select multiple)</span></label>
+        <input type="file" id="fraudFile"
+               accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tiff,.tif"
+               multiple>
+        <div style="font-size:.72rem;color:#888;margin-top:4px">
+          Checks for missing signatures, duplicate names/addresses, sequential house numbers, and more
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:4px;">
+        <button class="btn-upload" style="background:#c62828;" onclick="runFraudScan()">Run Fraud Scan</button>
+        <span class="upload-status" id="fraudStatus"></span>
+      </div>
+      <div id="fraudBatchProgress" style="display:none;margin-top:12px;"></div>
+    </div>
+
+    <!-- Fraud results -->
+    <div id="fraudResults" style="display:none;margin-top:20px;">
+      <div id="fraudSummaryBar" style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;"></div>
+      <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+        <thead style="background:#f0f0f0;">
+          <tr>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">#</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Pg</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Name</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Address</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Date</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Sig</th>
+            <th style="padding:10px 12px;text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;color:#555;">Fraud Flags</th>
+          </tr>
+        </thead>
+        <tbody id="fraudBody"></tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="project-select-wrap">
+    <label for="projectSelect">Project:</label>
+    <select id="projectSelect" onchange="loadProject(this.value)">
+      <option value="">— Select project —</option>
+    </select>
+  </div>
+  <button class="filter-btn all active"      onclick="setFilter('all')">All</button>
+  <button class="filter-btn approved"         onclick="setFilter('approved')">Approved</button>
+  <button class="filter-btn review"           onclick="setFilter('review')">Needs Review</button>
+  <button class="filter-btn rejected"         onclick="setFilter('rejected')">Rejected</button>
+  <button class="filter-btn duplicate"        onclick="setFilter('duplicate')">Duplicate</button>
+  <button class="export-btn"                  onclick="exportCsv()">Export CSV</button>
+</div>
+
+<main>
+  <table id="sigTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Pg</th>
+        <th>Extracted Name</th>
+        <th>Extracted Address</th>
+        <th>Date</th>
+        <th>Sig</th>
+        <th>Best Voter Match</th>
+        <th>Name / Addr</th>
+        <th>Confidence</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="sigBody">
+      <tr><td colspan="11" class="empty">Select a project above or scan a new petition.</td></tr>
+    </tbody>
+  </table>
+  <div class="pagination" id="pagination"></div>
+</main>
+
+<!-- Review modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>Review Signature <span id="modalLine"></span></h2>
+    <div class="voter-info" id="modalVoterInfo"></div>
+    <label>Override status</label>
+    <select id="modalOverride">
+      <option value="">Keep auto result</option>
+      <option value="approved">Approved</option>
+      <option value="review">Needs review</option>
+      <option value="rejected">Rejected</option>
+      <option value="duplicate">Duplicate</option>
+    </select>
+    <label>Correct voter ID (optional)</label>
+    <input id="modalVoterId" type="text" placeholder="e.g. CA-12345678">
+    <label>Notes</label>
+    <textarea id="modalNotes" placeholder="Reason for change…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitReview()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentProject = null;
+let currentFilter  = 'all';
+let currentPage    = 1;
+const PAGE_SIZE    = 50;
+let editingLine    = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await refreshProjects();
+}
+
+async function refreshProjects() {
+  const projects = await apiFetch('/projects');
+  const sel = document.getElementById('projectSelect');
+  const prevVal = sel.value;
+  sel.innerHTML = '<option value="">— Select project —</option>';
+  projects.forEach(p => {
+    const label = [
+      p.county ? `[${p.county}]` : '',
+      p.id,
+      '—',
+      p.pdf_path.split('/').pop(),
+      `(${p.approved} valid / ${p.total_lines} total)`,
+    ].filter(Boolean).join(' ');
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+  if (prevVal) sel.value = prevVal;
+  if (projects.length === 1 && !currentProject) loadProject(projects[0].id);
+}
+
+async function loadProject(id) {
+  if (!id) {
+    document.getElementById('validBanner').style.display = 'none';
+    return;
+  }
+  currentProject = id;
+  currentPage    = 1;
+
+  const projects = await apiFetch('/projects');
+  const p = projects.find(x => x.id === id);
+  if (p) updateBanner(p);
+
+  await loadPage();
+}
+
+function updateBanner(p) {
+  document.getElementById('validBanner').style.display  = 'flex';
+  document.getElementById('bannerApproved').textContent = p.approved;
+  document.getElementById('bannerReview').textContent   = p.review;
+  document.getElementById('bannerRejected').textContent = p.rejected;
+  document.getElementById('bannerDupes').textContent    = p.duplicates;
+  document.getElementById('bannerTotal').textContent    = p.total_lines;
+}
+
+async function loadPage() {
+  if (!currentProject) return;
+  const filterParam = currentFilter !== 'all' ? `&status=${currentFilter}` : '';
+  const data = await apiFetch(
+    `/projects/${currentProject}/signatures?page=${currentPage}&page_size=${PAGE_SIZE}${filterParam}`
+  );
+  renderTable(data.items);
+  renderPagination(data.total);
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+function previewPhoto(input) {
+  const preview = document.getElementById('photoPreview');
+  const file    = input.files[0];
+  if (!file || !file.type.startsWith('image/')) {
+    preview.style.display = 'none';
+    return;
+  }
+  preview.src           = URL.createObjectURL(file);
+  preview.style.display = 'block';
+}
+
+async function submitPetition(e) {
+  e.preventDefault();
+  const btn       = document.getElementById('uploadBtn');
+  const status    = document.getElementById('uploadStatus');
+  const files     = Array.from(document.getElementById('petitionFile').files);
+  const voterRoll = document.getElementById('voterRollFile').files[0];
+  const county    = document.getElementById('countyInput').value.trim();
+
+  if (!files.length || !voterRoll) {
+    status.textContent = 'Please select petition file(s) and a voter roll CSV.';
+    status.className   = 'upload-status error';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = '';
+
+  // Build progress list
+  const progressEl = document.getElementById('batchProgress');
+  progressEl.style.display = 'block';
+  progressEl.innerHTML = files.map((f, i) => `
+    <div class="batch-item pending" id="batch-${i}">
+      <span class="batch-icon">&#8212;</span>
+      <span class="batch-name">${esc(f.name)}</span>
+      <span class="batch-result">Waiting…</span>
+    </div>`).join('');
+
+  function setItemState(i, state, icon, result) {
+    const el = document.getElementById(`batch-${i}`);
+    el.className = `batch-item ${state}`;
+    el.querySelector('.batch-icon').innerHTML   = icon;
+    el.querySelector('.batch-result').textContent = result;
+  }
+
+  async function processOne(file, idx) {
+    setItemState(idx, 'running', '⏳', 'Processing…');
+    const fd = new FormData();
+    fd.append('petition', file);
+    fd.append('voter_roll_file', voterRoll);
+    if (county) fd.append('county', county);
+    const res = await fetch(`${API}/process`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json();
+  }
+
+  // Fire all requests in parallel
+  const results = await Promise.allSettled(
+    files.map((file, idx) => processOne(file, idx))
+  );
+
+  let lastSuccess = null;
+  let doneCount = 0, errCount = 0;
+
+  results.forEach((r, idx) => {
+    if (r.status === 'fulfilled') {
+      const d = r.value;
+      setItemState(idx, 'done', '✓', `${d.approved} valid / ${d.total} total · ID: ${d.project_id}`);
+      lastSuccess = d.project_id;
+      doneCount++;
+    } else {
+      setItemState(idx, 'error', '✗', r.reason?.message || 'Error');
+      errCount++;
+    }
+  });
+
+  status.className   = errCount ? 'upload-status error' : 'upload-status success';
+  status.textContent = `${doneCount} processed${errCount ? `, ${errCount} failed` : ''}.`;
+
+  await refreshProjects();
+  if (lastSuccess) {
+    document.getElementById('projectSelect').value = lastSuccess;
+    loadProject(lastSuccess);
+  }
+  btn.disabled = false;
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function setFilter(f) {
+  currentFilter = f;
+  currentPage   = 1;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.filter-btn.${f}`).classList.add('active');
+  loadPage();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderTable(items) {
+  const body = document.getElementById('sigBody');
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="11" class="empty">No signatures match this filter.</td></tr>`;
+    return;
+  }
+  body.innerHTML = items.map(sig => `
+    <tr>
+      <td>${sig.line_number}</td>
+      <td>${sig.page}</td>
+      <td>${esc(sig.raw_name)}</td>
+      <td>${esc(sig.raw_address)}</td>
+      <td>${esc(sig.raw_date)}</td>
+      <td style="font-size:1.1rem">${sig.signature_present ? '&#9997;' : '&mdash;'}</td>
+      <td>
+        ${sig.voter_name
+          ? `<strong>${esc(sig.voter_name)}</strong><br>
+             <small style="color:#777">${esc(sig.voter_address || '')}</small><br>
+             <small style="color:#999">ID: ${esc(sig.voter_id || '')}</small>`
+          : '<span style="color:#aaa">No match</span>'}
+      </td>
+      <td>
+        ${sig.name_score != null
+          ? `<small>Name&nbsp;<b>${Math.round(sig.name_score)}</b><br>Addr&nbsp;<b>${Math.round(sig.address_score)}</b></small>`
+          : '<span style="color:#aaa">&mdash;</span>'}
+      </td>
+      <td>${renderConfBar(sig.match_confidence)}</td>
+      <td>${renderBadge(sig.status)}</td>
+      <td><button class="action-btn" onclick='openModal(${sig.line_number}, ${JSON.stringify(sig).replace(/'/g, "&#39;")})'>Edit</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderConfBar(conf) {
+  if (conf == null) return '<span style="color:#aaa">&mdash;</span>';
+  const c     = Math.round(conf);
+  const color = c >= 85 ? '#2e7d32' : c >= 70 ? '#e65100' : '#c62828';
+  return `<div class="conf-bar-wrap">
+    <div class="conf-bar"><div class="conf-fill" style="width:${c}%;background:${color}"></div></div>
+    <span class="conf-num">${c}</span>
+  </div>`;
+}
+
+function renderBadge(status) {
+  const map = { approved: 'badge-approved', review: 'badge-review',
+                rejected: 'badge-rejected', duplicate: 'badge-duplicate' };
+  return `<span class="badge ${map[status] || ''}">${status}</span>`;
+}
+
+function renderPagination(total) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  const el    = document.getElementById('pagination');
+  if (pages <= 1) { el.innerHTML = ''; return; }
+  let html = `<button class="page-btn" onclick="goPage(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''}>&#8249; Prev</button>`;
+  for (let i = 1; i <= pages; i++) {
+    if (i === 1 || i === pages || Math.abs(i - currentPage) <= 2) {
+      html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+    } else if (Math.abs(i - currentPage) === 3) {
+      html += `<span style="padding:6px 4px">&hellip;</span>`;
+    }
+  }
+  html += `<button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage >= pages ? 'disabled' : ''}>Next &#8250;</button>`;
+  el.innerHTML = html;
+}
+
+function goPage(p) { currentPage = p; loadPage(); }
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(lineNum, sig) {
+  editingLine = lineNum;
+  document.getElementById('modalLine').textContent = `#${lineNum}`;
+
+  const lines = [
+    `Extracted: ${sig.raw_name || '—'} | ${sig.raw_address || '—'}`,
+    sig.voter_name
+      ? `Best match: ${sig.voter_name} · ${sig.voter_address || ''} (ID: ${sig.voter_id || ''})`
+      : 'Best match: none found in voter roll',
+    sig.match_confidence != null
+      ? `Confidence: ${Math.round(sig.match_confidence)} (name ${Math.round(sig.name_score)}, addr ${Math.round(sig.address_score)})`
+      : '',
+  ].filter(Boolean);
+  document.getElementById('modalVoterInfo').innerHTML =
+    lines.map(l => `<div>${esc(l)}</div>`).join('');
+
+  document.getElementById('modalOverride').value = sig.staff_override || '';
+  document.getElementById('modalVoterId').value  = sig.staff_voter_id || sig.voter_id || '';
+  document.getElementById('modalNotes').value    = sig.staff_notes || '';
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  editingLine = null;
+}
+
+async function submitReview() {
+  if (!editingLine || !currentProject) return;
+  const override = document.getElementById('modalOverride').value || null;
+  const voter_id = document.getElementById('modalVoterId').value || null;
+  const notes    = document.getElementById('modalNotes').value;
+  await apiFetch(
+    `/projects/${currentProject}/signatures/${editingLine}/review`,
+    { method: 'POST', body: JSON.stringify({ override, voter_id, notes }) }
+  );
+  closeModal();
+  const projects = await apiFetch('/projects');
+  const p = projects.find(x => x.id === currentProject);
+  if (p) updateBanner(p);
+  loadPage();
+}
+
+// ── Fraud Scan ────────────────────────────────────────────────────────────────
+async function runFraudScan() {
+  const status  = document.getElementById('fraudStatus');
+  const files   = Array.from(document.getElementById('fraudFile').files);
+  if (!files.length) {
+    status.textContent = 'Please select a petition file first.';
+    status.className   = 'upload-status error';
+    return;
+  }
+
+  status.className   = 'upload-status';
+  status.textContent = '';
+  document.getElementById('fraudResults').style.display = 'none';
+
+  // For multiple files show a compact progress list; for one file show inline
+  const batchEl = document.getElementById('fraudBatchProgress');
+  if (files.length > 1) {
+    batchEl.style.display = 'block';
+    batchEl.innerHTML = files.map((f, i) => `
+      <div class="batch-item pending" id="fbatch-${i}">
+        <span class="batch-icon">&#8212;</span>
+        <span class="batch-name">${esc(f.name)}</span>
+        <span class="batch-result">Waiting…</span>
+      </div>`).join('');
+  } else {
+    batchEl.style.display = 'none';
+    status.textContent = 'Scanning for fraud indicators…';
+  }
+
+  function setFItem(i, state, icon, result) {
+    const el = document.getElementById(`fbatch-${i}`);
+    if (!el) return;
+    el.className = `batch-item ${state}`;
+    el.querySelector('.batch-icon').innerHTML    = icon;
+    el.querySelector('.batch-result').textContent = result;
+  }
+
+  async function scanOne(file, idx) {
+    setFItem(idx, 'running', '⏳', 'Scanning…');
+    const fd = new FormData();
+    fd.append('petition', file);
+    const res = await fetch(`${API}/fraud-scan`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json();
+  }
+
+  const results = await Promise.allSettled(files.map((f, i) => scanOne(f, i)));
+
+  // Merge all results into one combined view
+  const allLines = [];
+  let totalSuspicious = 0, totalFilled = 0, totalBlank = 0;
+  let lineOffset = 0;
+
+  results.forEach((r, idx) => {
+    if (r.status === 'fulfilled') {
+      const d = r.value;
+      const s = d.summary;
+      totalSuspicious += s.suspicious_lines ?? 0;
+      totalFilled     += s.filled_lines     ?? 0;
+      totalBlank      += s.blank_lines      ?? 0;
+      // Offset line numbers so they don't collide across files
+      d.lines.forEach(l => allLines.push({ ...l, line_number: l.line_number + lineOffset, _file: files[idx].name }));
+      lineOffset += d.lines.length;
+      setFItem(idx, 'done', '✓',
+        `${s.suspicious_lines ?? 0} suspicious / ${s.filled_lines ?? 0} filled`);
+    } else {
+      setFItem(idx, 'error', '✗', r.reason?.message || 'Error');
+    }
+  });
+
+  const combinedData = {
+    summary: {
+      total_lines: allLines.length,
+      filled_lines: totalFilled,
+      blank_lines: totalBlank,
+      suspicious_lines: totalSuspicious,
+      clean_lines: totalFilled - totalSuspicious,
+      flag_counts: {},
+    },
+    lines: allLines,
+  };
+  // Tally flag counts across all files
+  allLines.forEach(l => l.flags.forEach(f => {
+    combinedData.summary.flag_counts[f.code] = (combinedData.summary.flag_counts[f.code] || 0) + 1;
+  }));
+  // Remove blank_line from flag_counts (handled separately)
+  delete combinedData.summary.flag_counts['blank_line'];
+
+  status.className   = 'upload-status success';
+  status.textContent = `${totalSuspicious} suspicious of ${totalFilled} filled lines across ${files.length} file${files.length > 1 ? 's' : ''}.`;
+  renderFraudResults(combinedData);
+}
+
+const FLAG_LABELS = {
+  no_signature:       { label: 'No Signature',        color: '#c62828', bg: '#ffebee' },
+  duplicate_name:     { label: 'Duplicate Name',       color: '#e65100', bg: '#fff3e0' },
+  duplicate_address:  { label: 'Duplicate Address',    color: '#e65100', bg: '#fff3e0' },
+  sequential_address: { label: 'Sequential Addresses', color: '#6a1b9a', bg: '#f3e5f5' },
+  name_cluster:       { label: 'Name Cluster',         color: '#1565c0', bg: '#e3f2fd' },
+  blank_line:         { label: 'Blank Line',            color: '#555',    bg: '#f5f5f5' },
+  printed_name:       { label: 'Possibly Printed',     color: '#2e7d32', bg: '#e8f5e9' },
+};
+
+function renderFraudResults(data) {
+  // Summary bar
+  const s    = data.summary;
+  const fc   = s.flag_counts || {};
+  const suspicious = s.suspicious_lines ?? s.flagged_lines;
+  const clean      = s.clean_lines ?? 0;
+  const blank      = s.blank_lines ?? 0;
+  const bars = [
+    `<div style="background:#ffebee;padding:10px 16px;border-radius:8px;text-align:center;">
+       <div style="font-size:1.8rem;font-weight:800;color:#c62828">${suspicious}</div>
+       <div style="font-size:.72rem;color:#c62828;font-weight:600;text-transform:uppercase;">Suspicious Lines</div>
+     </div>`,
+    `<div style="background:#e8f5e9;padding:10px 16px;border-radius:8px;text-align:center;">
+       <div style="font-size:1.8rem;font-weight:800;color:#2e7d32">${clean}</div>
+       <div style="font-size:.72rem;color:#2e7d32;font-weight:600;text-transform:uppercase;">Clean Lines</div>
+     </div>`,
+    `<div style="background:#f5f5f5;padding:10px 16px;border-radius:8px;text-align:center;">
+       <div style="font-size:1.8rem;font-weight:800;color:#888">${blank}</div>
+       <div style="font-size:.72rem;color:#888;font-weight:600;text-transform:uppercase;">Blank / Unsigned</div>
+     </div>`,
+  ];
+  Object.entries(fc).forEach(([code, count]) => {
+    const meta = FLAG_LABELS[code] || { label: code, color: '#555', bg: '#f5f5f5' };
+    bars.push(`<div style="background:${meta.bg};padding:10px 16px;border-radius:8px;text-align:center;">
+      <div style="font-size:1.8rem;font-weight:800;color:${meta.color}">${count}</div>
+      <div style="font-size:.72rem;color:${meta.color};font-weight:600;text-transform:uppercase;">${meta.label}</div>
+    </div>`);
+  });
+  document.getElementById('fraudSummaryBar').innerHTML = bars.join('');
+
+  // Table
+  const body = document.getElementById('fraudBody');
+  body.innerHTML = data.lines.map(line => {
+    const isOnlyBlank = line.flags.length > 0 && line.flags.every(f => f.code === 'blank_line');
+    const rowBg = isOnlyBlank ? '' : (line.flagged ? '#fff8f8' : '');
+    const flagBadges = line.flags.filter(f => f.code !== 'blank_line').map(f => {
+      const meta = FLAG_LABELS[f.code] || { label: f.code, color: '#555', bg: '#f5f5f5' };
+      const related = f.related_lines.length
+        ? ` <small style="color:#999">(lines ${f.related_lines.join(', ')})</small>` : '';
+      return `<div style="margin-bottom:3px;">
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:600;background:${meta.bg};color:${meta.color}">${meta.label}</span>${related}
+        <div style="font-size:.72rem;color:#777;margin-left:4px">${esc(f.description)}</div>
+      </div>`;
+    }).join('');
+
+    return `<tr style="background:${rowBg}">
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">${line.line_number}</td>
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">${line.page}</td>
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">${esc(line.raw_name)}</td>
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">${esc(line.raw_address)}</td>
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">${esc(line.raw_date)}</td>
+      <td style="padding:10px 12px;font-size:1.1rem;border-bottom:1px solid #f0f0f0">${line.signature_present ? '&#9997;' : '<span style="color:#c62828;font-weight:700;">✗</span>'}</td>
+      <td style="padding:10px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0">
+        ${isOnlyBlank
+        ? '<span style="color:#aaa">— unsigned —</span>'
+        : (flagBadges.length ? flagBadges : '<span style="color:#2e7d32;font-weight:600;">&#10003; Clean</span>')
+      }
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('fraudResults').style.display = 'block';
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportCsv() {
+  if (!currentProject) return;
+  window.location.href = `${API}/projects/${currentProject}/export`;
+}
+
+// ── Util ──────────────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const isJson = opts.body && typeof opts.body === 'string';
+  const res = await fetch(API + path, {
+    headers: isJson ? { 'Content-Type': 'application/json' } : {},
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+init();
+</script>
+</body>
+</html>
