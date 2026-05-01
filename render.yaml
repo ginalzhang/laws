@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: petition-verifier
+    runtime: python
+    buildCommand: "apt-get install -y tesseract-ocr poppler-utils && pip install -r requirements.txt"
+    startCommand: "uvicorn petition_verifier.api:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHONPATH
+        value: src
