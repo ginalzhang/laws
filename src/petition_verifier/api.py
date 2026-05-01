@@ -191,9 +191,9 @@ def _row_to_dict(row) -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    dashboard = _UI_DIR / "dashboard.html"
-    if dashboard.exists():
-        return HTMLResponse(dashboard.read_text())
+    login = _UI_DIR / "login.html"
+    if login.exists():
+        return HTMLResponse(login.read_text())
     return HTMLResponse("<h1>Petition Verifier API</h1><p>UI not found.</p>")
 
 

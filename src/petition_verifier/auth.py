@@ -68,6 +68,7 @@ def require_role(*roles: str):
     return dep
 
 
-require_worker = require_role("boss", "admin", "worker", "field_manager", "petitioner", "office_worker")
-require_admin  = require_role("boss", "admin")
-require_boss   = require_role("boss")
+require_worker  = require_role("boss", "admin", "worker", "field_manager", "petitioner", "office_worker")
+require_manager = require_role("boss", "admin", "field_manager")  # can manage workers/shifts/schedule
+require_admin   = require_role("boss", "admin")
+require_boss    = require_role("boss")

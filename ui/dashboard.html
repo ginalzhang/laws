@@ -362,11 +362,25 @@
           <div class="stat-card orange"><div class="label">Est. Payroll</div><div class="value" id="statPayroll">—</div></div>
           <div class="stat-card purple"><div class="label">Total Workers</div><div class="value" id="statWorkers">—</div></div>
         </div>
+
+        <!-- Today's Roster -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            <span class="card-title">Today's Roster</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm btn-outline" onclick="loadOverview()">Refresh</button>
+              <button class="btn btn-sm btn-primary" onclick="openRosterModal()">+ Add to Roster</button>
+            </div>
+          </div>
+          <div id="rosterList" style="display:flex;flex-wrap:wrap;gap:10px;min-height:42px">
+            <div class="empty" style="padding:8px 0">No workers on today's roster yet — add them above.</div>
+          </div>
+        </div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
           <div class="card">
             <div class="card-header">
               <span class="card-title">Currently Clocked In</span>
-              <button class="btn btn-sm btn-outline" onclick="loadOverview()">Refresh</button>
             </div>
             <div id="clockedInList" class="clocked-list"><div class="empty">No one clocked in</div></div>
           </div>
@@ -383,7 +397,7 @@
           Workers
           <button class="btn btn-primary" onclick="openAddWorkerModal()">+ Add Worker</button>
         </div>
-        <!-- bulk action bar, hidden until selections made -->
+        <!-- bulk action bar, hidden until selections made (admin only) -->
         <div id="bulkBar" style="display:none;align-items:center;gap:12px;padding:10px 16px;background:#fff3e0;border:1.5px solid #ffb74d;border-radius:8px;margin-bottom:12px">
           <span id="bulkCount" style="font-size:.88rem;font-weight:600;color:#e65100"></span>
           <button class="btn btn-sm btn-danger" onclick="bulkRemove()">Remove selected</button>
@@ -392,7 +406,7 @@
         <div class="card" style="padding:0">
           <div style="overflow-x:auto">
             <table id="workersTable">
-              <thead><tr>
+              <thead id="workersTableHead"><tr>
                 <th style="width:36px"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
                 <th>Name</th><th>Role</th><th>Phone</th><th>Email</th>
                 <th>Status</th><th>Wage</th><th>Actions</th>
@@ -690,6 +704,38 @@
     </div>
   </div>
 
+  <!-- Clock-Out With Time Modal -->
+  <div class="modal-overlay" id="clockOutModal">
+    <div class="modal" style="max-width:360px">
+      <span class="modal-close" onclick="closeModal('clockOutModal')">✕</span>
+      <div class="modal-title" id="clockOutModalTitle">Clock Out</div>
+      <input type="hidden" id="clockOutWorkerId">
+      <p style="font-size:.83rem;color:#666;margin:-8px 0 16px">Set the exact time this worker clocked out.</p>
+      <div class="form-group">
+        <label>Clock-Out Time</label>
+        <input type="time" id="clockOutTime">
+      </div>
+      <div id="clockOutError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('clockOutModal')">Cancel</button>
+        <button class="btn btn-danger" onclick="submitClockOut()">Clock Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add to Roster Modal -->
+  <div class="modal-overlay" id="rosterModal">
+    <div class="modal" style="max-width:420px">
+      <span class="modal-close" onclick="closeModal('rosterModal')">✕</span>
+      <div class="modal-title">Add Workers to Today's Roster</div>
+      <p style="font-size:.83rem;color:#666;margin:-8px 0 16px">Select workers expected to work today. You can clock them in from the roster.</p>
+      <div id="rosterPickerList" style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('rosterModal')">Done</button>
+      </div>
+    </div>
+  </div>
+
   <script>
   // ── Auth ───────────────────────────────────────────────────────────────────
   let _token = localStorage.getItem('pv_token') || '';
@@ -760,13 +806,19 @@
   });
 
   function applyRoleVisibility() {
-    // field_manager: only sees Schedule
     if (_role === 'field_manager') {
+      // Evan: workers + schedule only
+      const allowed = new Set(['workers', 'schedule']);
       document.querySelectorAll('.nav-item').forEach(el => {
-        const s = el.dataset.section;
-        if (s && s !== 'schedule') el.style.display = 'none';
+        if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
       });
-      showSection('schedule');
+      // Slim down workers table header — no checkbox, email, status, wage
+      document.getElementById('workersTableHead').innerHTML = `<tr>
+        <th>Name</th><th>Role</th><th>Phone</th><th>Actions</th>
+      </tr>`;
+      // Hide bulk bar (select all / remove selected)
+      document.getElementById('bulkBar').style.display = 'none !important';
+      showSection('workers');
     }
   }
 
@@ -830,6 +882,9 @@
       const totalPay = workers.reduce((s, w) => s + (w.estimated_pay_cents || 0), 0);
       document.getElementById('statPayroll').textContent = fmt(totalPay);
 
+      // Roster
+      renderRoster(workers);
+
       // Clocked-in list
       const listEl = document.getElementById('clockedInList');
       if (clocked.length === 0) {
@@ -837,9 +892,10 @@
       } else {
         listEl.innerHTML = clocked.map(w => {
           const elapsed = w.clock_in_time ? elapsedStr(w.clock_in_time) : '';
-          return `<div class="clocked-chip">
+          return `<div class="clocked-chip" style="cursor:pointer" onclick="openClockOutModal(${w.id}, '${w.full_name.replace(/'/g,"\\'")}')">
             <span class="clocked-dot in"></span>
             ${w.full_name} <span class="elapsed">${elapsed}</span>
+            <span style="font-size:.7rem;color:#888;margin-left:2px">· tap to clock out</span>
           </div>`;
         }).join('');
       }
@@ -906,19 +962,20 @@
       const statusDot = w.is_clocked_in
         ? `<span class="clocked-dot in"></span>In`
         : `<span class="clocked-dot out"></span>Out`;
+      const isManager = _role === 'field_manager';
       return `<tr>
-        <td><input type="checkbox" class="worker-cb" value="${w.id}" onchange="onWorkerCheck()"></td>
+        ${isManager ? '' : `<td><input type="checkbox" class="worker-cb" value="${w.id}" onchange="onWorkerCheck()"></td>`}
         <td style="font-weight:600">${w.full_name}</td>
         <td><span class="badge badge-${roleColor}">${roleLabel}</span></td>
         <td>${w.phone || '—'}</td>
-        <td>${w.email && !w.email.includes('@local') ? w.email : '—'}</td>
-        <td>${statusDot}</td>
-        <td>$${w.hourly_wage}/hr</td>
+        ${isManager ? '' : `<td>${w.email && !w.email.includes('@local') ? w.email : '—'}</td>`}
+        ${isManager ? '' : `<td>${statusDot}</td>`}
+        ${isManager ? '' : `<td>$${w.hourly_wage}/hr</td>`}
         <td style="white-space:nowrap">
-          ${w.is_clocked_in
-            ? `<button class="btn btn-sm btn-danger" onclick="clockOut(${w.id})">Clock Out</button>`
+          ${isManager ? '' : (w.is_clocked_in
+            ? `<button class="btn btn-sm btn-danger" onclick="openClockOutModal(${w.id}, '${w.full_name.replace(/'/g,"\\'")}')">Clock Out</button>`
             : `<button class="btn btn-sm btn-success" onclick="clockIn(${w.id})">Clock In</button>`
-          }
+          )}
           <button class="btn btn-sm btn-outline" style="margin-left:4px" onclick="openEditWorker(${w.id})">Edit</button>
           <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="removeWorker(${w.id},'${w.full_name.replace(/'/g,"\\'")}')">Remove</button>
         </td>
@@ -962,12 +1019,126 @@
     } catch(e) { alert(e.message); }
   }
 
-  async function clockOut(workerId) {
+  // ── Clock-Out Modal ────────────────────────────────────────────────────────
+  function openClockOutModal(workerId, workerName) {
+    document.getElementById('clockOutWorkerId').value = workerId;
+    document.getElementById('clockOutModalTitle').textContent = `Clock Out: ${workerName}`;
+    // Default to current local time
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('clockOutTime').value = `${hh}:${mm}`;
+    document.getElementById('clockOutError').style.display = 'none';
+    openModal('clockOutModal');
+  }
+
+  async function submitClockOut() {
+    const workerId = parseInt(document.getElementById('clockOutWorkerId').value);
+    const timeVal  = document.getElementById('clockOutTime').value;
+    const errEl    = document.getElementById('clockOutError');
+    if (!timeVal) { errEl.textContent = 'Please set a clock-out time.'; errEl.style.display = 'block'; return; }
+    // Build ISO datetime using today's local date + chosen time, in UTC
+    const today = new Date();
+    const [h, m] = timeVal.split(':').map(Number);
+    const dt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m, 0);
+    const iso = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
     try {
-      await api('/shifts/clock-out', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
+      await api('/shifts/clock-out-at', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_out: iso }) });
+      closeModal('clockOutModal');
       loadWorkers();
       loadOverview();
-    } catch(e) { alert(e.message); }
+    } catch(e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  // ── Roster ─────────────────────────────────────────────────────────────────
+  const ROSTER_KEY = `pv_roster_${new Date().toISOString().slice(0,10)}`;
+
+  function getRoster() {
+    try { return JSON.parse(localStorage.getItem(ROSTER_KEY) || '[]'); }
+    catch { return []; }
+  }
+
+  function saveRoster(roster) {
+    localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+  }
+
+  function toggleRosterWorker(workerId, workerName) {
+    const roster = getRoster();
+    const idx = roster.findIndex(r => r.id === workerId);
+    if (idx >= 0) roster.splice(idx, 1);
+    else roster.push({ id: workerId, name: workerName });
+    saveRoster(roster);
+    renderRosterPicker();
+    loadOverview();
+  }
+
+  function renderRosterPicker() {
+    const list = document.getElementById('rosterPickerList');
+    if (!list) return;
+    const roster = getRoster();
+    const rosterIds = new Set(roster.map(r => r.id));
+    if (workersCache.length === 0) {
+      list.innerHTML = '<div class="empty">No workers found — add workers first.</div>';
+      return;
+    }
+    list.innerHTML = workersCache.map(w => {
+      const on = rosterIds.has(w.id);
+      return `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;border:1.5px solid ${on?'#1a1a2e':'#e0e0e0'};background:${on?'#eef0ff':'#fff'};cursor:pointer;font-size:.88rem;font-weight:${on?'600':'400'}">
+        <input type="checkbox" ${on?'checked':''} onchange="toggleRosterWorker(${w.id}, '${w.full_name.replace(/'/g,"\\'")}')">
+        <span style="flex:1">${w.full_name}</span>
+        <span class="badge badge-${w.is_clocked_in?'green':'gray'}">${w.is_clocked_in?'Clocked In':'Not In'}</span>
+      </label>`;
+    }).join('');
+  }
+
+  async function openRosterModal() {
+    if (workersCache.length === 0) await loadWorkers();
+    renderRosterPicker();
+    openModal('rosterModal');
+  }
+
+  function renderRoster(workers) {
+    const rosterEl = document.getElementById('rosterList');
+    if (!rosterEl) return;
+    const roster = getRoster();
+    if (roster.length === 0) {
+      rosterEl.innerHTML = '<div class="empty" style="padding:8px 0">No workers on today\'s roster yet — add them above.</div>';
+      return;
+    }
+    const wMap = {};
+    workers.forEach(w => wMap[w.id] = w);
+    rosterEl.innerHTML = roster.map(r => {
+      const w = wMap[r.id];
+      if (!w) return '';
+      const elapsed = w.clock_in_time ? elapsedStr(w.clock_in_time) : '';
+      if (w.is_clocked_in) {
+        return `<div style="background:#e8f5e9;border:1.5px solid #a5d6a7;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;min-width:180px">
+          <span class="clocked-dot in"></span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.88rem">${w.full_name}</div>
+            <div style="font-size:.74rem;color:#555">${elapsed ? `In ${elapsed}` : 'Clocked in'}</div>
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="openClockOutModal(${w.id}, '${w.full_name.replace(/'/g,"\\'")}')">Clock Out</button>
+        </div>`;
+      } else {
+        return `<div style="background:#fff;border:1.5px solid #e0e0e0;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;min-width:180px">
+          <span class="clocked-dot out"></span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.88rem">${w.full_name}</div>
+            <div style="font-size:.74rem;color:#aaa">Not clocked in</div>
+          </div>
+          <button class="btn btn-sm btn-success" onclick="clockIn(${w.id})">Clock In</button>
+        </div>`;
+      }
+    }).filter(Boolean).join('');
+  }
+
+  async function clockOut(workerId) {
+    // legacy — now opens modal instead
+    openClockOutModal(workerId, 'Worker');
   }
 
   function getCheckedIds() {

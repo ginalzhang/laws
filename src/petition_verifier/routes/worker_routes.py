@@ -7,7 +7,7 @@ from typing import Optional  # noqa: F401 already used
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_boss
+from ..auth import get_current_user, require_admin, require_boss, require_manager
 from ..storage import Database
 from ..storage.database import UserRow
 
@@ -90,13 +90,13 @@ class UpdateWageRequest(BaseModel):
 
 
 @router.get("")
-async def list_workers(user: dict = Depends(require_admin)):
+async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
     return [_user_to_dict(u, include_stats=True) for u in users]
 
 
 @router.post("")
-async def create_worker(payload: CreateWorkerRequest, user: dict = Depends(require_admin)):
+async def create_worker(payload: CreateWorkerRequest, user: dict = Depends(require_manager)):
     import uuid as _uuid
     from ..auth import hash_password
     if payload.role not in VALID_ROLES:
@@ -226,7 +226,7 @@ async def delete_worker(worker_id: int):
 
 
 @router.patch("/{worker_id}/deactivate")
-async def deactivate_worker(worker_id: int, user: dict = Depends(require_admin)):
+async def deactivate_worker(worker_id: int, user: dict = Depends(require_manager)):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")

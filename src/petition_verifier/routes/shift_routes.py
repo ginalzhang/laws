@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_worker
+from ..auth import get_current_user, require_admin, require_manager, require_worker
 from ..storage import Database
 
 router = APIRouter()
@@ -41,7 +41,7 @@ class ManualShiftRequest(BaseModel):
 
 
 @router.post("/manual")
-async def add_manual_shift(payload: ManualShiftRequest, user: dict = Depends(require_admin)):
+async def add_manual_shift(payload: ManualShiftRequest, user: dict = Depends(require_manager)):
     """Admin logs a completed shift with explicit start/end times."""
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
@@ -63,7 +63,7 @@ class ClockAtRequest(BaseModel):
 
 
 @router.post("/clock-in-at")
-async def clock_in_at(payload: ClockAtRequest, user: dict = Depends(require_admin)):
+async def clock_in_at(payload: ClockAtRequest, user: dict = Depends(require_manager)):
     """Schedule a worker to start at a specific time (no clock-out yet)."""
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
@@ -89,12 +89,34 @@ async def clock_in_at(payload: ClockAtRequest, user: dict = Depends(require_admi
     return _shift_to_dict(shift)
 
 
+class ClockOutAtRequest(BaseModel):
+    worker_id: int
+    clock_out: str  # ISO datetime, e.g. "2024-04-24T17:30:00"
+
+
+@router.post("/clock-out-at")
+async def clock_out_at(payload: ClockOutAtRequest, user: dict = Depends(require_manager)):
+    """Admin clocks a worker out at a specific time (not necessarily now)."""
+    worker = db.get_user_by_id(payload.worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    try:
+        clock_out_dt = datetime.fromisoformat(payload.clock_out)
+    except ValueError:
+        raise HTTPException(400, "Invalid datetime format — use ISO 8601 (e.g. 2024-04-24T17:30:00)")
+    try:
+        shift = db.clock_out_at(payload.worker_id, clock_out_dt)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _shift_to_dict(shift)
+
+
 class ClockRequest(BaseModel):
     worker_id: int
 
 
 @router.post("/clock-in")
-async def clock_in(payload: ClockRequest, user: dict = Depends(require_admin)):
+async def clock_in(payload: ClockRequest, user: dict = Depends(require_manager)):
     """Admin clocks a worker in."""
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
@@ -107,7 +129,7 @@ async def clock_in(payload: ClockRequest, user: dict = Depends(require_admin)):
 
 
 @router.post("/clock-out")
-async def clock_out(payload: ClockRequest, user: dict = Depends(require_admin)):
+async def clock_out(payload: ClockRequest, user: dict = Depends(require_manager)):
     """Admin clocks a worker out."""
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
@@ -120,7 +142,7 @@ async def clock_out(payload: ClockRequest, user: dict = Depends(require_admin)):
 
 
 @router.get("/active")
-async def get_active_shifts(user: dict = Depends(require_admin)):
+async def get_active_shifts(user: dict = Depends(require_manager)):
     """All currently clocked-in workers."""
     workers = db.list_users()
     active = []
@@ -160,7 +182,7 @@ async def list_shifts(
 
 
 @router.post("/{shift_id}/approve")
-async def approve_shift(shift_id: int, user: dict = Depends(require_admin)):
+async def approve_shift(shift_id: int, user: dict = Depends(require_manager)):
     db.approve_shift(shift_id, user["user_id"])
     return {"ok": True}
 
@@ -170,7 +192,7 @@ class WeekendUpdate(BaseModel):
 
 
 @router.patch("/{shift_id}/weekend")
-async def set_weekend(shift_id: int, payload: WeekendUpdate, user: dict = Depends(require_admin)):
+async def set_weekend(shift_id: int, payload: WeekendUpdate, user: dict = Depends(require_manager)):
     db.update_shift(shift_id, is_weekend=payload.is_weekend)
     return {"ok": True}
 
@@ -180,7 +202,7 @@ class NotesUpdate(BaseModel):
 
 
 @router.patch("/{shift_id}/notes")
-async def update_notes(shift_id: int, payload: NotesUpdate, user: dict = Depends(require_admin)):
+async def update_notes(shift_id: int, payload: NotesUpdate, user: dict = Depends(require_manager)):
     db.update_shift(shift_id, notes=payload.notes)
     return {"ok": True}
 

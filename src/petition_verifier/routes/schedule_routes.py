@@ -7,7 +7,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_worker
+from ..auth import get_current_user, require_admin, require_manager, require_worker
 from ..storage import Database
 
 router = APIRouter()
@@ -72,7 +72,7 @@ async def list_schedule_requests(
 async def update_schedule_request(
     req_id: int,
     payload: ScheduleStatusUpdate,
-    user: dict = Depends(require_admin),
+    user: dict = Depends(require_manager),
 ):
     if payload.status not in ("pending", "approved", "rejected"):
         raise HTTPException(400, "Status must be pending, approved, or rejected")

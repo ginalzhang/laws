@@ -483,6 +483,24 @@ class Database:
             session.expunge(shift)
             return shift
 
+    def clock_out_at(self, worker_id: int, clock_out: datetime) -> ShiftRow:
+        with self._Session() as session:
+            shift = (
+                session.query(ShiftRow)
+                .filter_by(worker_id=worker_id, clock_out=None)
+                .order_by(ShiftRow.clock_in.desc())
+                .first()
+            )
+            if not shift:
+                raise ValueError("No active shift found for worker")
+            if clock_out <= shift.clock_in:
+                raise ValueError("Clock-out time must be after clock-in time")
+            shift.clock_out = clock_out
+            session.commit()
+            session.refresh(shift)
+            session.expunge(shift)
+            return shift
+
     def add_manual_shift(self, worker_id: int, clock_in: datetime, clock_out: datetime) -> ShiftRow:
         with self._Session() as session:
             shift = ShiftRow(
