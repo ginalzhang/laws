@@ -390,7 +390,10 @@
       <section class="section" id="section-workers">
         <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
           Workers
-          <button class="btn btn-primary" onclick="openAddWorkerModal()">+ Add Worker</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline" onclick="loadWorkers(true)" title="Refresh">↻ Refresh</button>
+            <button class="btn btn-primary" onclick="openAddWorkerModal()">+ Add Worker</button>
+          </div>
         </div>
         <!-- bulk action bar, hidden until selections made (admin only) -->
         <div id="bulkBar" style="display:none;align-items:center;gap:12px;padding:10px 16px;background:#fff3e0;border:1.5px solid #ffb74d;border-radius:8px;margin-bottom:12px">
@@ -885,11 +888,15 @@
     loadSection(sec);
   }
 
+  const _sectionLoaded = {};
   function loadSection(sec) {
+    // These sections are cached — only load once until explicitly refreshed
+    const cacheable = new Set(['workers', 'schedule', 'leaderboard', 'petitions']);
+    if (cacheable.has(sec) && _sectionLoaded[sec]) return;
     switch(sec) {
       case 'overview':   loadOverview(); break;
-      case 'workers':    loadWorkers(); break;
-      case 'schedule':   loadSchedule(); break;
+      case 'workers':    loadWorkers(true); break;
+      case 'schedule':   refreshSection("schedule"); break;
       case 'payroll':    loadPayPeriods(); break;
       case 'leaderboard': loadLeaderboard(); break;
       case 'petitions':  loadPetitions(); break;
@@ -897,6 +904,12 @@
       case 'pl':         loadPayPeriodsPL(); break;
       case 'settings':   loadSettings(); break;
     }
+    if (cacheable.has(sec)) _sectionLoaded[sec] = true;
+  }
+
+  function refreshSection(sec) {
+    _sectionLoaded[sec] = false;
+    loadSection(sec);
   }
 
   // ── Overview ───────────────────────────────────────────────────────────────
@@ -970,12 +983,17 @@
   // ── Workers ────────────────────────────────────────────────────────────────
   let workersCache = [];
 
-  async function loadWorkers() {
+  async function loadWorkers(force = false) {
+    if (!force && workersCache.length > 0 && _sectionLoaded['workers']) {
+      renderWorkersTable();
+      return;
+    }
     const tbody = document.getElementById('workersBody');
     tbody.innerHTML = '<tr><td colspan="9" class="empty"><span class="spinner"></span>Loading…</td></tr>';
     try {
       const all = await api('/workers');
       workersCache = all.filter(w => w.is_active);
+      _sectionLoaded['workers'] = true;
       renderWorkersTable();
     } catch(e) {
       tbody.innerHTML = `<tr><td colspan="9" class="empty">Error: ${e.message}</td></tr>`;
@@ -1038,7 +1056,7 @@
     try {
       await api('/workers', { method: 'POST', body: JSON.stringify(data) });
       closeModal('addWorkerModal');
-      loadWorkers();
+      loadWorkers(true);
     } catch(err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
@@ -1048,7 +1066,7 @@
   async function clockIn(workerId) {
     try {
       await api('/shifts/clock-in', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
-      loadWorkers();
+      loadWorkers(true);
       loadOverview();
     } catch(e) { alert(e.message); }
   }
@@ -1079,7 +1097,7 @@
     try {
       await api('/shifts/clock-out-at', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_out: iso }) });
       closeModal('clockOutModal');
-      loadWorkers();
+      loadWorkers(true);
       loadOverview();
     } catch(e) {
       errEl.textContent = e.message;
@@ -1129,7 +1147,7 @@
   }
 
   async function openRosterModal() {
-    if (workersCache.length === 0) await loadWorkers();
+    if (workersCache.length === 0) await loadWorkers(true);
     renderRosterPicker();
     openModal('rosterModal');
   }
@@ -1208,7 +1226,7 @@
     if (!confirm(`Remove ${ids.length} worker${ids.length !== 1 ? 's' : ''}?\n\n${names}`)) return;
     await Promise.all(ids.map(id => api(`/workers/${id}`, { method: 'DELETE' }).catch(() => {})));
     clearSelection();
-    loadWorkers();
+    loadWorkers(true);
   }
 
   function openEditWorker(workerId) {
@@ -1239,7 +1257,7 @@
     try {
       await api(`/workers/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
       closeModal('editWorkerModal');
-      loadWorkers();
+      loadWorkers(true);
     } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
   }
 
@@ -1247,7 +1265,7 @@
     if (!confirm(`Remove ${name}? They won't appear in the workers list anymore.`)) return;
     try {
       await api(`/workers/${workerId}`, { method: 'DELETE' });
-      loadWorkers();
+      loadWorkers(true);
     } catch(e) { alert('Error: ' + e.message); }
   }
 
@@ -1258,7 +1276,7 @@
     if (isNaN(wage) || wage <= 0) { alert('Invalid wage'); return; }
     try {
       await api(`/workers/${workerId}/wage`, { method: 'PATCH', body: JSON.stringify({ hourly_wage: wage }) });
-      loadWorkers();
+      loadWorkers(true);
     } catch(e) { alert('Error: ' + e.message); }
   }
 
@@ -1352,7 +1370,7 @@
 
   async function updateSchedReq(id, status) {
     await api(`/schedule/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
-    loadSchedule();
+    refreshSection("schedule");
   }
 
   async function loadWeekGrid(monday) {
@@ -1422,8 +1440,8 @@
         body: JSON.stringify({ worker_id: parseInt(workerId), clock_in: `${date}T${start}:00` }),
       });
       closeModal('addShiftModal');
-      loadSchedule();
-      loadWorkers();
+      refreshSection("schedule");
+      loadWorkers(true);
     } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
   }
 
@@ -1457,8 +1475,8 @@
         body: JSON.stringify({ clock_in: clockIn, clock_out: clockOut }),
       });
       closeModal('editShiftModal');
-      loadSchedule();
-      loadWorkers();
+      refreshSection("schedule");
+      loadWorkers(true);
     } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
   }
 
@@ -1468,8 +1486,8 @@
     try {
       await api(`/shifts/${shiftId}`, { method: 'DELETE' });
       closeModal('editShiftModal');
-      loadSchedule();
-      loadWorkers();
+      refreshSection("schedule");
+      loadWorkers(true);
     } catch(e) { alert(e.message); }
   }
 
@@ -1477,13 +1495,13 @@
     if (!confirm('Remove this shift?')) return;
     try {
       await api(`/shifts/${shiftId}`, { method: 'DELETE' });
-      loadSchedule();
-      loadWorkers();
+      refreshSection("schedule");
+      loadWorkers(true);
     } catch(e) { alert(e.message); }
   }
 
-  function prevWeek() { currentWeekOffset--; loadSchedule(); }
-  function nextWeek() { currentWeekOffset++; loadSchedule(); }
+  function prevWeek() { currentWeekOffset--; refreshSection("schedule"); }
+  function nextWeek() { currentWeekOffset++; refreshSection("schedule"); }
 
   // ── Payroll ────────────────────────────────────────────────────────────────
   let payPeriodsCache = [];
