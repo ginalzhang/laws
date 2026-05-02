@@ -734,6 +734,22 @@ async def fix_activate_users():
     return {"ok": True, "activated": [u.email for u in deactivated]}
 
 
+@app.post("/fix-reset-permanent")
+async def fix_reset_permanent():
+    """Force-reset permanent account passwords to match hardcoded values."""
+    from .auth import hash_password
+    results = []
+    for u in _PERMANENT_USERS:
+        user = db.get_user_by_email(u["email"])
+        if not user:
+            db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
+            results.append(f"created {u['email']}")
+        else:
+            db.update_user(user.id, password_hash=hash_password(u["password"]), is_active=True)
+            results.append(f"reset {u['email']}")
+    return {"ok": True, "results": results}
+
+
 @app.post("/fix-reset-boss")
 async def fix_reset_boss():
     """Temporary: reset boss password to password123. Remove after use."""
