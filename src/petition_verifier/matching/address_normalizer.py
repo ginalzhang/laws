@@ -58,6 +58,9 @@ def _split_name(raw: str) -> tuple[str, str]:
     """
     raw = _NAME_SUFFIXES.sub("", raw).strip()
 
+    # OCR sometimes prepends the row number ("1 Glenn Gates") — drop it.
+    raw = re.sub(r"^\d+\s+", "", raw)
+
     # Check for "Last, First" format BEFORE _clean() strips the comma
     if "," in raw:
         parts = [_clean(p) for p in raw.split(",", 1)]
