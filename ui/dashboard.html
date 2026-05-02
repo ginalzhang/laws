@@ -902,7 +902,11 @@
   // ── Overview ───────────────────────────────────────────────────────────────
   async function loadOverview() {
     try {
-      const workers = await api('/workers');
+      // Fetch workers and shifts in parallel
+      const [workers, shifts] = await Promise.all([
+        api('/workers'),
+        api('/shifts'),
+      ]);
       const clocked = workers.filter(w => w.is_clocked_in);
       document.getElementById('statClockedIn').textContent = clocked.length;
       document.getElementById('statWorkers').textContent = workers.length;
@@ -931,8 +935,7 @@
         }).join('');
       }
 
-      // Recent shifts as activity
-      const shifts = await api('/shifts');
+      // Recent shifts as activity (already fetched in parallel above)
       const recentEl = document.getElementById('activityFeed');
       const recent = shifts.slice(0, 8);
       if (recent.length === 0) {
@@ -1317,8 +1320,8 @@
     document.getElementById('weekLabel').textContent =
       `${fmtDate(monday)} — ${fmtDate(sunday)}`;
 
-    await loadPendingRequests();
-    await loadWeekGrid(monday);
+    // Run pending requests and week grid in parallel
+    await Promise.all([loadPendingRequests(), loadWeekGrid(monday)]);
   }
 
   async function loadPendingRequests() {
@@ -1353,8 +1356,10 @@
   }
 
   async function loadWeekGrid(monday) {
-    const workers = workersCache.length ? workersCache : await api('/workers').catch(() => []);
-    const shifts = await api(`/shifts?date_from=${fmtDate(monday)}`).catch(() => []);
+    const [workers, shifts] = await Promise.all([
+      workersCache.length ? Promise.resolve(workersCache) : api('/workers').catch(() => []),
+      api(`/shifts?date_from=${fmtDate(monday)}`).catch(() => []),
+    ]);
 
     const gridEl = document.getElementById('scheduleGrid');
     if (workers.length === 0) { gridEl.innerHTML = '<div class="empty">No workers</div>'; return; }

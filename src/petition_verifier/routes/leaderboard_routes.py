@@ -39,22 +39,27 @@ async def leaderboard(
     workers = db.list_users()
     entries = []
 
+    # Bulk fetch everything in a few queries instead of N×M
+    sig_counts    = db.get_all_worker_sig_counts()
+    active_shifts = db.get_all_active_shifts()
+    all_shifts    = db.list_shifts()  # all shifts, filter per worker below
+
+    # Pre-group completed shifts by worker
+    from collections import defaultdict
+    shifts_by_worker: dict = defaultdict(list)
+    for s in all_shifts:
+        if s.clock_out:
+            shifts_by_worker[s.worker_id].append(s)
+
     for worker in workers:
         if not worker.is_active:
             continue
 
-        # Get all signature stats
-        wps = db.get_worker_projects(worker.id)
-        total_sigs = 0
-        valid_sigs = 0
-        for wp in wps:
-            counts = db.get_project_sig_counts(wp.project_id)
-            total_sigs += counts["total_sigs"]
-            valid_sigs += counts["valid_sigs"]
+        counts = sig_counts.get(worker.id, {"total_sigs": 0, "valid_sigs": 0})
+        total_sigs = counts["total_sigs"]
+        valid_sigs = counts["valid_sigs"]
 
-        # Get total hours
-        shifts = db.list_shifts(worker_id=worker.id)
-        completed = [s for s in shifts if s.clock_out]
+        completed = shifts_by_worker[worker.id]
         total_hours = sum(
             (s.clock_out - s.clock_in).total_seconds() / 3600.0
             for s in completed
@@ -63,7 +68,6 @@ async def leaderboard(
         validity_rate = (valid_sigs / total_sigs * 100.0) if total_sigs > 0 else 0.0
         sigs_per_hour = (valid_sigs / total_hours) if total_hours > 0 else 0.0
 
-        # Cost per sig estimate
         gross_cents = int(round(total_hours * worker.hourly_wage * 100))
         cost_per_sig_cents = (gross_cents / valid_sigs) if valid_sigs > 0 else 0.0
 
@@ -77,7 +81,7 @@ async def leaderboard(
             "sigs_per_hour": round(sigs_per_hour, 2),
             "cost_per_sig_cents": round(cost_per_sig_cents, 2),
             "tier_label": _get_bonus_tier_label(valid_sigs, total_hours),
-            "is_clocked_in": db.get_active_shift(worker.id) is not None,
+            "is_clocked_in": worker.id in active_shifts,
         })
 
     # Sort by valid_sigs desc

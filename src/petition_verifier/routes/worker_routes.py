@@ -15,13 +15,41 @@ router = APIRouter()
 db = Database()
 
 
-def _worker_stats(worker: UserRow) -> dict:
-    """Compute basic worker stats from DB."""
-    # Get active shift
-    active_shift = db.get_active_shift(worker.id)
+def _worker_stats_from_bulk(worker: UserRow, sig_counts: dict, active_shifts: dict, today_shifts: dict) -> dict:
+    """Compute worker stats from pre-fetched bulk data (no extra DB queries)."""
+    active_shift = active_shifts.get(worker.id)
     is_clocked_in = active_shift is not None
 
-    # Get worker projects and their signature stats
+    counts = sig_counts.get(worker.id, {"total_sigs": 0, "valid_sigs": 0})
+    total_sigs = counts["total_sigs"]
+    total_valid_sigs = counts["valid_sigs"]
+    validity_rate = (total_valid_sigs / total_sigs * 100.0) if total_sigs > 0 else 0.0
+
+    shifts_today = today_shifts.get(worker.id, [])
+    today_hours = 0.0
+    for s in shifts_today:
+        if s.clock_out:
+            today_hours += (s.clock_out - s.clock_in).total_seconds() / 3600.0
+        elif is_clocked_in and active_shift and s.id == active_shift.id:
+            today_hours += (datetime.utcnow() - s.clock_in).total_seconds() / 3600.0
+
+    estimated_pay_cents = int(round(today_hours * worker.hourly_wage * 100))
+
+    return {
+        "is_clocked_in": is_clocked_in,
+        "today_hours": round(today_hours, 2),
+        "total_valid_sigs": total_valid_sigs,
+        "total_sigs": total_sigs,
+        "validity_rate": round(validity_rate, 1),
+        "estimated_pay_cents": estimated_pay_cents,
+        "clock_in_time": active_shift.clock_in.isoformat() if active_shift else None,
+    }
+
+
+def _worker_stats(worker: UserRow) -> dict:
+    """Compute basic worker stats from DB (single-worker fallback)."""
+    active_shift = db.get_active_shift(worker.id)
+    is_clocked_in = active_shift is not None
     wps = db.get_worker_projects(worker.id)
     total_valid_sigs = 0
     total_sigs = 0
@@ -29,24 +57,16 @@ def _worker_stats(worker: UserRow) -> dict:
         counts = db.get_project_sig_counts(wp.project_id)
         total_valid_sigs += counts["valid_sigs"]
         total_sigs += counts["total_sigs"]
-
     validity_rate = (total_valid_sigs / total_sigs * 100.0) if total_sigs > 0 else 0.0
-
-    # Get today's shifts for hours
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_shifts = db.list_shifts(worker_id=worker.id, date_from=today_start)
     today_hours = 0.0
     for s in today_shifts:
         if s.clock_out:
-            delta = s.clock_out - s.clock_in
-            today_hours += delta.total_seconds() / 3600.0
+            today_hours += (s.clock_out - s.clock_in).total_seconds() / 3600.0
         elif is_clocked_in and active_shift and s.id == active_shift.id:
-            delta = datetime.utcnow() - s.clock_in
-            today_hours += delta.total_seconds() / 3600.0
-
-    # Rough estimated pay (base only, no bonus calc without pay period)
+            today_hours += (datetime.utcnow() - s.clock_in).total_seconds() / 3600.0
     estimated_pay_cents = int(round(today_hours * worker.hourly_wage * 100))
-
     return {
         "is_clocked_in": is_clocked_in,
         "today_hours": round(today_hours, 2),
@@ -94,7 +114,16 @@ async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
     if user["role"] == "field_manager":
         users = [u for u in users if u.role not in ("boss", "admin", "office_worker")]
-    return [_user_to_dict(u, include_stats=True) for u in users]
+    today_start   = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    sig_counts    = db.get_all_worker_sig_counts()
+    active_shifts = db.get_all_active_shifts()
+    today_shifts  = db.get_all_today_shifts(today_start)
+    result = []
+    for u in users:
+        d = _user_to_dict(u)
+        d.update(_worker_stats_from_bulk(u, sig_counts, active_shifts, today_shifts))
+        result.append(d)
+    return result
 
 
 @router.post("")
