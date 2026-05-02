@@ -113,12 +113,7 @@
       }
     }
 
-    const NEEDS_PASSWORD = new Set(['arianafan2000']);
-    document.getElementById('username').addEventListener('input', function() {
-      const needs = NEEDS_PASSWORD.has(this.value.trim().toLowerCase());
-      document.getElementById('passwordGroup').style.display = needs ? 'block' : 'none';
-      document.getElementById('password').required = needs;
-    });
+
 
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
