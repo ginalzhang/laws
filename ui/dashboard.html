@@ -273,15 +273,10 @@
   <div id="loginOverlay" style="display:none;position:fixed;inset:0;background:#1a1a2e;z-index:999;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:14px;padding:40px 36px;width:340px;box-shadow:0 8px 40px rgba(0,0,0,.4);">
       <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:6px;color:#1a1a2e">Petition Verifier</h2>
-      <p style="font-size:.82rem;color:#888;margin-bottom:24px">Sign in to continue</p>
-      <div style="margin-bottom:14px">
-        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Email</label>
-        <input id="loginEmail" type="email" placeholder="you@example.com"
-          style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
-      </div>
+      <p style="font-size:.82rem;color:#888;margin-bottom:24px">Who are you?</p>
       <div style="margin-bottom:20px">
-        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Password</label>
-        <input id="loginPw" type="password" placeholder="••••••••"
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Your name</label>
+        <input id="loginUsername" type="text" placeholder="e.g. evan"
           style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
       </div>
       <div id="loginErr" style="color:#c62828;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
@@ -782,15 +777,15 @@
   }
 
   async function submitLogin() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const pw    = document.getElementById('loginPw').value;
+    const username = document.getElementById('loginUsername').value.trim().toLowerCase();
     const errEl = document.getElementById('loginErr');
     errEl.textContent = '';
+    if (!username) { errEl.textContent = 'Please enter your name.'; return; }
     try {
       const data = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: pw }),
+        body: JSON.stringify({ email: username + '@app.local', password: username }),
       }).then(async r => {
         if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
         return r.json();
