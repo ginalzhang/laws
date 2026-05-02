@@ -31,6 +31,9 @@ from ..models import ProjectResult, VerificationResult, VerificationStatus
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db")
+# Render gives postgres:// but SQLAlchemy 2.x requires postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 
 class Base(DeclarativeBase):
