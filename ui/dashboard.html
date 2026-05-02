@@ -891,12 +891,12 @@
   const _sectionLoaded = {};
   function loadSection(sec) {
     // These sections are cached — only load once until explicitly refreshed
-    const cacheable = new Set(['workers', 'schedule', 'leaderboard', 'petitions']);
+    const cacheable = new Set(['workers', 'leaderboard', 'petitions']);
     if (cacheable.has(sec) && _sectionLoaded[sec]) return;
     switch(sec) {
       case 'overview':   loadOverview(); break;
       case 'workers':    loadWorkers(true); break;
-      case 'schedule':   refreshSection("schedule"); break;
+      case 'schedule':   loadSchedule(); break;
       case 'payroll':    loadPayPeriods(); break;
       case 'leaderboard': loadLeaderboard(); break;
       case 'petitions':  loadPetitions(); break;
@@ -1500,8 +1500,8 @@
     } catch(e) { alert(e.message); }
   }
 
-  function prevWeek() { currentWeekOffset--; refreshSection("schedule"); }
-  function nextWeek() { currentWeekOffset++; refreshSection("schedule"); }
+  function prevWeek() { currentWeekOffset--; loadSchedule(); }
+  function nextWeek() { currentWeekOffset++; loadSchedule(); }
 
   // ── Payroll ────────────────────────────────────────────────────────────────
   let payPeriodsCache = [];
