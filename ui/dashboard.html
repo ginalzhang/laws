@@ -595,15 +595,6 @@
           <div class="card-title" style="margin-bottom:16px">Pay Periods</div>
           <div id="payPeriodsList"></div>
         </div>
-        <div class="card" style="max-width:480px">
-          <div class="card-title" style="margin-bottom:16px">Change Password</div>
-          <div class="form-group"><label>Current Password</label><input type="password" id="cpCurrent" placeholder="••••••••"></div>
-          <div class="form-group"><label>New Password</label><input type="password" id="cpNew" placeholder="••••••••"></div>
-          <div class="form-group"><label>Confirm New Password</label><input type="password" id="cpConfirm" placeholder="••••••••"></div>
-          <div id="cpError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
-          <div id="cpSuccess" style="color:#2e7d32;font-size:.83rem;margin-bottom:10px;display:none"></div>
-          <button class="btn btn-primary" onclick="submitChangePassword()">Update Password</button>
-        </div>
       </section>
 
     </main>
@@ -840,7 +831,7 @@
   function applyRoleVisibility() {
     if (_role === 'field_manager') {
       // Evan: workers + schedule + settings only
-      const allowed = new Set(['workers', 'schedule', 'settings']);
+      const allowed = new Set(['workers', 'schedule']);
       document.querySelectorAll('.nav-item').forEach(el => {
         if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
       });
