@@ -142,9 +142,6 @@
       <div class="form-group">
         <input type="text" id="username" name="username" placeholder="Your name" required autocomplete="username" autofocus>
       </div>
-      <div class="form-group" id="passwordGroup" style="display:none">
-        <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password">
-      </div>
       <button type="submit" class="btn-login" id="loginBtn">Sign In</button>
       <div class="error-msg" id="errorMsg"></div>
     </form>
@@ -161,19 +158,12 @@
       }
     }
 
-    const NEEDS_PASSWORD = new Set(['arianafan2000']);
-    document.getElementById('username').addEventListener('input', function() {
-      const needs = NEEDS_PASSWORD.has(this.value.trim().toLowerCase());
-      document.getElementById('passwordGroup').style.display = needs ? 'block' : 'none';
-      document.getElementById('password').required = needs;
-    });
-
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('loginBtn');
       const errorEl = document.getElementById('errorMsg');
       const username = document.getElementById('username').value.trim().toLowerCase();
-      const password = document.getElementById('password').value || username;
+      const password = username;
 
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner"></div>Signing in…';
