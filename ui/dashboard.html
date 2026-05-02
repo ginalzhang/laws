@@ -429,7 +429,7 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
           <div class="card">
             <div class="card-header">
               <span class="card-title">Currently Clocked In</span>
@@ -621,7 +621,7 @@
       <!-- ── P&L ── -->
       <section class="section" id="section-pl">
         <div class="section-title">Profit &amp; Loss</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
           <div class="card">
             <div class="card-title" style="margin-bottom:16px">Input Revenue</div>
             <div class="form-group">
@@ -1340,7 +1340,7 @@
       ]);
       document.getElementById('drawerWorkerName').textContent = worker.full_name;
       document.getElementById('drawerContent').innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">
           <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Email</div><div>${worker.email}</div></div>
           <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Role</div><div><span class="badge badge-${worker.role}">${worker.role}</span></div></div>
           <div><div style="font-size:.72rem;color:#888;text-transform:uppercase;margin-bottom:2px">Phone</div><div>${worker.phone || '—'}</div></div>
@@ -1421,47 +1421,121 @@
     refreshSection("schedule");
   }
 
+  let _scheduleWorkers = [];
+  let _scheduleShifts = [];
+  let _mobileDayOffset = 0; // which day is selected on mobile
+
   async function loadWeekGrid(monday) {
     const [workers, shifts] = await Promise.all([
       workersCache.length ? Promise.resolve(workersCache) : api('/workers').catch(() => []),
       api(`/shifts?date_from=${fmtDate(monday)}`).catch(() => []),
     ]);
+    _scheduleWorkers = workers;
+    _scheduleShifts = shifts;
+    _mobileDayOffset = 0;
+    renderScheduleGrid(monday);
+  }
 
+  function renderScheduleGrid(monday) {
     const gridEl = document.getElementById('scheduleGrid');
+    const workers = _scheduleWorkers;
+    const shifts = _scheduleShifts;
     if (workers.length === 0) { gridEl.innerHTML = '<div class="empty">No workers</div>'; return; }
 
-    let html = '<div class="week-grid" style="grid-template-columns: 140px repeat(7, 1fr)">';
-    html += '<div class="wg-header">Worker</div>';
-    DAYS.forEach((d, i) => {
-      const date = new Date(monday); date.setDate(monday.getDate() + i);
-      html += `<div class="wg-header">${d}<br><span style="font-weight:400;font-size:.7rem">${date.getMonth()+1}/${date.getDate()}</span></div>`;
-    });
+    const isMobile = window.innerWidth <= 768;
 
-    workers.forEach(w => {
-      html += `<div class="wg-worker">${w.full_name}</div>`;
-      for (let i = 0; i < 7; i++) {
+    if (isMobile) {
+      // Day picker + single-day list view
+      const selectedDate = new Date(monday);
+      selectedDate.setDate(monday.getDate() + _mobileDayOffset);
+      const selectedStr = fmtDate(selectedDate);
+
+      // Day pills
+      let pills = '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;-webkit-overflow-scrolling:touch">';
+      DAYS.forEach((d, i) => {
         const date = new Date(monday); date.setDate(monday.getDate() + i);
         const dateStr = fmtDate(date);
-        const dayShifts = shifts.filter(s => s.worker_id === w.id && s.clock_in.startsWith(dateStr));
+        const active = i === _mobileDayOffset;
+        const hasShifts = shifts.some(s => s.clock_in.startsWith(dateStr));
+        pills += `<button onclick="selectMobileDay(${i})" style="flex-shrink:0;padding:8px 14px;border-radius:20px;border:1.5px solid ${active ? '#1a1a2e' : '#ddd'};background:${active ? '#1a1a2e' : '#fff'};color:${active ? '#fff' : '#555'};font-size:.8rem;font-weight:${active ? '700' : '400'};cursor:pointer;position:relative">
+          ${d} <span style="font-size:.68rem;opacity:.7">${date.getMonth()+1}/${date.getDate()}</span>
+          ${hasShifts ? `<span style="position:absolute;top:4px;right:4px;width:6px;height:6px;background:#2e7d32;border-radius:50%"></span>` : ''}
+        </button>`;
+      });
+      pills += '</div>';
+
+      // Worker rows for selected day
+      let rows = '';
+      workers.forEach(w => {
+        const dayShifts = shifts.filter(s => s.worker_id === w.id && s.clock_in.startsWith(selectedStr));
+        let shiftHtml = '';
         if (dayShifts.length > 0) {
-          html += '<div class="wg-cell">';
           dayShifts.forEach(s => {
             const inTime = s.clock_in.split('T')[1]?.slice(0,5) || '';
             const outTime = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
-            const label = outTime ? `${inTime}–${outTime}` : `${inTime} (active)`;
-            html += `<div class="wg-shift" style="cursor:pointer" title="Edit shift" onclick="openEditShift(${s.id},'${s.clock_in}','${s.clock_out||''}')">${label}</div>`;
+            const label = outTime ? `${inTime}–${outTime}` : `${inTime} ●`;
+            shiftHtml += `<span class="wg-shift" style="cursor:pointer" onclick="openEditShift(${s.id},'${s.clock_in}','${s.clock_out||''}')">${label}</span> `;
           });
-          html += '</div>';
         } else {
-          html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openAddShift(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${dateStr}')" title="Add shift">
-            <div style="color:#ccc;font-size:1.2rem;text-align:center;line-height:36px">+</div>
-          </div>`;
+          shiftHtml = `<button onclick="openAddShift(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${selectedStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:4px 12px;font-size:.8rem;cursor:pointer">+ Add</button>`;
         }
-      }
-    });
-    html += '</div>';
-    gridEl.innerHTML = html;
+        rows += `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f0f0f0">
+          <span style="font-size:.9rem;font-weight:600;flex:1">${w.full_name}</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${shiftHtml}</div>
+        </div>`;
+      });
+
+      gridEl.innerHTML = pills + rows;
+    } else {
+      // Desktop grid view
+      let html = '<div class="week-grid" style="grid-template-columns: 140px repeat(7, 1fr)">';
+      html += '<div class="wg-header">Worker</div>';
+      DAYS.forEach((d, i) => {
+        const date = new Date(monday); date.setDate(monday.getDate() + i);
+        html += `<div class="wg-header">${d}<br><span style="font-weight:400;font-size:.7rem">${date.getMonth()+1}/${date.getDate()}</span></div>`;
+      });
+      workers.forEach(w => {
+        html += `<div class="wg-worker">${w.full_name}</div>`;
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(monday); date.setDate(monday.getDate() + i);
+          const dateStr = fmtDate(date);
+          const dayShifts = shifts.filter(s => s.worker_id === w.id && s.clock_in.startsWith(dateStr));
+          if (dayShifts.length > 0) {
+            html += '<div class="wg-cell">';
+            dayShifts.forEach(s => {
+              const inTime = s.clock_in.split('T')[1]?.slice(0,5) || '';
+              const outTime = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+              const label = outTime ? `${inTime}–${outTime}` : `${inTime} (active)`;
+              html += `<div class="wg-shift" style="cursor:pointer" title="Edit shift" onclick="openEditShift(${s.id},'${s.clock_in}','${s.clock_out||''}')">${label}</div>`;
+            });
+            html += '</div>';
+          } else {
+            html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openAddShift(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${dateStr}')" title="Add shift">
+              <div style="color:#ccc;font-size:1.2rem;text-align:center;line-height:36px">+</div>
+            </div>`;
+          }
+        }
+      });
+      html += '</div>';
+      gridEl.innerHTML = html;
+    }
   }
+
+  function selectMobileDay(offset) {
+    _mobileDayOffset = offset;
+    const monday = getWeekMonday(currentWeekOffset);
+    renderScheduleGrid(monday);
+  }
+
+  let _resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      if (_scheduleWorkers.length > 0 && document.getElementById('section-schedule').classList.contains('active')) {
+        renderScheduleGrid(getWeekMonday(currentWeekOffset));
+      }
+    }, 200);
+  });
 
   function openAddShift(workerId, workerName, dateStr) {
     document.getElementById('addShiftWorkerId').value = workerId;
