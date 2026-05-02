@@ -119,7 +119,7 @@ class UserRow(Base):
     full_name     = Column(String, nullable=False)
     phone         = Column(String, default="")
     hourly_wage   = Column(Float, default=25.0)  # customizable per worker
-    is_active     = Column(Boolean, default=True)
+    is_active     = Column(Boolean, default=True, server_default="true")
     created_at    = Column(DateTime, default=datetime.utcnow)
 
 

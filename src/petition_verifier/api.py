@@ -705,3 +705,13 @@ async def seed_demo_data():
             "workers": [f"worker{i}@petition.co / password123" for i in range(1, 6)],
         },
     }
+
+
+@app.post("/fix-activate-users")
+async def fix_activate_users():
+    """Temporary: activate all users. Remove after use."""
+    users = db.list_users()
+    deactivated = [u for u in users if not u.is_active]
+    for u in deactivated:
+        db.update_user(u.id, is_active=True)
+    return {"ok": True, "activated": [u.email for u in deactivated]}
