@@ -261,9 +261,66 @@
     .pl-row .pl-value { font-weight: 700; font-variant-numeric: tabular-nums; }
     .pl-row.total .pl-value { font-size: 1.1rem; color: #1a1a2e; }
 
+    /* ── Mobile bottom nav ── */
+    .mobile-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      background: #fff; border-top: 1px solid #e0e0e0;
+      padding: 6px 0 env(safe-area-inset-bottom, 8px);
+      justify-content: space-around; align-items: stretch;
+    }
+    .mobile-nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      gap: 3px; padding: 6px 4px; cursor: pointer; font-size: .6rem;
+      color: #888; border: none; background: none; font-family: inherit;
+      transition: color .12s;
+    }
+    .mobile-nav-item .mn-icon { font-size: 1.3rem; line-height: 1; }
+    .mobile-nav-item.active { color: #1a1a2e; font-weight: 600; }
+    .mobile-nav-more {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 300;
+      background: #fff; border-top: 1px solid #e0e0e0;
+      padding: 12px 20px env(safe-area-inset-bottom, 16px);
+      display: none; flex-direction: column; gap: 4px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,.12);
+    }
+    .mobile-nav-more.open { display: flex; }
+    .mobile-nav-more-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 13px 8px; font-size: .95rem; cursor: pointer;
+      border-radius: 8px; color: #222;
+    }
+    .mobile-nav-more-item:hover { background: #f4f5f7; }
+    .mobile-nav-more-item .mn-icon { font-size: 1.2rem; width: 24px; text-align: center; }
+    .mobile-nav-more-overlay {
+      display: none; position: fixed; inset: 0; z-index: 299;
+    }
+    .mobile-nav-more-overlay.open { display: block; }
+
     @media (max-width: 768px) {
       .sidebar { display: none; }
-      .main { margin-left: 0; }
+      .main { margin-left: 0; padding: 16px 14px; padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
+      .mobile-nav { display: flex; }
+      header { height: 48px; padding: 0 14px; }
+      header h1 { font-size: .92rem; }
+      .subtitle { display: none; }
+      .section-title { font-size: 1.1rem; margin-bottom: 14px; }
+      .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .stat-card { padding: 14px; }
+      .stat-card .value { font-size: 1.5rem; }
+      /* Make tables scrollable on mobile */
+      .table-wrap, [style*="overflow-x:auto"] { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { min-width: 500px; }
+      /* Bigger tap targets */
+      .btn { padding: 10px 16px; font-size: .85rem; }
+      .btn-sm { padding: 7px 12px; font-size: .78rem; }
+      /* Cards */
+      .card { padding: 14px 14px; border-radius: 10px; }
+      /* Modal full-width on mobile */
+      .modal { width: 96% !important; max-width: 96% !important; padding: 24px 18px; }
+      /* Schedule grid smaller font */
+      .wg-header, .wg-worker, .wg-cell { font-size: .7rem; padding: 5px 4px; }
+      .wg-shift { font-size: .65rem; padding: 2px 5px; }
     }
   </style>
 </head>
@@ -2160,6 +2217,57 @@
 
   initAuth();
   </script>
+
+  <!-- Mobile bottom nav -->
+  <nav class="mobile-nav" id="mobileNav">
+    <button class="mobile-nav-item active" data-mob-section="overview" onclick="mobNav('overview',this)">
+      <span class="mn-icon">🏠</span>Home
+    </button>
+    <button class="mobile-nav-item" data-mob-section="workers" onclick="mobNav('workers',this)">
+      <span class="mn-icon">👥</span>Workers
+    </button>
+    <button class="mobile-nav-item" data-mob-section="schedule" onclick="mobNav('schedule',this)">
+      <span class="mn-icon">📅</span>Schedule
+    </button>
+    <button class="mobile-nav-item" id="mobMoreBtn" onclick="toggleMobMore()">
+      <span class="mn-icon">⋯</span>More
+    </button>
+  </nav>
+
+  <!-- More drawer -->
+  <div class="mobile-nav-more-overlay" id="mobMoreOverlay" onclick="closeMobMore()"></div>
+  <div class="mobile-nav-more" id="mobMoreDrawer">
+    <div class="mobile-nav-more-item" onclick="mobNav('payroll');closeMobMore()"><span class="mn-icon">💰</span>Payroll</div>
+    <div class="mobile-nav-more-item" onclick="mobNav('leaderboard');closeMobMore()"><span class="mn-icon">🏆</span>Leaderboard</div>
+    <div class="mobile-nav-more-item" onclick="mobNav('petitions');closeMobMore()"><span class="mn-icon">📋</span>Petitions</div>
+    <div class="mobile-nav-more-item" onclick="mobNav('settings');closeMobMore()"><span class="mn-icon">⚙️</span>Settings</div>
+    <div class="mobile-nav-more-item" onclick="doLogout()"><span class="mn-icon">🚪</span>Sign out</div>
+  </div>
+
+  <script>
+    function mobNav(sec, btn) {
+      showSection(sec);
+      document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+    }
+    function toggleMobMore() {
+      document.getElementById('mobMoreDrawer').classList.toggle('open');
+      document.getElementById('mobMoreOverlay').classList.toggle('open');
+    }
+    function closeMobMore() {
+      document.getElementById('mobMoreDrawer').classList.remove('open');
+      document.getElementById('mobMoreOverlay').classList.remove('open');
+    }
+    // Hide mobile nav items Evan can't access
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('pv_role') === 'field_manager') {
+        document.getElementById('mobMoreBtn').style.display = 'none';
+        // Hide "More" drawer home/overview button too
+        document.querySelector('[data-mob-section="overview"]').style.display = 'none';
+      }
+    });
+  </script>
+
   </div><!-- /appLayout -->
 </body>
 </html>
