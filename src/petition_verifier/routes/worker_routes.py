@@ -93,7 +93,7 @@ def _user_to_dict(user: UserRow, include_stats: bool = False) -> dict:
     return d
 
 
-VALID_ROLES = ("boss", "admin", "worker", "field_manager", "petitioner", "office_worker")
+VALID_ROLES = ("worker", "field_manager", "petitioner", "office_worker")
 
 class CreateWorkerRequest(BaseModel):
     email: str = ""
