@@ -8,11 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin, require_boss, require_manager
-from ..storage import Database
+from ..storage import db
 from ..storage.database import UserRow
 
 router = APIRouter()
-db = Database()
 
 
 def _worker_stats_from_bulk(worker: UserRow, sig_counts: dict, active_shifts: dict, today_shifts: dict) -> dict:

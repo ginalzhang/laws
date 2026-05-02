@@ -7,11 +7,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from ..auth import require_worker
-from ..storage import Database
+from ..storage import db
 from ..payroll.calculator import calculate_shift_bonus
 
 router = APIRouter()
-db = Database()
 
 
 def _get_bonus_tier_label(valid_sigs: int, hours: float) -> str:

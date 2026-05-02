@@ -5,10 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_worker
-from ..storage import Database
+from ..storage import db
 
 router = APIRouter()
-db = Database()
 
 
 class PaymentPrefRequest(BaseModel):

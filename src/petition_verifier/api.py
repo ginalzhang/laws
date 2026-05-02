@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .storage import Database
+from .storage import db
 from .auth import get_current_user
 from .routes.auth_routes import router as auth_router
 from .routes.worker_routes import router as worker_router
@@ -42,7 +42,6 @@ from .routes.leaderboard_routes import router as leaderboard_router
 from .routes.payment_routes import router as payment_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
-db   = Database()
 
 # ── Hardcoded permanent accounts ─────────────────────────────────────────────
 # These are recreated on startup if missing, so they survive DB wipes.

@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin, require_manager, require_worker
-from ..storage import Database
+from ..storage import db
 
 router = APIRouter()
-db = Database()
 
 
 def _shift_to_dict(shift) -> dict:

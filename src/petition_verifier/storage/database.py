@@ -198,8 +198,8 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
     engine = create_engine(
         url,
         echo=False,
-        pool_size=10,
-        max_overflow=5,
+        pool_size=5,
+        max_overflow=3,
         pool_pre_ping=True,
         connect_args={"options": "-c statement_timeout=30000"},
         execution_options={"prepared_statement_cache_size": 0},
@@ -904,43 +904,25 @@ class Database:
             return {"total_sigs": total, "valid_sigs": valid, "signed_sigs": signed}
 
     def get_all_worker_sig_counts(self) -> dict:
-        """Return sig counts for ALL workers in 2 queries instead of N×M queries.
+        """Return sig counts for ALL workers in 1 query using pre-computed ProjectRow totals.
         Returns {worker_id: {"total_sigs": int, "valid_sigs": int}}
         """
         with self._Session() as session:
-            # One query: all worker_project assignments
-            wps = session.query(WorkerProjectRow).all()
-            project_ids = list({wp.project_id for wp in wps})
-            if not project_ids:
-                return {}
-
-            # One query: aggregate sig counts per project
+            # Single join: worker_projects → projects (uses pre-computed approved/total_lines)
             rows = (
                 session.query(
-                    SignatureRow.project_id,
-                    func.count(SignatureRow.id).label("total"),
-                    func.sum(
-                        case((
-                            (func.coalesce(SignatureRow.staff_override, SignatureRow.status) == "approved", 1),
-                        ), else_=0)
-                    ).label("valid"),
+                    WorkerProjectRow.worker_id,
+                    func.sum(ProjectRow.total_lines).label("total"),
+                    func.sum(ProjectRow.approved).label("valid"),
                 )
-                .filter(SignatureRow.project_id.in_(project_ids))
-                .group_by(SignatureRow.project_id)
+                .join(ProjectRow, ProjectRow.id == WorkerProjectRow.project_id)
+                .group_by(WorkerProjectRow.worker_id)
                 .all()
             )
-            counts_by_project = {r.project_id: {"total_sigs": r.total, "valid_sigs": r.valid or 0} for r in rows}
-
-            # Roll up per worker
-            result: dict = {}
-            for wp in wps:
-                wid = wp.worker_id
-                c = counts_by_project.get(wp.project_id, {"total_sigs": 0, "valid_sigs": 0})
-                if wid not in result:
-                    result[wid] = {"total_sigs": 0, "valid_sigs": 0}
-                result[wid]["total_sigs"] += c["total_sigs"]
-                result[wid]["valid_sigs"] += c["valid_sigs"]
-            return result
+            return {
+                r.worker_id: {"total_sigs": int(r.total or 0), "valid_sigs": int(r.valid or 0)}
+                for r in rows
+            }
 
     def get_all_active_shifts(self) -> dict:
         """Return active shifts for ALL workers in 1 query.

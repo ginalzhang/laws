@@ -9,12 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin, require_boss, require_worker
-from ..storage import Database
+from ..storage import db
 from ..storage.database import PayrollRecordRow
 from ..payroll.calculator import calculate_pay_for_period
 
 router = APIRouter()
-db = Database()
 
 
 def _fmt_cents(cents: int) -> str:
