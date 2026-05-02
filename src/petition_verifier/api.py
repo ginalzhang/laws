@@ -44,11 +44,10 @@ from .routes.payment_routes import router as payment_router
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
 # ── Hardcoded permanent accounts ─────────────────────────────────────────────
-# These are recreated on startup if missing, so they survive DB wipes.
-# username = the login name they type; it's also their password.
+# Permanent accounts — recreated/updated on every startup so passwords are always correct.
 _PERMANENT_USERS = [
-    {"email": "arianafan2000@app.local", "username": "arianafan2000", "role": "boss",          "full_name": "Gina"},
-    {"email": "evan@app.local",          "username": "evan",           "role": "field_manager", "full_name": "Evan"},
+    {"email": "arianafan2000@app.local", "username": "arianafan2000", "password": "pov7",  "role": "boss",          "full_name": "Gina"},
+    {"email": "evan@app.local",          "username": "evan",           "password": "evan",  "role": "field_manager", "full_name": "Evan"},
 ]
 
 @app.on_event("startup")
@@ -57,7 +56,10 @@ async def ensure_permanent_users():
     for u in _PERMANENT_USERS:
         existing = db.get_user_by_email(u["email"])
         if not existing:
-            db.create_user(u["email"], hash_password(u["username"]), u["role"], u["full_name"])
+            db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
+        else:
+            # Always keep password in sync in case it changed
+            db.update_user(existing.id, password_hash=hash_password(u["password"]))
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():

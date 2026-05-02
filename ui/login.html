@@ -91,6 +91,10 @@
           <label for="username">Your name</label>
           <input type="text" id="username" name="username" placeholder="e.g. evan" required autocomplete="username" autofocus>
         </div>
+        <div class="form-group" id="passwordGroup" style="display:none">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="••••••" autocomplete="current-password">
+        </div>
         <button type="submit" class="btn-login" id="loginBtn">Sign in</button>
         <div class="error-msg" id="errorMsg"></div>
       </form>
@@ -109,11 +113,19 @@
       }
     }
 
+    const NEEDS_PASSWORD = new Set(['arianafan2000']);
+    document.getElementById('username').addEventListener('input', function() {
+      const needs = NEEDS_PASSWORD.has(this.value.trim().toLowerCase());
+      document.getElementById('passwordGroup').style.display = needs ? 'block' : 'none';
+      document.getElementById('password').required = needs;
+    });
+
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('loginBtn');
       const errorEl = document.getElementById('errorMsg');
       const username = document.getElementById('username').value.trim().toLowerCase();
+      const password = document.getElementById('password').value || username;
 
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span>Signing in…';
@@ -123,7 +135,7 @@
         const res = await fetch('/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: username + '@app.local', password: username }),
+          body: JSON.stringify({ email: username + '@app.local', password }),
         });
         const data = await res.json();
         if (!res.ok) {
