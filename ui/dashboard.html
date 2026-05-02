@@ -593,9 +593,18 @@
       <!-- ── SETTINGS ── -->
       <section class="section" id="section-settings">
         <div class="section-title">Settings</div>
-        <div class="card" style="max-width:480px">
+        <div class="card non-manager-only" style="max-width:480px;margin-bottom:16px">
           <div class="card-title" style="margin-bottom:16px">Pay Periods</div>
           <div id="payPeriodsList"></div>
+        </div>
+        <div class="card" style="max-width:480px">
+          <div class="card-title" style="margin-bottom:16px">Change Password</div>
+          <div class="form-group"><label>Current Password</label><input type="password" id="cpCurrent" placeholder="••••••••"></div>
+          <div class="form-group"><label>New Password</label><input type="password" id="cpNew" placeholder="••••••••"></div>
+          <div class="form-group"><label>Confirm New Password</label><input type="password" id="cpConfirm" placeholder="••••••••"></div>
+          <div id="cpError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+          <div id="cpSuccess" style="color:#2e7d32;font-size:.83rem;margin-bottom:10px;display:none"></div>
+          <button class="btn btn-primary" onclick="submitChangePassword()">Update Password</button>
         </div>
       </section>
 
@@ -807,8 +816,8 @@
 
   function applyRoleVisibility() {
     if (_role === 'field_manager') {
-      // Evan: workers + schedule only
-      const allowed = new Set(['workers', 'schedule']);
+      // Evan: workers + schedule + settings only
+      const allowed = new Set(['workers', 'schedule', 'settings']);
       document.querySelectorAll('.nav-item').forEach(el => {
         if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
       });
@@ -818,6 +827,8 @@
       </tr>`;
       // Hide bulk bar (select all / remove selected)
       document.getElementById('bulkBar').style.display = 'none !important';
+      // Hide pay periods card from field managers
+      document.querySelectorAll('.non-manager-only').forEach(el => el.style.display = 'none');
       showSection('workers');
     }
   }
@@ -1656,6 +1667,27 @@
   }
 
   // ── Settings ───────────────────────────────────────────────────────────────
+  async function submitChangePassword() {
+    const current = document.getElementById('cpCurrent').value;
+    const newPw   = document.getElementById('cpNew').value;
+    const confirm = document.getElementById('cpConfirm').value;
+    const errEl   = document.getElementById('cpError');
+    const okEl    = document.getElementById('cpSuccess');
+    errEl.style.display = 'none'; okEl.style.display = 'none';
+    if (!current || !newPw) { errEl.textContent = 'Please fill in all fields.'; errEl.style.display = ''; return; }
+    if (newPw !== confirm)  { errEl.textContent = 'New passwords do not match.'; errEl.style.display = ''; return; }
+    if (newPw.length < 6)   { errEl.textContent = 'New password must be at least 6 characters.'; errEl.style.display = ''; return; }
+    try {
+      await api('/auth/me/password', { method: 'PATCH', body: JSON.stringify({ current_password: current, new_password: newPw }) });
+      okEl.textContent = 'Password updated!'; okEl.style.display = '';
+      document.getElementById('cpCurrent').value = '';
+      document.getElementById('cpNew').value = '';
+      document.getElementById('cpConfirm').value = '';
+    } catch(e) {
+      errEl.textContent = e.message || 'Failed to update password.'; errEl.style.display = '';
+    }
+  }
+
   async function loadSettings() {
     const periods = await api('/payroll/periods').catch(() => []);
     const el = document.getElementById('payPeriodsList');

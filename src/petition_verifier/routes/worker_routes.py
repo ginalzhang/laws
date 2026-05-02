@@ -92,6 +92,8 @@ class UpdateWageRequest(BaseModel):
 @router.get("")
 async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
+    if user["role"] == "field_manager":
+        users = [u for u in users if u.role not in ("boss", "admin", "office_worker")]
     return [_user_to_dict(u, include_stats=True) for u in users]
 
 

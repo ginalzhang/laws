@@ -58,6 +58,24 @@ async def dev_token():
     }
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch("/me/password")
+async def change_password(payload: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    db_user = db.get_user_by_id(user["user_id"])
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    if not verify_password(payload.current_password, db_user.password_hash):
+        raise HTTPException(400, "Current password is incorrect")
+    if len(payload.new_password) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    db.update_user(user["user_id"], password_hash=hash_password(payload.new_password))
+    return {"ok": True}
+
+
 @router.post("/logout")
 async def logout():
     return {"ok": True, "message": "Token invalidated client-side"}
