@@ -111,8 +111,10 @@ class UpdateWageRequest(BaseModel):
 @router.get("")
 async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
+    # Never show boss accounts in the workers list
+    users = [u for u in users if u.role != "boss"]
     if user["role"] == "field_manager":
-        users = [u for u in users if u.role not in ("boss", "admin", "office_worker")]
+        users = [u for u in users if u.role not in ("admin", "office_worker")]
     today_start   = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     sig_counts    = db.get_all_worker_sig_counts()
     active_shifts = db.get_all_active_shifts()
