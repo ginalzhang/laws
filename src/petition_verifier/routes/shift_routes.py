@@ -207,6 +207,37 @@ async def update_notes(shift_id: int, payload: NotesUpdate, user: dict = Depends
     return {"ok": True}
 
 
+class TimesUpdate(BaseModel):
+    clock_in: str             # ISO datetime
+    clock_out: Optional[str] = None  # ISO datetime or null
+
+
+@router.patch("/{shift_id}/times")
+async def update_shift_times(shift_id: int, payload: TimesUpdate, user: dict = Depends(require_manager)):
+    """Edit the start and/or end time of any shift."""
+    try:
+        clock_in_dt = datetime.fromisoformat(payload.clock_in)
+    except ValueError:
+        raise HTTPException(400, "Invalid clock_in format — use ISO 8601")
+    clock_out_dt = None
+    if payload.clock_out:
+        try:
+            clock_out_dt = datetime.fromisoformat(payload.clock_out)
+        except ValueError:
+            raise HTTPException(400, "Invalid clock_out format — use ISO 8601")
+        if clock_out_dt <= clock_in_dt:
+            raise HTTPException(400, "clock_out must be after clock_in")
+    updates = {"clock_in": clock_in_dt, "clock_out": clock_out_dt}
+    db.update_shift(shift_id, **updates)
+    with db._Session() as session:
+        from ..storage.database import ShiftRow
+        shift = session.query(ShiftRow).filter_by(id=shift_id).first()
+        if not shift:
+            raise HTTPException(404, "Shift not found")
+        session.expunge(shift)
+    return _shift_to_dict(shift)
+
+
 @router.delete("/{shift_id}")
 async def delete_shift(shift_id: int):
     with db._Session() as session:

@@ -636,6 +636,31 @@
     </div>
   </div>
 
+  <!-- Edit Shift Modal -->
+  <div class="modal-overlay" id="editShiftModal">
+    <div class="modal" style="max-width:360px">
+      <span class="modal-close" onclick="closeModal('editShiftModal')">✕</span>
+      <div class="modal-title" id="editShiftTitle">Edit Shift</div>
+      <input type="hidden" id="editShiftId">
+      <div class="form-group">
+        <label>Start Time</label>
+        <input type="time" id="editShiftStart">
+      </div>
+      <div class="form-group">
+        <label>End Time <span style="font-weight:400;color:#888">(leave blank if still active)</span></label>
+        <input type="time" id="editShiftEnd">
+      </div>
+      <div id="editShiftError" style="color:#c62828;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div class="modal-footer" style="justify-content:space-between">
+        <button class="btn btn-danger" onclick="removeShiftFromEdit()">Remove</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline" onclick="closeModal('editShiftModal')">Cancel</button>
+          <button class="btn btn-primary" onclick="submitEditShift()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Shift Modal -->
   <div class="modal-overlay" id="addShiftModal">
     <div class="modal" style="max-width:360px">
@@ -1351,9 +1376,9 @@
           html += '<div class="wg-cell">';
           dayShifts.forEach(s => {
             const inTime = s.clock_in.split('T')[1]?.slice(0,5) || '';
-            const outTime = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : 'active';
-            const label = s.hours ? `${inTime}–${outTime}` : 'Active';
-            html += `<div class="wg-shift" style="cursor:pointer" title="Click to remove" onclick="removeShift(${s.id})">${label}</div>`;
+            const outTime = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+            const label = outTime ? `${inTime}–${outTime}` : `${inTime} (active)`;
+            html += `<div class="wg-shift" style="cursor:pointer" title="Edit shift" onclick="openEditShift(${s.id},'${s.clock_in}','${s.clock_out||''}')">${label}</div>`;
           });
           html += '</div>';
         } else {
@@ -1395,6 +1420,52 @@
       loadSchedule();
       loadWorkers();
     } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
+
+  function openEditShift(shiftId, clockIn, clockOut) {
+    document.getElementById('editShiftId').value = shiftId;
+    document.getElementById('editShiftError').style.display = 'none';
+    // Extract HH:MM from ISO string
+    const inTime = clockIn ? clockIn.split('T')[1]?.slice(0,5) : '';
+    const outTime = clockOut ? clockOut.split('T')[1]?.slice(0,5) : '';
+    document.getElementById('editShiftStart').value = inTime;
+    document.getElementById('editShiftEnd').value = outTime;
+    const date = clockIn ? clockIn.split('T')[0] : '';
+    document.getElementById('editShiftTitle').textContent = `Edit Shift — ${date}`;
+    openModal('editShiftModal');
+  }
+
+  async function submitEditShift() {
+    const shiftId = document.getElementById('editShiftId').value;
+    const startVal = document.getElementById('editShiftStart').value;
+    const endVal   = document.getElementById('editShiftEnd').value;
+    const errEl    = document.getElementById('editShiftError');
+    errEl.style.display = 'none';
+    if (!startVal) { errEl.textContent = 'Start time is required.'; errEl.style.display = 'block'; return; }
+    // Reconstruct ISO datetimes using the date from the hidden shift title
+    const dateStr = document.getElementById('editShiftTitle').textContent.split('— ')[1] || '';
+    const clockIn = `${dateStr}T${startVal}:00`;
+    const clockOut = endVal ? `${dateStr}T${endVal}:00` : null;
+    try {
+      await api(`/shifts/${shiftId}/times`, {
+        method: 'PATCH',
+        body: JSON.stringify({ clock_in: clockIn, clock_out: clockOut }),
+      });
+      closeModal('editShiftModal');
+      loadSchedule();
+      loadWorkers();
+    } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
+
+  async function removeShiftFromEdit() {
+    const shiftId = document.getElementById('editShiftId').value;
+    if (!confirm('Remove this shift?')) return;
+    try {
+      await api(`/shifts/${shiftId}`, { method: 'DELETE' });
+      closeModal('editShiftModal');
+      loadSchedule();
+      loadWorkers();
+    } catch(e) { alert(e.message); }
   }
 
   async function removeShift(shiftId) {
