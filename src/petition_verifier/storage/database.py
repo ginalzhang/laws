@@ -194,7 +194,16 @@ class PayrollRecordRow(Base):
 
 
 def init_db(url: str = DATABASE_URL) -> sessionmaker:
-    engine = create_engine(url, echo=False)
+    is_postgres = url.startswith("postgresql")
+    engine = create_engine(
+        url,
+        echo=False,
+        pool_size=3,
+        max_overflow=2,
+        pool_pre_ping=True,
+        connect_args={"options": "-c statement_timeout=30000"},
+        execution_options={"prepared_statement_cache_size": 0},
+    ) if is_postgres else create_engine(url, echo=False)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)
 
