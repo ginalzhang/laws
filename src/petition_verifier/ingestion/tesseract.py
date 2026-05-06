@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from pdf2image import convert_from_path
 from PIL import Image
 
 from ..models import BoundingBox, ExtractedSignature
@@ -364,6 +363,7 @@ IMAGE_SUFFIXES = {".heic", ".heif", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".
 def _load_images(path: Path) -> list[Image.Image]:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
+        from pdf2image import convert_from_path
         return convert_from_path(str(path), dpi=DPI)
     if suffix in IMAGE_SUFFIXES:
         import pillow_heif
