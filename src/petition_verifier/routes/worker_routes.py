@@ -231,7 +231,7 @@ class UpdateWorkerRequest(BaseModel):
 
 
 @router.patch("/{worker_id}")
-async def update_worker(worker_id: int, payload: UpdateWorkerRequest):
+async def update_worker(worker_id: int, payload: UpdateWorkerRequest, user: dict = Depends(require_manager)):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
@@ -247,7 +247,7 @@ async def update_worker(worker_id: int, payload: UpdateWorkerRequest):
 
 
 @router.delete("/{worker_id}")
-async def delete_worker(worker_id: int):
+async def delete_worker(worker_id: int, user: dict = Depends(require_manager)):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")

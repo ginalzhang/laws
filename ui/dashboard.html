@@ -1319,14 +1319,16 @@
     const id = document.getElementById('editWorkerId').value;
     const errEl = document.getElementById('editWorkerError');
     errEl.style.display = 'none';
+    const wageVal = parseFloat(document.getElementById('editWorkerWage').value);
     const data = {
       full_name:   document.getElementById('editWorkerName').value.trim(),
       role:        document.getElementById('editWorkerRole').value,
       phone:       document.getElementById('editWorkerPhone').value.trim(),
       email:       document.getElementById('editWorkerEmail').value.trim(),
-      hourly_wage: parseFloat(document.getElementById('editWorkerWage').value) || 0,
+      hourly_wage: isNaN(wageVal) ? null : wageVal,
     };
     if (!data.full_name) { errEl.textContent = 'Name is required.'; errEl.style.display = 'block'; return; }
+    if (data.hourly_wage !== null && data.hourly_wage <= 0) { errEl.textContent = 'Wage must be positive.'; errEl.style.display = 'block'; return; }
     try {
       await api(`/workers/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
       closeModal('editWorkerModal');
@@ -1797,7 +1799,13 @@
       projSel.innerHTML = projects.map(p => `<option value="${p.id}">${p.id} (${p.approved} approved)</option>`).join('');
 
       const wkrSel = document.getElementById('assignWorkerSelect');
-      wkrSel.innerHTML = workers.filter(w => !['boss'].includes(w.role)).map(w => `<option value="${w.id}">${w.full_name}</option>`).join('');
+      wkrSel.innerHTML = '';
+      workers.filter(w => !['boss', 'field_manager', 'admin', 'office_worker'].includes(w.role)).forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w.id;
+        opt.textContent = w.full_name;
+        wkrSel.appendChild(opt);
+      });
 
       const el = document.getElementById('petitionsList');
       if (projects.length === 0) {

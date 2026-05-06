@@ -53,7 +53,7 @@ async def leaderboard(
     for worker in workers:
         if not worker.is_active:
             continue
-        if worker.role in ("boss", "admin"):
+        if worker.role in ("boss", "admin", "field_manager"):
             continue
 
         counts = sig_counts.get(worker.id, {"total_sigs": 0, "valid_sigs": 0})
