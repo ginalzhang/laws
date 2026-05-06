@@ -678,7 +678,13 @@
       <section class="section" id="section-settings">
         <div class="section-title">Settings</div>
         <div class="card non-manager-only" style="max-width:480px;margin-bottom:16px">
-          <div class="card-title" style="margin-bottom:16px">Pay Periods</div>
+          <div class="card-title" style="margin-bottom:8px">Pay Periods</div>
+          <p style="font-size:.8rem;color:#888;margin-bottom:12px">Workers are paid every Friday. Each period runs Monday–Friday.</p>
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            <button class="btn btn-outline" style="font-size:.82rem" onclick="createWeeklyPeriod(0)">+ This Week</button>
+            <button class="btn btn-outline" style="font-size:.82rem" onclick="createWeeklyPeriod(-1)">+ Last Week</button>
+            <button class="btn btn-outline" style="font-size:.82rem" onclick="openNewPeriodModal()">+ Custom</button>
+          </div>
           <div id="payPeriodsList"></div>
         </div>
       </section>
@@ -1728,10 +1734,31 @@
     a.click();
   }
 
+  function _weekBounds(weeksAgo) {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const daysToMonday = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek) - (weeksAgo * 7);
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + daysToMonday);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    const fmt = d => d.toISOString().split('T')[0];
+    return { start: fmt(monday), end: fmt(friday) };
+  }
+
+  async function createWeeklyPeriod(weeksAgo) {
+    const { start, end } = _weekBounds(weeksAgo === undefined ? 0 : -weeksAgo);
+    try {
+      await api('/payroll/periods', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
+      loadSettings();
+      loadPayPeriods();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
   function openNewPeriodModal() {
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('periodStart').value = today;
-    document.getElementById('periodEnd').value = today;
+    const { start, end } = _weekBounds(0);
+    document.getElementById('periodStart').value = start;
+    document.getElementById('periodEnd').value = end;
     openModal('newPeriodModal');
   }
 
