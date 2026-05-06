@@ -65,11 +65,29 @@ def _pil_to_bytes(image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def _make_vision_client():
+    """Build a Vision client, supporting JSON content in env var for Render/cloud deploys."""
+    import os, json
+    from google.cloud import vision as gv
+    from google.oauth2 import service_account
+
+    creds_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    # If the env var looks like JSON content (not a file path), load it directly
+    if creds_env.strip().startswith("{"):
+        info = json.loads(creds_env)
+        credentials = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return gv.ImageAnnotatorClient(credentials=credentials)
+    # Otherwise fall back to default (file path or ADC)
+    return gv.ImageAnnotatorClient()
+
+
 def _vision_words(image: Image.Image) -> list[_Word]:
     """Call Cloud Vision and return words with bounding-box coords."""
     from google.cloud import vision as gv
 
-    client   = gv.ImageAnnotatorClient()
+    client   = _make_vision_client()
     response = client.document_text_detection(image=gv.Image(content=_pil_to_bytes(image)))
 
     if response.error.message:
