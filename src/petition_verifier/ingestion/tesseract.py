@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 
@@ -124,6 +123,7 @@ class _Row:
 
 
 def _parse_words(image: Image.Image, config: str = _PSM6) -> list[_Word]:
+    import pytesseract
     data = pytesseract.image_to_data(
         image, output_type=pytesseract.Output.DICT, config=config
     )

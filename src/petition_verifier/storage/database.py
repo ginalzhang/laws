@@ -173,6 +173,16 @@ class PayPeriodRow(Base):
     status     = Column(String, default="open")  # open|closed|paid
 
 
+class WorkerLocationRow(Base):
+    __tablename__ = "worker_locations"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id  = Column(Integer, ForeignKey("users.id"), nullable=False)
+    lat        = Column(Float, nullable=False)
+    lng        = Column(Float, nullable=False)
+    note       = Column(String, default="")
+    pinned_at  = Column(DateTime, default=datetime.utcnow)
+
+
 class PayrollRecordRow(Base):
     __tablename__ = "payroll_records"
     id               = Column(Integer, primary_key=True, autoincrement=True)
@@ -941,6 +951,34 @@ class Database:
                     session.expunge(s)
                     result[s.worker_id] = s
             return result
+
+    # ── Location pin methods ──────────────────────────────────────────────────
+
+    def drop_pin(self, worker_id: int, lat: float, lng: float, note: str = "") -> WorkerLocationRow:
+        with self._Session() as session:
+            pin = WorkerLocationRow(worker_id=worker_id, lat=lat, lng=lng, note=note)
+            session.add(pin)
+            session.commit()
+            session.refresh(pin)
+            session.expunge(pin)
+            return pin
+
+    def get_all_pins(self, limit: int = 200) -> list:
+        with self._Session() as session:
+            pins = (
+                session.query(WorkerLocationRow)
+                .order_by(WorkerLocationRow.pinned_at.desc())
+                .limit(limit)
+                .all()
+            )
+            for p in pins:
+                session.expunge(p)
+            return pins
+
+    def get_total_valid_sigs(self) -> int:
+        with self._Session() as session:
+            result = session.query(func.sum(ProjectRow.approved)).scalar()
+            return int(result or 0)
 
     def get_all_today_shifts(self, today_start: datetime) -> dict:
         """Return today's shifts for ALL workers in 1 query.

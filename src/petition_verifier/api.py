@@ -40,6 +40,7 @@ from .routes.schedule_routes import router as schedule_router
 from .routes.payroll_routes import router as payroll_router
 from .routes.leaderboard_routes import router as leaderboard_router
 from .routes.payment_routes import router as payment_router
+from .routes.location_routes import router as location_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
@@ -72,6 +73,13 @@ app.include_router(schedule_router, prefix="/schedule", tags=["schedule"])
 app.include_router(payroll_router, prefix="/payroll", tags=["payroll"])
 app.include_router(leaderboard_router, tags=["leaderboard"])
 app.include_router(payment_router, prefix="/payment-preferences", tags=["payment"])
+app.include_router(location_router, prefix="/locations", tags=["locations"])
+
+
+@app.get("/stats/live-count")
+async def live_sig_count():
+    """Total approved signatures across all projects — poll for live updates."""
+    return {"total_valid_sigs": db.get_total_valid_sigs()}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

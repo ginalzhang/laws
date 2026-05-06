@@ -11,6 +11,8 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon.svg">
   <title>Dashboard — Petition Verifier</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -276,6 +278,34 @@
     .fraud-flags { font-size: .75rem; color: #8e8e93; margin-top: 3px; }
     .fraud-actions { display: flex; gap: 8px; margin-top: 10px; }
 
+    /* Map section */
+    #mapContainer { height: 480px; border-radius: 14px; overflow: hidden; }
+    .pin-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 12px 22px; border-radius: 14px; border: none; cursor: pointer;
+      font-size: .95rem; font-weight: 700; font-family: inherit;
+      background: #0a84ff; color: #fff;
+      transition: opacity .15s, transform .1s;
+    }
+    .pin-btn:hover { opacity: .88; }
+    .pin-btn:active { transform: scale(.97); }
+    .pin-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    .pin-msg { font-size: .82rem; color: #8e8e93; margin-top: 8px; min-height: 18px; }
+    .live-count-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(48,209,88,.12); color: #248a3d;
+      border-radius: 20px; padding: 4px 12px; font-size: .8rem; font-weight: 600;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #30d158; flex-shrink: 0;
+      animation: pulse-green 2s ease-in-out infinite;
+    }
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(48,209,88,.4); }
+      50%       { opacity: .7; box-shadow: 0 0 0 5px rgba(48,209,88,0); }
+    }
+
     /* P&L */
     .pl-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 0.5px solid #f2f2f7; font-size: .875rem; }
     .pl-row:last-child { border-bottom: none; }
@@ -413,6 +443,9 @@
         <div class="nav-item" data-section="quick-entry">
           <span class="icon">⚡</span> Quick Entry
         </div>
+        <div class="nav-item admin-only" data-section="map" id="navMap">
+          <span class="icon">📍</span> Live Map
+        </div>
         <div class="nav-divider"></div>
         <div class="nav-item" data-section="pl" id="navPL">
           <span class="icon">📊</span> P&amp;L
@@ -439,9 +472,29 @@
         <div class="section-title">Overview</div>
         <div class="stat-grid" id="overviewStats">
           <div class="stat-card"><div class="label">Clocked In Now</div><div class="value" id="statClockedIn">—</div></div>
-          <div class="stat-card green"><div class="label">Valid Sigs This Period</div><div class="value" id="statValidSigs">—</div></div>
+          <div class="stat-card green">
+            <div class="label" style="display:flex;align-items:center;gap:6px">
+              Total Valid Sigs
+              <span class="live-count-pill"><span class="live-dot"></span>Live</span>
+            </div>
+            <div class="value" id="statLiveCount">—</div>
+            <div class="sub" id="statValidSigsLabel"></div>
+          </div>
           <div class="stat-card orange"><div class="label">Est. Payroll</div><div class="value" id="statPayroll">—</div></div>
           <div class="stat-card purple"><div class="label">Total Workers</div><div class="value" id="statWorkers">—</div></div>
+        </div>
+
+        <!-- Drop Pin (visible to non-admin roles) -->
+        <div class="card worker-only" id="dropPinCard" style="margin-bottom:20px;display:none">
+          <div class="card-header">
+            <span class="card-title">📍 Drop My Location</span>
+          </div>
+          <p style="font-size:.82rem;color:#6e6e73;margin-bottom:14px">Tap to share your current location with your manager.</p>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <input id="pinNote" type="text" placeholder="Optional note (e.g. 'on Elm St')" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid #e5e5ea;border-radius:10px;font-size:.88rem;font-family:inherit;background:#f9f9fb;outline:none">
+            <button class="pin-btn" id="dropPinBtn" onclick="dropPin()">📍 Drop Pin</button>
+          </div>
+          <div class="pin-msg" id="pinMsg"></div>
         </div>
 
         <!-- Today's Roster -->
@@ -671,6 +724,21 @@
         <div class="card" style="margin-top:0">
           <div class="card-title" style="margin-bottom:16px">Breakdown</div>
           <canvas id="plChart" height="200"></canvas>
+        </div>
+      </section>
+
+      <!-- ── LIVE MAP ── -->
+      <section class="section" id="section-map">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Live Map
+          <button class="btn btn-outline" onclick="loadMap(true)">↻ Refresh</button>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div id="mapContainer"></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Recent Pins</div>
+          <div id="pinsList"><div class="empty">No pins yet</div></div>
         </div>
       </section>
 
@@ -917,12 +985,25 @@
   });
 
   function applyRoleVisibility() {
+    const isAdmin = ['boss', 'admin'].includes(_role);
+    const canSeeMap = ['boss', 'admin', 'field_manager'].includes(_role);
+    const isWorker = !isAdmin;
+
+    // Show/hide map nav
+    const navMap = document.getElementById('navMap');
+    if (navMap) navMap.style.display = canSeeMap ? '' : 'none';
+
+    // Show Drop Pin card for non-admin roles
+    const dropPinCard = document.getElementById('dropPinCard');
+    if (dropPinCard) dropPinCard.style.display = isWorker ? '' : 'none';
+
     if (_role === 'field_manager') {
-      // Evan: workers + schedule + settings only
-      const allowed = new Set(['workers', 'schedule']);
+      // Evan: workers + schedule + map only
+      const allowed = new Set(['workers', 'schedule', 'map']);
       document.querySelectorAll('.nav-item').forEach(el => {
         if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
       });
+      if (navMap) navMap.style.display = '';
       // Slim down workers table header — no checkbox, email, status, wage
       document.getElementById('workersTableHead').innerHTML = `<tr>
         <th>Name</th><th>Role</th><th>Phone</th><th>Actions</th>
@@ -941,6 +1022,7 @@
     document.getElementById('headerUser').textContent = _name || _role;
     applyRoleVisibility();
     loadOverview();
+    refreshLiveCount();
     loadFraudAlerts();
   }
 
@@ -982,6 +1064,7 @@
       case 'quick-entry': ensureQEWorkers(); break;
       case 'pl':         loadPayPeriodsPL(); break;
       case 'settings':   loadSettings(); break;
+      case 'map':        loadMap(); break;
     }
     if (cacheable.has(sec)) _sectionLoaded[sec] = true;
   }
@@ -1004,7 +1087,7 @@
       document.getElementById('statWorkers').textContent = workers.length;
 
       const totalValid = workers.reduce((s, w) => s + (w.total_valid_sigs || 0), 0);
-      document.getElementById('statValidSigs').textContent = totalValid.toLocaleString();
+      document.getElementById('statValidSigsLabel').textContent = `This period: ${totalValid.toLocaleString()}`;
 
       const totalPay = workers.reduce((s, w) => s + (w.estimated_pay_cents || 0), 0);
       document.getElementById('statPayroll').textContent = fmt(totalPay);
@@ -2342,6 +2425,126 @@
     document.getElementById('qeInput').value = '';
     document.getElementById('qePreview').style.display = 'none';
     qeParsed = [];
+  }
+
+  // ── Live Signature Count ───────────────────────────────────────────────────
+  async function refreshLiveCount() {
+    try {
+      const data = await api('/stats/live-count');
+      document.getElementById('statLiveCount').textContent = (data.total_valid_sigs || 0).toLocaleString();
+    } catch(e) {}
+  }
+  setInterval(refreshLiveCount, 15000);
+
+  // ── Drop Pin ───────────────────────────────────────────────────────────────
+  async function dropPin() {
+    const btn = document.getElementById('dropPinBtn');
+    const msg = document.getElementById('pinMsg');
+    const note = document.getElementById('pinNote').value.trim();
+
+    if (!navigator.geolocation) {
+      msg.style.color = '#c62828';
+      msg.textContent = 'Geolocation is not supported on this device.';
+      return;
+    }
+
+    btn.disabled = true;
+    msg.style.color = '#8e8e93';
+    msg.textContent = 'Getting location…';
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await api('/locations/pin', {
+            method: 'POST',
+            body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, note }),
+          });
+          msg.style.color = '#2e7d32';
+          msg.textContent = `Pin dropped at ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}${note ? ' — ' + note : ''}`;
+          document.getElementById('pinNote').value = '';
+        } catch(e) {
+          msg.style.color = '#c62828';
+          msg.textContent = 'Failed to save pin: ' + e.message;
+        }
+        btn.disabled = false;
+      },
+      (err) => {
+        msg.style.color = '#c62828';
+        msg.textContent = err.code === 1
+          ? 'Location access denied. Please allow location in browser settings.'
+          : 'Could not get location. Try again.';
+        btn.disabled = false;
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  // ── Live Map ───────────────────────────────────────────────────────────────
+  let _leafletMap = null;
+  const _workerColors = ['#0a84ff','#30d158','#ff9f0a','#bf5af2','#ff375f','#64d2ff','#ffd60a','#ff6961'];
+  const _colorFor = (() => { const m = {}; let i = 0; return id => (m[id] = m[id] ?? _workerColors[i++ % _workerColors.length]); })();
+
+  async function loadMap(force = false) {
+    try {
+      const pins = await api('/locations/pins');
+
+      // Build pins list
+      const listEl = document.getElementById('pinsList');
+      if (!pins.length) {
+        listEl.innerHTML = '<div class="empty">No pins dropped yet</div>';
+      } else {
+        listEl.innerHTML = pins.slice(0, 30).map(p => {
+          const t = new Date(p.pinned_at + 'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+          const d = new Date(p.pinned_at + 'Z').toLocaleDateString([], {month:'short',day:'numeric'});
+          const color = _colorFor(p.worker_id);
+          return `<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:0.5px solid #f2f2f7">
+            <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;margin-top:4px"></div>
+            <div style="flex:1">
+              <span style="font-weight:600;font-size:.875rem">${p.worker_name}</span>
+              <span style="color:#8e8e93;font-size:.75rem;margin-left:8px">${d} ${t}</span>
+              ${p.note ? `<div style="font-size:.78rem;color:#6e6e73;margin-top:2px">${p.note}</div>` : ''}
+            </div>
+            <div style="font-size:.72rem;color:#8e8e93;text-align:right;flex-shrink:0">${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</div>
+          </div>`;
+        }).join('');
+      }
+
+      // Initialize or reset Leaflet map
+      if (_leafletMap && force) {
+        _leafletMap.remove();
+        _leafletMap = null;
+      }
+      if (!_leafletMap) {
+        _leafletMap = L.map('mapContainer').setView([37.7749, -122.4194], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19,
+        }).addTo(_leafletMap);
+      } else {
+        _leafletMap.eachLayer(l => { if (l instanceof L.Marker) _leafletMap.removeLayer(l); });
+      }
+
+      if (pins.length) {
+        const latlngs = [];
+        pins.forEach(p => {
+          const color = _colorFor(p.worker_id);
+          const icon = L.divIcon({
+            html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`,
+            className: '', iconSize: [14, 14], iconAnchor: [7, 7],
+          });
+          const t = new Date(p.pinned_at + 'Z').toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+          L.marker([p.lat, p.lng], { icon })
+            .addTo(_leafletMap)
+            .bindPopup(`<strong>${p.worker_name}</strong><br>${t}${p.note ? '<br><em>' + p.note + '</em>' : ''}`);
+          latlngs.push([p.lat, p.lng]);
+        });
+        if (force || latlngs.length === pins.length) {
+          _leafletMap.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30], maxZoom: 15 });
+        }
+      }
+    } catch(e) {
+      console.error('loadMap error', e);
+    }
   }
 
   // Unregister any cached service workers so we always get the latest dashboard
