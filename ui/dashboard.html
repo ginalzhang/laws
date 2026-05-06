@@ -1868,7 +1868,7 @@
     try {
       await fetch(`/projects/${projectId}/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token}` },
         body: JSON.stringify({ worker_id: workerId }),
       });
       msgEl.style.color = '#2e7d32';
@@ -2028,7 +2028,7 @@
       fd.append('petition', file, file.name);
       const res = await fetch('/fraud-scan', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${_token}` },
         body: fd,
       });
       if (!res.ok) {
