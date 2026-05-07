@@ -190,23 +190,52 @@ def _is_vision_block_format(words: list[_Word]) -> bool:
 def _find_line_number_anchors(words: list[_Word], page_width: int) -> list[_Word]:
     """
     Find the printed line-number digits (1–8) that mark each signer row.
-    These are in the leftmost ~20% of the page and are reliably OCR'd even
-    when form labels like 'Print Name:' are not.
-    Returns words sorted by y-position.
+
+    No fixed x-position assumption — on two-column petitions the signature
+    grid starts at ~50% of page width, so the line numbers are not in the
+    left margin.  Instead we cluster all digit-1-8 candidates by x-position:
+    the real line numbers form a tight vertical column at a consistent x,
+    while stray digits in ballot summary text scatter across different x values.
     """
-    seen_digits: set[str] = set()
-    anchors: list[_Word] = []
+    _digit_re = re.compile(r"^([1-8])\.?$")
+
+    # Collect all candidates per digit
+    by_digit: dict[int, list[_Word]] = {}
     for w in words:
-        if not re.match(r"^[1-8]\.?$", w.text):
-            continue
-        digit = w.text.rstrip(".")
-        if digit in seen_digits:
-            continue
-        if w.left > page_width * 0.20:   # line numbers sit in the left margin
-            continue
-        seen_digits.add(digit)
-        anchors.append(w)
-    return sorted(anchors, key=lambda w: w.top)
+        m = _digit_re.match(w.text)
+        if m:
+            d = int(m.group(1))
+            by_digit.setdefault(d, []).append(w)
+
+    if len(by_digit) < 3:
+        return []
+
+    all_cands = [w for ws in by_digit.values() for w in ws]
+
+    # Find the x-band (±80px) that contains the most distinct digit values
+    best_group: list[_Word] = []
+    best_digit_count = 0
+    for ref in all_cands:
+        x_lo = ref.left - 80
+        x_hi = ref.right + 80
+        group = [w for w in all_cands if x_lo <= w.left <= x_hi]
+        n_digits = len({int(_digit_re.match(w.text).group(1)) for w in group})
+        if n_digits > best_digit_count:
+            best_digit_count = n_digits
+            best_group = group
+
+    if best_digit_count < 3:
+        return []
+
+    # One anchor per digit value, topmost occurrence wins
+    seen: set[int] = set()
+    result: list[_Word] = []
+    for w in sorted(best_group, key=lambda w: w.top):
+        d = int(_digit_re.match(w.text).group(1))
+        if d not in seen:
+            seen.add(d)
+            result.append(w)
+    return result
 
 
 def _find_grid_top(words: list[_Word]) -> Optional[int]:
@@ -616,21 +645,34 @@ def _extract_by_line_numbers(
             (w for w in block_words if re.match(r"^date:?$", w.text, re.I)), None
         )
 
-        # ── x-band fallback when labels are absent ───────────────────────────
-        # CA petition column layout (approximate fractions of page width):
-        #   sig box  0–18%  |  name  18–45%  |  address  45–68%
-        #   city  68–80%  |  zip  80–90%  |  date  90–100%
-        has_any_label = any([name_label, addr_label, city_label, zip_label])
+        # ── x-band layout ────────────────────────────────────────────────────
+        # All bands are computed relative to the line-number anchor x so this
+        # works whether the signature grid sits at 5% or 50% of page width.
+        #
+        #  anchor.left  →  anchor.right  →  sig_box  →  name  →  address
+        #                                   →  city  →  zip  →  date
+        #
+        # The content region starts just right of the anchor; we divide it
+        # into proportional slices matching a standard CA petition layout.
+        x0   = anchor.right + 10          # first content pixel
+        span = max(page_width - x0, 1)    # available width for fields
+
+        x_sig_end  = x0 + int(span * 0.15)   # sig box
+        x_name_end = x0 + int(span * 0.38)   # name
+        x_addr_end = x0 + int(span * 0.63)   # street address
+        x_city_end = x0 + int(span * 0.78)   # city
+        x_zip_end  = x0 + int(span * 0.90)   # zip
+
+        row_y_min = anchor.top - _ROW_MERGE_PX
+        row_y_max = anchor.top + _ROW_MERGE_PX * 2
 
         if name_label:
-            name_words = _words_right_of(name_label, block_words, y_tol=_ROW_MERGE_PX,
-                                          max_x=int(page_width * 0.45))
+            name_words = _words_right_of(name_label, block_words,
+                                          y_tol=_ROW_MERGE_PX, max_x=x_name_end)
         else:
             name_words = _words_in_region(block_words,
-                                           y_min=anchor.top - _ROW_MERGE_PX,
-                                           y_max=anchor.top + _ROW_MERGE_PX * 2,
-                                           x_min=int(page_width * 0.18),
-                                           x_max=int(page_width * 0.45))
+                                           y_min=row_y_min, y_max=row_y_max,
+                                           x_min=x_sig_end,  x_max=x_name_end)
 
         if addr_label:
             only_label = next(
@@ -642,15 +684,14 @@ def _extract_by_line_numbers(
             street_words = _words_in_region(block_words,
                                              y_min=only_label.top - 50,
                                              y_max=only_label.top + 15,
-                                             x_min=only_label.right + 5)
+                                             x_min=only_label.right + 5,
+                                             x_max=x_addr_end)
             street_words = [w for w in street_words if not zip_pattern.match(w.text)]
             street_text  = _join(street_words)
         else:
             street_words = _words_in_region(block_words,
-                                             y_min=anchor.top - _ROW_MERGE_PX,
-                                             y_max=anchor.top + _ROW_MERGE_PX * 2,
-                                             x_min=int(page_width * 0.45),
-                                             x_max=int(page_width * 0.68))
+                                             y_min=row_y_min, y_max=row_y_max,
+                                             x_min=x_name_end, x_max=x_addr_end)
             street_text  = _join(street_words)
 
         if zip_label:
@@ -659,30 +700,26 @@ def _extract_by_line_numbers(
             zip_text  = _join(zip_words)
         else:
             zip_words = _words_in_region(block_words,
-                                          y_min=anchor.top - _ROW_MERGE_PX,
-                                          y_max=anchor.top + _ROW_MERGE_PX * 2,
-                                          x_min=int(page_width * 0.80),
-                                          x_max=int(page_width * 0.90))
+                                          y_min=row_y_min, y_max=row_y_max,
+                                          x_min=x_city_end, x_max=x_zip_end)
             zip_text  = _join(w for w in zip_words if zip_pattern.match(w.text))
 
         if city_label:
-            city_max_x   = zip_label.left - 10 if zip_label else None
-            city_words   = _words_in_region(block_words,
-                                             y_min=city_label.top - 35,
-                                             y_max=city_label.top + 10,
-                                             x_min=city_label.right + 5,
-                                             x_max=city_max_x or 99999)
-            city_words   = [w for w in city_words
-                            if not re.match(r"^(state:?|zip:?|ca)$", w.text, re.I)
-                            and not zip_pattern.match(w.text)]
-            city_text    = _join(city_words)
+            city_max_x = zip_label.left - 10 if zip_label else x_city_end
+            city_words = _words_in_region(block_words,
+                                           y_min=city_label.top - 35,
+                                           y_max=city_label.top + 10,
+                                           x_min=city_label.right + 5,
+                                           x_max=city_max_x)
+            city_words = [w for w in city_words
+                          if not re.match(r"^(state:?|zip:?|ca)$", w.text, re.I)
+                          and not zip_pattern.match(w.text)]
+            city_text  = _join(city_words)
         else:
-            city_words   = _words_in_region(block_words,
-                                             y_min=anchor.top - _ROW_MERGE_PX,
-                                             y_max=anchor.top + _ROW_MERGE_PX * 2,
-                                             x_min=int(page_width * 0.68),
-                                             x_max=int(page_width * 0.80))
-            city_text    = _join(city_words)
+            city_words = _words_in_region(block_words,
+                                           y_min=row_y_min, y_max=row_y_max,
+                                           x_min=x_addr_end, x_max=x_city_end)
+            city_text  = _join(city_words)
 
         raw_address = ", ".join(filter(None, [street_text, city_text, zip_text]))
 
@@ -694,25 +731,25 @@ def _extract_by_line_numbers(
             raw_date   = _join(date_words)
         else:
             date_words = _words_in_region(block_words,
-                                           y_min=anchor.top - _ROW_MERGE_PX,
-                                           y_max=anchor.top + _ROW_MERGE_PX * 2,
-                                           x_min=int(page_width * 0.90))
+                                           y_min=row_y_min, y_max=row_y_max,
+                                           x_min=x_zip_end)
             raw_date   = _join(date_words)
 
         raw_name = _join(name_words)
 
-        # Signature: non-label words in the signature column (0–18% of width)
+        # Signature: non-label words in the signature column (between line
+        # number and name field)
         sig_col_words = _words_in_region(block_words,
                                           y_min=anchor.top - 60,
                                           y_max=anchor.top + _BLOCK_BELOW_PX,
-                                          x_min=int(page_width * 0.05),
-                                          x_max=int(page_width * 0.18))
+                                          x_min=anchor.right + 5,
+                                          x_max=x_sig_end)
         sig_present = any(not _is_printed_label(w.text) for w in sig_col_words)
         sig_bbox    = None
         if sig_present:
             sig_bbox = BoundingBox(
-                x=int(page_width * 0.05), y=anchor.top - 30,
-                width=int(page_width * 0.13), height=90,
+                x=anchor.right + 5, y=anchor.top - 30,
+                width=x_sig_end - anchor.right,  height=90,
                 page=page_num,
             )
 
