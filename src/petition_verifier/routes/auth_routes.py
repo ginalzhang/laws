@@ -78,6 +78,26 @@ async def login_by_name(payload: NameLoginRequest):
     }
 
 
+@router.get("/active-users")
+async def list_active_users():
+    """Public — returns active user names for the login name-selector UI."""
+    role_labels = {
+        "field_manager": "Field Manager",
+        "evan":          "Field Manager",
+        "worker":        "Worker",
+        "petitioner":    "Petitioner",
+        "office_worker": "Staff",
+    }
+    users = db.list_users()
+    result = [
+        {"full_name": u.full_name, "role_label": role_labels.get(u.role, u.role.title())}
+        for u in users
+        if u.is_active and u.role not in ("boss", "admin")
+    ]
+    result.sort(key=lambda x: x["full_name"].lower())
+    return result
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

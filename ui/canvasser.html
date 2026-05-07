@@ -16,6 +16,7 @@
       padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
       -webkit-font-smoothing: antialiased;
     }
+
     .header {
       background: #fff;
       padding: 20px 20px 16px;
@@ -26,19 +27,19 @@
     .sig-count   { font-size: 3.5rem; font-weight: 800; color: #0a84ff; line-height: 1; margin-top: 4px; }
     .sig-label   { font-size: .8rem; color: #8e8e93; margin-top: 2px; }
 
-    .content { padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+    .content { padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; }
 
     .big-btn {
-      width: 100%; padding: 22px 20px;
-      border: none; border-radius: 18px;
-      font-size: 1.15rem; font-weight: 700; font-family: inherit;
+      width: 100%; padding: 20px;
+      border: none; border-radius: 16px;
+      font-size: 1.1rem; font-weight: 700; font-family: inherit;
       cursor: pointer; display: flex; align-items: center; gap: 14px;
       transition: opacity .15s, transform .1s;
       -webkit-appearance: none;
     }
     .big-btn:active { transform: scale(.97); opacity: .88; }
     .big-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-    .big-btn .icon { font-size: 1.6rem; flex-shrink: 0; }
+    .big-btn .icon { font-size: 1.5rem; flex-shrink: 0; }
     .big-btn .label { text-align: left; }
     .big-btn .label .title { display: block; }
     .big-btn .label .sub   { display: block; font-size: .8rem; font-weight: 400; opacity: .7; margin-top: 2px; }
@@ -53,7 +54,51 @@
     .msg.success { color: #2e7d32; }
     .msg.error   { color: #c62828; }
 
-    /* Count input overlay */
+    /* Leaderboard card */
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0.5px rgba(0,0,0,.04);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 16px 10px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title { font-size: .9rem; font-weight: 700; color: #000; }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #30d158;
+      display: inline-block; margin-right: 6px;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
+    }
+    .last-update { font-size: .72rem; color: #8e8e93; }
+
+    .lb-list { padding: 0 16px 10px; }
+    .lb-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 0.5px solid #f2f2f7;
+    }
+    .lb-row:last-child { border-bottom: none; }
+    .lb-row.me { background: #f0f7ff; margin: 0 -16px; padding: 10px 16px; }
+
+    .lb-rank {
+      font-size: .78rem; color: #8e8e93;
+      width: 22px; flex-shrink: 0; text-align: center; font-weight: 600;
+    }
+    .lb-rank.top { color: #ff9f0a; }
+    .lb-name { flex: 1; font-size: .9rem; font-weight: 600; }
+    .lb-name .you-tag {
+      font-size: .68rem; font-weight: 600; color: #0a84ff;
+      background: #e3f0ff; padding: 1px 6px; border-radius: 10px;
+      margin-left: 6px; vertical-align: middle;
+    }
+    .lb-sigs { font-size: .95rem; font-weight: 700; color: #0a84ff; }
+    .lb-empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
+
+    /* Sig input overlay */
     .overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
@@ -83,8 +128,8 @@
     .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 
     .logout-link {
-      text-align: center; margin-top: 32px;
-      font-size: .8rem; color: #8e8e93; cursor: pointer;
+      text-align: center;
+      font-size: .8rem; color: #8e8e93; cursor: pointer; padding: 4px;
     }
     .logout-link:hover { color: #ff3b30; }
   </style>
@@ -116,6 +161,17 @@
 
     <div class="msg" id="statusMsg"></div>
 
+    <!-- Live leaderboard -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="live-dot"></span>Live Today</div>
+        <div class="last-update" id="lbUpdated"></div>
+      </div>
+      <div class="lb-list" id="lbList">
+        <div class="lb-empty">Loading…</div>
+      </div>
+    </div>
+
     <div class="logout-link" onclick="logout()">Sign out</div>
   </div>
 
@@ -133,14 +189,13 @@
 
   <script>
     const token    = localStorage.getItem('pv_token');
-    const role     = localStorage.getItem('pv_role');
     const userName = localStorage.getItem('pv_full_name');
+    const userId   = parseInt(localStorage.getItem('pv_user_id') || '0', 10);
 
     if (!token) { window.location.href = '/'; }
 
     document.getElementById('workerName').textContent = userName || 'Canvasser';
 
-    // Load last submitted count from memory if stored
     const storedCount = sessionStorage.getItem('pv_sig_count');
     document.getElementById('sigCount').textContent = storedCount ?? '—';
 
@@ -176,19 +231,18 @@
       const val = parseInt(document.getElementById('sigInput').value, 10);
       if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); return; }
       const btn = document.getElementById('sigSubmitBtn');
-      btn.disabled = true;
-      btn.textContent = 'Saving…';
+      btn.disabled = true; btn.textContent = 'Saving…';
       try {
         await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: val }) });
         sessionStorage.setItem('pv_sig_count', val);
         document.getElementById('sigCount').textContent = val;
         closeSheet();
         setMsg('Sig count updated!', 'success');
+        loadLeaderboard();
       } catch(e) {
         setMsg(e.message, 'error');
       }
-      btn.disabled = false;
-      btn.textContent = 'Submit';
+      btn.disabled = false; btn.textContent = 'Submit';
     }
 
     async function shareLocation() {
@@ -204,9 +258,7 @@
               body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
             });
             setMsg('Location shared!', 'success');
-          } catch(e) {
-            setMsg(e.message, 'error');
-          }
+          } catch(e) { setMsg(e.message, 'error'); }
           btn.disabled = false;
         },
         (err) => {
@@ -217,16 +269,50 @@
       );
     }
 
+    async function loadLeaderboard() {
+      try {
+        const data = await api('/stats/live');
+        const el   = document.getElementById('lbList');
+        if (!data.length) {
+          el.innerHTML = '<div class="lb-empty">No counts submitted yet — be the first!</div>';
+          return;
+        }
+        const sorted = [...data]
+          .filter(e => e.sig_count > 0)
+          .sort((a, b) => b.sig_count - a.sig_count);
+        if (!sorted.length) {
+          el.innerHTML = '<div class="lb-empty">No counts submitted yet — be the first!</div>';
+          return;
+        }
+        const myName = (userName || '').toLowerCase();
+        el.innerHTML = sorted.map((e, i) => {
+          const isMe  = e.full_name.toLowerCase() === myName;
+          const rank  = i + 1;
+          const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+          return `<div class="lb-row${isMe ? ' me' : ''}">
+            <div class="lb-rank${rank <= 3 ? ' top' : ''}">${medal}</div>
+            <div class="lb-name">${e.full_name}${isMe ? '<span class="you-tag">you</span>' : ''}</div>
+            <div class="lb-sigs">${e.sig_count.toLocaleString()}</div>
+          </div>`;
+        }).join('');
+        document.getElementById('lbUpdated').textContent =
+          new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      } catch(e) {
+        document.getElementById('lbList').innerHTML = '<div class="lb-empty">Could not load</div>';
+      }
+    }
+
     function logout() {
-      localStorage.clear();
-      sessionStorage.clear();
+      localStorage.clear(); sessionStorage.clear();
       window.location.href = '/';
     }
 
-    // Close sheet on backdrop click
     document.getElementById('sigOverlay').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) closeSheet();
     });
+
+    loadLeaderboard();
+    setInterval(loadLeaderboard, 30000);
   </script>
 </body>
 </html>

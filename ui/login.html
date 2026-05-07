@@ -19,112 +19,101 @@
       background: #f2f2f7;
       min-height: 100vh;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
-      padding: 20px;
+      padding: 24px 16px env(safe-area-inset-bottom);
       -webkit-font-smoothing: antialiased;
     }
 
     .card {
       background: #ffffff;
       border-radius: 20px;
-      padding: 48px 40px 40px;
+      padding: 36px 24px 28px;
       width: 100%;
-      max-width: 380px;
+      max-width: 400px;
       box-shadow: 0 2px 20px rgba(0,0,0,.08), 0 0 0 0.5px rgba(0,0,0,.06);
     }
 
     .logo {
-      width: 56px; height: 56px;
+      width: 52px; height: 52px;
       background: linear-gradient(135deg, #0a84ff, #0062cc);
-      border-radius: 14px;
+      border-radius: 13px;
       display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 24px;
-      box-shadow: 0 4px 12px rgba(10,132,255,.3);
+      margin: 0 auto 20px;
+      box-shadow: 0 4px 12px rgba(10,132,255,.28);
     }
-    .logo svg { width: 28px; height: 28px; fill: #fff; }
+    .logo svg { width: 26px; height: 26px; fill: #fff; }
 
     h1 {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: #000;
-      text-align: center;
-      letter-spacing: -.3px;
-      margin-bottom: 6px;
+      font-size: 1.5rem; font-weight: 700; color: #000;
+      text-align: center; letter-spacing: -.3px; margin-bottom: 4px;
     }
     .tagline {
-      font-size: .875rem;
-      color: #8e8e93;
-      text-align: center;
-      margin-bottom: 36px;
+      font-size: .875rem; color: #8e8e93;
+      text-align: center; margin-bottom: 20px;
     }
 
-    .form-group { margin-bottom: 12px; }
-
-    .form-group input {
-      width: 100%;
-      padding: 14px 16px;
-      border: 1px solid #e5e5ea;
-      border-radius: 12px;
-      font-size: 1rem;
-      font-family: inherit;
-      background: #fafafa;
-      color: #000;
-      transition: border-color .15s, box-shadow .15s, background .15s;
-      outline: none;
+    .search-wrap { position: relative; margin-bottom: 12px; }
+    .search-wrap input {
+      width: 100%; padding: 11px 14px 11px 36px;
+      border: 1px solid #e5e5ea; border-radius: 12px;
+      font-size: .95rem; font-family: inherit;
+      background: #f2f2f7; color: #000; outline: none;
       -webkit-appearance: none;
     }
-    .form-group input::placeholder { color: #c7c7cc; }
-    .form-group input:focus {
-      border-color: #0a84ff;
-      background: #fff;
-      box-shadow: 0 0 0 3px rgba(10,132,255,.12);
+    .search-wrap input::placeholder { color: #c7c7cc; }
+    .search-wrap input:focus { border-color: #0a84ff; background: #fff; }
+    .search-icon {
+      position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+      color: #8e8e93; font-size: .9rem; pointer-events: none;
     }
 
-    .btn-login {
-      width: 100%;
-      padding: 14px;
-      background: #0a84ff;
-      color: #fff;
-      border: none;
-      border-radius: 12px;
-      font-size: 1rem;
-      font-weight: 600;
-      font-family: inherit;
-      cursor: pointer;
-      margin-top: 8px;
-      transition: background .15s, transform .1s, opacity .15s;
-      -webkit-appearance: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
+    .name-list {
+      display: flex; flex-direction: column; gap: 6px;
+      max-height: 52vh; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-right: 2px;
     }
-    .btn-login:hover { background: #0077ed; }
-    .btn-login:active { transform: scale(.98); }
-    .btn-login:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .name-list::-webkit-scrollbar { width: 4px; }
+    .name-list::-webkit-scrollbar-track { background: transparent; }
+    .name-list::-webkit-scrollbar-thumb { background: #d1d1d6; border-radius: 4px; }
+
+    .name-btn {
+      width: 100%; padding: 13px 14px;
+      background: #f2f2f7; border: none; border-radius: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; font-family: inherit;
+      transition: background .1s, transform .08s;
+      -webkit-appearance: none; text-align: left;
+    }
+    .name-btn:hover  { background: #e8e8ed; }
+    .name-btn:active { background: #d8d8dd; transform: scale(.98); }
+    .name-btn.loading { opacity: .6; pointer-events: none; }
+
+    .name-text { font-size: .97rem; font-weight: 600; color: #000; }
+
+    .role-pill {
+      font-size: .68rem; font-weight: 600; letter-spacing: .02em;
+      padding: 3px 8px; border-radius: 20px; flex-shrink: 0;
+      text-transform: uppercase;
+    }
+    .role-pill.petitioner    { background: #e8f4e8; color: #2e7d32; }
+    .role-pill.field_manager { background: #e3f0ff; color: #0055b3; }
+    .role-pill.worker        { background: #fff3e0; color: #e65100; }
+    .role-pill.staff         { background: #f3e8ff; color: #6a1b9a; }
+
+    .empty-state {
+      padding: 28px 0; text-align: center;
+      font-size: .875rem; color: #8e8e93;
+    }
 
     .error-msg {
-      margin-top: 14px;
-      padding: 12px 14px;
-      background: #fff2f2;
-      color: #ff3b30;
-      border-radius: 10px;
-      font-size: .85rem;
-      display: none;
-      text-align: center;
+      margin-top: 14px; padding: 11px 14px;
+      background: #fff2f2; color: #ff3b30;
+      border-radius: 10px; font-size: .84rem;
+      display: none; text-align: center;
     }
     .error-msg.show { display: block; }
-
-    .spinner {
-      width: 17px; height: 17px;
-      border: 2px solid rgba(255,255,255,.35);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin .65s linear infinite;
-      flex-shrink: 0;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -136,15 +125,18 @@
     </div>
 
     <h1>Petition Verifier</h1>
-    <p class="tagline">Type your name to sign in</p>
+    <p class="tagline">Tap your name to sign in</p>
 
-    <form id="nameForm">
-      <div class="form-group">
-        <input type="text" id="nameInput" placeholder="Your full name" required autocomplete="name" autofocus>
-      </div>
-      <button type="submit" class="btn-login" id="nameBtn">Sign In</button>
-      <div class="error-msg" id="nameError"></div>
-    </form>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="search" id="searchInput" placeholder="Search names…" autocomplete="off" oninput="filterNames()">
+    </div>
+
+    <div class="name-list" id="nameList">
+      <div class="empty-state">Loading…</div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
   </div>
 
   <script>
@@ -162,15 +154,51 @@
     const existingRole  = localStorage.getItem('pv_role');
     if (existingToken && existingRole) redirect(existingRole);
 
-    document.getElementById('nameForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn     = document.getElementById('nameBtn');
-      const errorEl = document.getElementById('nameError');
-      const name    = document.getElementById('nameInput').value.trim();
+    let allUsers = [];
 
-      btn.disabled = true;
-      btn.innerHTML = '<div class="spinner"></div>Signing in…';
+    const rolePillClass = {
+      'Petitioner':    'petitioner',
+      'Field Manager': 'field_manager',
+      'Worker':        'worker',
+      'Staff':         'staff',
+    };
+
+    async function loadNames() {
+      try {
+        const res = await fetch('/auth/active-users');
+        allUsers = await res.json();
+        renderNames(allUsers);
+      } catch(e) {
+        document.getElementById('nameList').innerHTML =
+          '<div class="empty-state">Could not load names — try refreshing</div>';
+      }
+    }
+
+    function filterNames() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      renderNames(q ? allUsers.filter(u => u.full_name.toLowerCase().includes(q)) : allUsers);
+    }
+
+    function renderNames(users) {
+      const el = document.getElementById('nameList');
+      if (!users.length) {
+        el.innerHTML = '<div class="empty-state">No matches</div>';
+        return;
+      }
+      el.innerHTML = users.map(u => {
+        const cls = rolePillClass[u.role_label] || 'staff';
+        return `<button class="name-btn" onclick="loginAs(this, ${JSON.stringify(u.full_name)})">
+          <span class="name-text">${u.full_name}</span>
+          <span class="role-pill ${cls}">${u.role_label}</span>
+        </button>`;
+      }).join('');
+    }
+
+    async function loginAs(btn, name) {
+      const errorEl = document.getElementById('errorMsg');
       errorEl.classList.remove('show');
+      btn.classList.add('loading');
+      btn.querySelector('.name-text').textContent = 'Signing in…';
 
       try {
         const res  = await fetch('/auth/login-by-name', {
@@ -187,13 +215,15 @@
         localStorage.setItem('pv_full_name', data.full_name);
 
         redirect(data.role);
-      } catch (err) {
+      } catch(err) {
+        btn.classList.remove('loading');
+        btn.querySelector('.name-text').textContent = name;
         errorEl.textContent = err.message;
         errorEl.classList.add('show');
-        btn.disabled  = false;
-        btn.textContent = 'Sign In';
       }
-    });
+    }
+
+    loadNames();
   </script>
   <script>
     if ('serviceWorker' in navigator) {

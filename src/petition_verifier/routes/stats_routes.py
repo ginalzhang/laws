@@ -60,6 +60,4 @@ async def submit_location(payload: LocationPayload, user: dict = Depends(get_cur
 
 @router.get("/live")
 async def live_stats(user: dict = Depends(get_current_user)):
-    if user["role"] not in ("boss", "admin", "field_manager"):
-        raise HTTPException(403, "Not authorized")
     return list(_live.values()) if _live else []

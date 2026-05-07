@@ -33,7 +33,7 @@ async def drop_pin(payload: PinPayload, user: dict = Depends(get_current_user)):
 
 @router.get("/pins")
 async def get_pins(user: dict = Depends(get_current_user)):
-    if user["role"] not in ("boss", "admin", "field_manager"):
+    if user["role"] not in ("boss", "admin", "field_manager", "evan"):
         raise HTTPException(403, "Not authorized")
     pins = db.get_all_pins()
     result = []
