@@ -32,6 +32,9 @@ class ExtractedSignature(BaseModel):
     signature_bbox: Optional[BoundingBox] = None
     # OCR confidence from Tesseract (0-100); None if not available
     ocr_confidence: Optional[float] = None
+    # Grayscale grid-cell density vector of the handwritten content area.
+    # Populated by the Vision backend for same-handwriting fraud detection.
+    handwriting_vector: Optional[list] = None
 
 
 class NormalizedSignature(BaseModel):

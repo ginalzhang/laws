@@ -59,6 +59,43 @@ def _load_images_pil(path: Path) -> list[Image.Image]:
     raise ValueError(f"Unsupported file type: {suffix}")
 
 
+def _handwriting_vector(image: Image.Image, words: list[_Word]) -> Optional[list]:
+    """
+    Encode the handwritten content of a signer's block as a 32-element vector
+    (8 columns × 4 rows of normalised mean grayscale intensity).
+
+    This captures writing density, stroke weight, and vertical rhythm — features
+    that identify handwriting STYLE independently of what letters were written.
+    Used for same-handwriting fraud detection across signer rows.
+    """
+    if not words:
+        return None
+    x_min = min(w.left for w in words)
+    y_min = min(w.top  for w in words)
+    x_max = max(w.left + w.width  for w in words)
+    y_max = max(w.top  + w.height for w in words)
+    if x_max - x_min < 20 or y_max - y_min < 8:
+        return None
+    pad  = 6
+    crop = image.crop((
+        max(0, x_min - pad), max(0, y_min - pad),
+        min(image.width, x_max + pad), min(image.height, y_max + pad),
+    )).convert("L")
+    crop = crop.resize((64, 20))
+    pixels = list(crop.getdata())
+    W = 64
+    vec = []
+    for row in range(4):           # 4 horizontal bands
+        for col in range(8):       # 8 vertical slices → 32 cells total
+            cell = [
+                pixels[(r * W) + c]
+                for r in range(row * 5, row * 5 + 5)
+                for c in range(col * 8, col * 8 + 8)
+            ]
+            vec.append(sum(cell) / (len(cell) * 255.0))
+    return vec
+
+
 def _pil_to_bytes(image: Image.Image) -> bytes:
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=95)
@@ -480,6 +517,7 @@ def _extract_vision_block(
 
         avg_conf = (sum(w.conf for w in block_words) / max(len(block_words), 1))
 
+        handwritten = [w for w in block_words if not _is_printed_label(w.text)]
         sigs.append(ExtractedSignature(
             line_number=line_start + sig_num,
             page=page_num,
@@ -489,6 +527,7 @@ def _extract_vision_block(
             signature_present=sig_present,
             signature_bbox=sig_bbox,
             ocr_confidence=round(avg_conf, 1),
+            handwriting_vector=_handwriting_vector(image, handwritten),
         ))
         sig_num += 1
 

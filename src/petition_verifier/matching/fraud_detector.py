@@ -38,6 +38,7 @@ DUPLICATE_ADDRESS = "duplicate_address"
 SAME_DATE         = "same_date"
 NO_SIGNATURE      = "no_signature"
 BLANK_LINE        = "blank_line"
+SAME_HANDWRITING  = "same_handwriting"
 
 # Thresholds
 _NAME_SIM_THRESHOLD    = 92    # fuzzy — allows minor OCR noise
@@ -45,6 +46,7 @@ _ADDRESS_SIM_THRESHOLD = 88    # slightly looser to catch near-duplicate streets
 _NEARBY_HOUSE_GAP      = 10    # house numbers within 10 = same block
 _CONSECUTIVE_WINDOW    = 4     # run of 4+ consecutive numbers = suspicious
 _CITY_DOMINANT_PCT     = 0.70  # 70%+ of filled lines share one city = flagged
+_HANDWRITING_SIM       = 0.97  # cosine similarity above this = likely same writer
 
 
 @dataclass
@@ -154,6 +156,7 @@ class FraudAnalyzer:
         self._flag_duplicate_names(results, normalized)
         self._flag_duplicate_addresses(results, normalized)
         self._flag_same_date(results)
+        self._flag_similar_handwriting(results, extracted)
 
         flagged = sum(1 for r in results if r.is_flagged)
         return FraudScanResult(
@@ -371,6 +374,38 @@ class FraudAnalyzer:
                     f'filled in by one person',
                     [ln for ln in all_lines if ln != r.line_number],
                 )
+
+
+    def _flag_similar_handwriting(
+        self,
+        results: list[LineFraudResult],
+        extracted: list[ExtractedSignature],
+    ) -> None:
+        import math
+        vecs = {e.line_number: e.handwriting_vector for e in extracted if e.handwriting_vector}
+        if len(vecs) < 2:
+            return
+
+        line_nums = list(vecs.keys())
+        by_line   = {r.line_number: r for r in results}
+
+        for i in range(len(line_nums)):
+            for j in range(i + 1, len(line_nums)):
+                a, b = vecs[line_nums[i]], vecs[line_nums[j]]
+                dot   = sum(x * y for x, y in zip(a, b))
+                mag_a = math.sqrt(sum(x * x for x in a))
+                mag_b = math.sqrt(sum(x * x for x in b))
+                sim   = dot / (mag_a * mag_b + 1e-9)
+                if sim >= _HANDWRITING_SIM:
+                    ln_a, ln_b = line_nums[i], line_nums[j]
+                    desc = (
+                        f"Handwriting on lines {ln_a} and {ln_b} appears very similar "
+                        f"(similarity {sim:.2f}) — may have been written by the same person"
+                    )
+                    if ln_a in by_line:
+                        _add_if_missing(by_line[ln_a], SAME_HANDWRITING, desc, [ln_b])
+                    if ln_b in by_line:
+                        _add_if_missing(by_line[ln_b], SAME_HANDWRITING, desc, [ln_a])
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
