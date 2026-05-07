@@ -112,7 +112,7 @@ class UpdateWageRequest(BaseModel):
 async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
     # Never show boss or evan accounts in the workers list
-    users = [u for u in users if u.role not in ("boss", "evan")]
+    users = [u for u in users if u.role not in ("boss", "evan", "field_manager")]
     today_start   = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     sig_counts    = db.get_all_worker_sig_counts()
     active_shifts = db.get_all_active_shifts()
