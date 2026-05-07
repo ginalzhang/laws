@@ -57,6 +57,27 @@ async def dev_token():
     }
 
 
+class NameLoginRequest(BaseModel):
+    full_name: str
+
+
+@router.post("/login-by-name")
+async def login_by_name(payload: NameLoginRequest):
+    user = db.get_user_by_name(payload.full_name)
+    if not user:
+        raise HTTPException(401, "Name not found — check spelling or ask your manager")
+    if not user.is_active:
+        raise HTTPException(403, "Account is deactivated")
+    token = create_token(user.id, user.role)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": user.role,
+        "user_id": user.id,
+        "full_name": user.full_name,
+    }
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

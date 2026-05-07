@@ -447,6 +447,17 @@ class Database:
                 session.expunge(user)
             return user
 
+    def get_user_by_name(self, full_name: str) -> Optional[UserRow]:
+        with self._Session() as session:
+            user = (
+                session.query(UserRow)
+                .filter(func.lower(UserRow.full_name) == full_name.lower().strip())
+                .first()
+            )
+            if user:
+                session.expunge(user)
+            return user
+
     def list_users(self, role: Optional[str] = None) -> list:
         with self._Session() as session:
             q = session.query(UserRow)

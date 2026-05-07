@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#f2f2f7">
+  <title>Canvasser</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      background: #f2f2f7;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      -webkit-font-smoothing: antialiased;
+    }
+    .header {
+      background: #fff;
+      padding: 20px 20px 16px;
+      border-bottom: 0.5px solid #e5e5ea;
+    }
+    .header-name { font-size: 1.25rem; font-weight: 700; color: #000; }
+    .header-sub  { font-size: .875rem; color: #8e8e93; margin-top: 2px; }
+    .sig-count   { font-size: 3.5rem; font-weight: 800; color: #0a84ff; line-height: 1; margin-top: 4px; }
+    .sig-label   { font-size: .8rem; color: #8e8e93; margin-top: 2px; }
+
+    .content { padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+    .big-btn {
+      width: 100%; padding: 22px 20px;
+      border: none; border-radius: 18px;
+      font-size: 1.15rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; display: flex; align-items: center; gap: 14px;
+      transition: opacity .15s, transform .1s;
+      -webkit-appearance: none;
+    }
+    .big-btn:active { transform: scale(.97); opacity: .88; }
+    .big-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    .big-btn .icon { font-size: 1.6rem; flex-shrink: 0; }
+    .big-btn .label { text-align: left; }
+    .big-btn .label .title { display: block; }
+    .big-btn .label .sub   { display: block; font-size: .8rem; font-weight: 400; opacity: .7; margin-top: 2px; }
+
+    .btn-blue  { background: #0a84ff; color: #fff; }
+    .btn-green { background: #30d158; color: #fff; }
+
+    .msg {
+      font-size: .82rem; color: #8e8e93; text-align: center;
+      min-height: 18px; padding: 0 4px;
+    }
+    .msg.success { color: #2e7d32; }
+    .msg.error   { color: #c62828; }
+
+    /* Count input overlay */
+    .overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
+      align-items: flex-end; justify-content: center; z-index: 100;
+    }
+    .overlay.open { display: flex; }
+    .sheet {
+      background: #fff; border-radius: 22px 22px 0 0;
+      padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
+      width: 100%; max-width: 480px;
+    }
+    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+    .sheet input[type=number] {
+      width: 100%; padding: 16px; border: 1.5px solid #e5e5ea; border-radius: 14px;
+      font-size: 2rem; font-weight: 700; font-family: inherit;
+      text-align: center; outline: none; background: #f9f9fb;
+      -webkit-appearance: none; appearance: none;
+    }
+    .sheet input[type=number]:focus { border-color: #0a84ff; background: #fff; }
+    .sheet-btns { display: flex; gap: 12px; margin-top: 16px; }
+    .sheet-btns button {
+      flex: 1; padding: 14px; border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .btn-cancel { background: #f2f2f7; color: #000; }
+    .btn-submit { background: #0a84ff; color: #fff; }
+    .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+    .logout-link {
+      text-align: center; margin-top: 32px;
+      font-size: .8rem; color: #8e8e93; cursor: pointer;
+    }
+    .logout-link:hover { color: #ff3b30; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-name" id="workerName">—</div>
+    <div class="header-sub">Today's signatures</div>
+    <div class="sig-count" id="sigCount">—</div>
+    <div class="sig-label">submitted today</div>
+  </div>
+
+  <div class="content">
+    <button class="big-btn btn-blue" id="sigBtn" onclick="openSigSheet()">
+      <span class="icon">✍️</span>
+      <span class="label">
+        <span class="title">Submit Sig Count</span>
+        <span class="sub">Update your signature total</span>
+      </span>
+    </button>
+
+    <button class="big-btn btn-green" id="locBtn" onclick="shareLocation()">
+      <span class="icon">📍</span>
+      <span class="label">
+        <span class="title">Share My Location</span>
+        <span class="sub">Let your manager see where you are</span>
+      </span>
+    </button>
+
+    <div class="msg" id="statusMsg"></div>
+
+    <div class="logout-link" onclick="logout()">Sign out</div>
+  </div>
+
+  <!-- Sig count sheet -->
+  <div class="overlay" id="sigOverlay">
+    <div class="sheet">
+      <h2>How many signatures today?</h2>
+      <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
+      <div class="sheet-btns">
+        <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
+        <button class="btn-submit" id="sigSubmitBtn" onclick="submitSigCount()">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token    = localStorage.getItem('pv_token');
+    const role     = localStorage.getItem('pv_role');
+    const userName = localStorage.getItem('pv_full_name');
+
+    if (!token) { window.location.href = '/'; }
+
+    document.getElementById('workerName').textContent = userName || 'Canvasser';
+
+    // Load last submitted count from memory if stored
+    const storedCount = sessionStorage.getItem('pv_sig_count');
+    document.getElementById('sigCount').textContent = storedCount ?? '—';
+
+    function api(path, opts = {}) {
+      return fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...(opts.headers || {}) },
+      }).then(async r => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'Request failed');
+        return d;
+      });
+    }
+
+    function setMsg(text, type = '') {
+      const el = document.getElementById('statusMsg');
+      el.textContent = text;
+      el.className = 'msg' + (type ? ' ' + type : '');
+    }
+
+    function openSigSheet() {
+      const stored = sessionStorage.getItem('pv_sig_count');
+      document.getElementById('sigInput').value = stored || '';
+      document.getElementById('sigOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('sigInput').focus(), 80);
+    }
+
+    function closeSheet() {
+      document.getElementById('sigOverlay').classList.remove('open');
+    }
+
+    async function submitSigCount() {
+      const val = parseInt(document.getElementById('sigInput').value, 10);
+      if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); return; }
+      const btn = document.getElementById('sigSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: val }) });
+        sessionStorage.setItem('pv_sig_count', val);
+        document.getElementById('sigCount').textContent = val;
+        closeSheet();
+        setMsg('Sig count updated!', 'success');
+      } catch(e) {
+        setMsg(e.message, 'error');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    }
+
+    async function shareLocation() {
+      if (!navigator.geolocation) { setMsg('Geolocation not supported on this device', 'error'); return; }
+      const btn = document.getElementById('locBtn');
+      btn.disabled = true;
+      setMsg('Getting location…');
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            await api('/stats/location', {
+              method: 'POST',
+              body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            });
+            setMsg('Location shared!', 'success');
+          } catch(e) {
+            setMsg(e.message, 'error');
+          }
+          btn.disabled = false;
+        },
+        (err) => {
+          setMsg(err.code === 1 ? 'Location access denied — allow it in browser settings' : 'Could not get location', 'error');
+          btn.disabled = false;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    function logout() {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = '/';
+    }
+
+    // Close sheet on backdrop click
+    document.getElementById('sigOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeSheet();
+    });
+  </script>
+</body>
+</html>

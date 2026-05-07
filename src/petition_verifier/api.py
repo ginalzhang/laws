@@ -41,6 +41,7 @@ from .routes.payroll_routes import router as payroll_router
 from .routes.leaderboard_routes import router as leaderboard_router
 from .routes.payment_routes import router as payment_router
 from .routes.location_routes import router as location_router
+from .routes.stats_routes import router as stats_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
@@ -74,6 +75,7 @@ app.include_router(payroll_router, prefix="/payroll", tags=["payroll"])
 app.include_router(leaderboard_router, tags=["leaderboard"])
 app.include_router(payment_router, prefix="/payment-preferences", tags=["payment"])
 app.include_router(location_router, prefix="/locations", tags=["locations"])
+app.include_router(stats_router, prefix="/stats", tags=["stats"])
 
 
 @app.get("/stats/live-count")
@@ -220,6 +222,22 @@ async def root():
     if login.exists():
         return HTMLResponse(login.read_text())
     return HTMLResponse("<h1>Petition Verifier API</h1><p>UI not found.</p>")
+
+
+@app.get("/canvasser", response_class=HTMLResponse)
+async def canvasser_page():
+    page = _UI_DIR / "canvasser.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Canvasser page not found</h1>", status_code=404)
+
+
+@app.get("/field-manager", response_class=HTMLResponse)
+async def field_manager_page():
+    page = _UI_DIR / "field-manager.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Field manager page not found</h1>", status_code=404)
 
 
 @app.get("/projects")
