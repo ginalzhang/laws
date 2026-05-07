@@ -757,6 +757,29 @@ async def seed_demo_data():
     }
 
 
+@app.post("/fix-dedup-users")
+async def fix_dedup_users():
+    """Delete duplicate users — keeps the lowest-id copy of each (full_name, role) pair."""
+    from .storage.database import ShiftRow, WorkerProjectRow
+    users = db.list_users()
+    seen: dict[tuple, int] = {}
+    deleted = []
+    for u in sorted(users, key=lambda u: u.id):
+        key = (u.full_name.strip().lower(), u.role)
+        if key in seen:
+            # Delete the duplicate (higher id)
+            with db._Session() as session:
+                session.query(ShiftRow).filter(ShiftRow.worker_id == u.id).delete()
+                session.query(WorkerProjectRow).filter(WorkerProjectRow.worker_id == u.id).delete()
+                from .storage.database import UserRow
+                session.query(UserRow).filter(UserRow.id == u.id).delete()
+                session.commit()
+            deleted.append(f"{u.full_name} (id={u.id})")
+        else:
+            seen[key] = u.id
+    return {"ok": True, "deleted": deleted, "kept": len(seen)}
+
+
 @app.post("/fix-activate-users")
 async def fix_activate_users():
     """Temporary: activate all users. Remove after use."""
