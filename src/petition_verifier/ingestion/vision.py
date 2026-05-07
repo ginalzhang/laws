@@ -147,32 +147,45 @@ def _find_print_name_anchors(words: list[_Word]) -> list[_Word]:
 
 
 def _is_vision_block_format(words: list[_Word]) -> bool:
-    return len(_find_print_name_anchors(words)) >= 2
+    if len(_find_print_name_anchors(words)) >= 2:
+        return True
+    # Also treat as block format when there are multiple Signature: or
+    # Residence labels — Vision sometimes misses "Print"/"Name" pairs on
+    # photographed petitions but reliably reads these other labels.
+    sig_count = sum(1 for w in words if re.match(r"^signature:?$", w.text, re.I))
+    res_count = sum(1 for w in words if re.match(r"^residence$",   w.text, re.I))
+    return sig_count >= 2 or res_count >= 2
 
 
 def _find_grid_top(words: list[_Word]) -> Optional[int]:
     """
     Return the y-coordinate of the 'All signers must be registered to vote in
-    ___ County' row, which marks the top of the CA initiative signature grid.
+    ___ County' instruction row that always appears above the CA signature grid.
 
-    Requires 'registered' and 'county' to appear on the same horizontal row
-    (within ±40px vertically) so incidental occurrences of either word in the
-    ballot summary text don't trigger a false match.
+    Strategy: require three specific words from that sentence to co-occur within
+    a tight vertical band.  This prevents false matches from 'registered' voters
+    appearing in handwritten addresses or 'County' in ballot summary text.
+
+    Tries, in order:
+      1. 'registered' + 'vote' on the same row  (most specific to the sentence)
+      2. 'signers'    + 'registered' on the same row
+      3. 'All'        + 'signers'    on the same row
+    Returns the minimum y of the matching pair, or None if nothing found.
     """
-    registered_words = [w for w in words if re.match(r"^registered$", w.text, re.I)]
-    county_words     = [w for w in words if re.match(r"^county$",     w.text, re.I)]
-    for r in registered_words:
-        for c in county_words:
-            if abs(r.top - c.top) <= 40:
-                return min(r.top, c.top)
-    # Fallback: look for 'signers' + 'petition' on the same row
-    signers_words   = [w for w in words if re.match(r"^signers$",  w.text, re.I)]
-    petition_words  = [w for w in words if re.match(r"^petition$", w.text, re.I)]
-    for s in signers_words:
-        for p in petition_words:
-            if abs(s.top - p.top) <= 40:
-                return min(s.top, p.top)
-    return None
+    def _first_match(pattern_a: str, pattern_b: str) -> Optional[int]:
+        a_words = [w for w in words if re.match(pattern_a, w.text, re.I)]
+        b_words = [w for w in words if re.match(pattern_b, w.text, re.I)]
+        for a in a_words:
+            for b in b_words:
+                if abs(a.top - b.top) <= 40:
+                    return min(a.top, b.top)
+        return None
+
+    return (
+        _first_match(r"^registered$", r"^vote$")
+        or _first_match(r"^signers$",    r"^registered$")
+        or _first_match(r"^all$",        r"^signers$")
+    )
 
 
 # ── Word classification helpers ───────────────────────────────────────────────
