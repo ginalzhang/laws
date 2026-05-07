@@ -840,6 +840,156 @@ def _extract_vision_columns(
     return sigs
 
 
+# ── Header-column extractor ───────────────────────────────────────────────────
+
+def _cluster_rows_px(words: list[_Word], merge_px: int = 40) -> list[list[_Word]]:
+    """Group words into rows by y-proximity. Returns list of word-lists."""
+    if not words:
+        return []
+    ordered = sorted(words, key=lambda w: w.top)
+    rows: list[list[_Word]] = [[ordered[0]]]
+    for word in ordered[1:]:
+        if word.top - rows[-1][0].top <= merge_px:
+            rows[-1].append(word)
+        else:
+            rows.append([word])
+    return rows
+
+
+def _find_col_headers(words: list[_Word]) -> Optional[dict]:
+    """
+    Find the printed column header row (SIGNATURE | PRINT NAME | RESIDENCE …)
+    and return column x-start positions plus header_y (bottom edge of header).
+
+    Returns None if fewer than 3 column headers are found.
+    """
+    _H = {
+        "sig":  re.compile(r"^signature$",           re.I),
+        "name": re.compile(r"^(print|name)$",        re.I),
+        "addr": re.compile(r"^(residence|address)$", re.I),
+        "city": re.compile(r"^city$",                re.I),
+        "zip":  re.compile(r"^zip$",                 re.I),
+        "date": re.compile(r"^(date|signed)$",       re.I),
+    }
+
+    # Bucket words by approximate row (30px bins) and find the one with
+    # the most distinct column header matches.
+    by_bucket: dict[int, list[tuple[str, _Word]]] = {}
+    for w in words:
+        for field, pat in _H.items():
+            if pat.match(w.text):
+                bucket = w.top // 30
+                by_bucket.setdefault(bucket, []).append((field, w))
+
+    best_bucket, best_count = None, 0
+    for bucket, entries in by_bucket.items():
+        n = len({f for f, _ in entries})
+        if n > best_count:
+            best_count, best_bucket = n, bucket
+
+    if best_count < 3 or best_bucket is None:
+        return None
+
+    # One word per field — take the leftmost occurrence
+    col_words: dict[str, _Word] = {}
+    for field, w in by_bucket[best_bucket]:
+        if field not in col_words or w.left < col_words[field].left:
+            col_words[field] = w
+
+    return {
+        "header_y": max(w.top + w.height for w in col_words.values()),
+        **{field: w.left for field, w in col_words.items()},
+    }
+
+
+def _extract_by_header_columns(
+    words: list[_Word],
+    image: Image.Image,
+    page_num: int,
+    line_start: int,
+) -> list[ExtractedSignature]:
+    """
+    Primary extraction strategy: use the printed column header row to calibrate
+    exact column boundaries, then pull each signer's fields from those bands.
+
+    This is more robust than label-anchor or line-number approaches because the
+    column headers are always printed clearly and don't depend on handwritten or
+    OCR-ambiguous tokens.
+
+    Falls back to proportional bands if headers aren't readable.
+    """
+    cols       = _find_col_headers(words)
+    page_width = image.width
+    zip_re     = re.compile(r"^\d{5}(-\d{4})?$")
+
+    if cols:
+        header_y = cols["header_y"]
+        x_sig  = cols.get("sig",  int(page_width * 0.03))
+        x_name = cols.get("name", int(page_width * 0.15))
+        x_addr = cols.get("addr", int(page_width * 0.38))
+        x_city = cols.get("city", int(page_width * 0.63))
+        x_zip  = cols.get("zip",  int(page_width * 0.78))
+        x_date = cols.get("date", int(page_width * 0.88))
+    else:
+        header_y = 0
+        x_sig    = int(page_width * 0.03)
+        x_name   = int(page_width * 0.15)
+        x_addr   = int(page_width * 0.38)
+        x_city   = int(page_width * 0.63)
+        x_zip    = int(page_width * 0.78)
+        x_date   = int(page_width * 0.88)
+
+    signer_words = [w for w in words if w.top > header_y + 5]
+    rows         = _cluster_rows_px(signer_words, merge_px=40)
+    sigs: list[ExtractedSignature] = []
+
+    for row_words in rows:
+        # Must contain a line number digit (1–8) to be a signer row
+        if not any(re.match(r"^[1-8]\.?$", w.text) for w in row_words):
+            continue
+
+        def band(x_lo: int, x_hi: int) -> list[_Word]:
+            return sorted(
+                [w for w in row_words
+                 if x_lo <= w.left < x_hi and not _is_printed_label(w.text)],
+                key=lambda w: w.left,
+            )
+
+        name_ws = band(x_name, x_addr)
+        addr_ws = band(x_addr, x_city)
+        city_ws = band(x_city, x_zip)
+        zip_ws  = [w for w in band(x_zip, x_date) if zip_re.match(w.text)]
+        date_ws = band(x_date, page_width)
+        sig_ws  = band(x_sig,  x_name)
+
+        raw_name    = _join(name_ws)
+        raw_address = ", ".join(filter(None, [
+            _join(addr_ws), _join(city_ws), _join(zip_ws),
+        ]))
+        raw_date    = _join(date_ws)
+        sig_present = bool(sig_ws)
+
+        if not raw_name and not raw_address:
+            continue
+        if len(sigs) >= 8:
+            break
+
+        avg_conf    = sum(w.conf for w in row_words) / len(row_words)
+        handwritten = [w for w in row_words if not _is_printed_label(w.text)]
+        sigs.append(ExtractedSignature(
+            line_number=line_start + len(sigs),
+            page=page_num,
+            raw_name=raw_name,
+            raw_address=raw_address,
+            raw_date=raw_date,
+            signature_present=sig_present,
+            ocr_confidence=round(avg_conf, 1),
+            handwriting_vector=_handwriting_vector(image, handwritten),
+        ))
+
+    return sigs
+
+
 # ── Processor ─────────────────────────────────────────────────────────────────
 
 class VisionProcessor(BasePDFProcessor):
@@ -869,21 +1019,26 @@ class VisionProcessor(BasePDFProcessor):
             if decl_top is not None:
                 words = [w for w in words if w.top < decl_top]
 
-            if _is_vision_block_format(words):
+            # 1. Header-column extraction: calibrate bands from the printed
+            #    column header row — most robust for real petition photos.
+            page_sigs = _extract_by_header_columns(
+                words, image, page_num, line_counter
+            )
+            # 2. Block-format fallback: use "Print Name:" label anchors.
+            if not page_sigs and _is_vision_block_format(words):
                 page_sigs = _extract_vision_block(
                     words, image, page_num, line_counter
                 )
-            else:
-                # Try line-number anchors before falling back to column bands.
-                # Vision reliably reads "1." "2." etc. even when "Print Name:"
-                # labels are unreadable on photographed petitions.
+            # 3. Line-number anchor fallback.
+            if not page_sigs:
                 page_sigs = _extract_by_line_numbers(
                     words, image, page_num, line_counter
                 )
-                if not page_sigs:
-                    page_sigs = _extract_vision_columns(
-                        words, image, page_num, line_counter
-                    )
+            # 4. Last-resort column band fallback.
+            if not page_sigs:
+                page_sigs = _extract_vision_columns(
+                    words, image, page_num, line_counter
+                )
 
             line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
