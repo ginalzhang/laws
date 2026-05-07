@@ -32,7 +32,7 @@ from .pdf_processor import BasePDFProcessor
 # ── tunables ─────────────────────────────────────────────────────────────────
 DPI            = 400    # higher DPI = better handwriting recognition
 ROW_MERGE_PX   = 20
-MIN_CONF       = 15     # lower threshold to catch faint handwriting
+MIN_CONF       = 10     # low threshold to catch faint handwriting in photos
 MIN_WORDS_PER_ROW = 1   # block format can have single-word fields
 
 # Block-format: how far below a "Print Name:" label to search for the value (px)
@@ -40,9 +40,10 @@ LABEL_VALUE_SCAN_PX = 80   # generous — handwriting can sit further from the l
 LABEL_GROUP_PX      = 220  # full signer block height (sig + name + addr + city + date)
 
 # OCR configs
-_PSM6  = "--psm 6"   # uniform block — good for detecting printed labels
-_PSM11 = "--psm 11"  # sparse text — finds any text including handwriting
-_PSM7  = "--psm 7"   # single text line — for reading one field at a time
+_PSM6       = "--psm 6"                        # uniform block — good for clean scans
+_PSM11      = "--psm 11"                       # sparse text — finds any text
+_PSM7       = "--psm 7"                        # single text line
+_PSM11_PHOTO = "--psm 11 --oem 3 --dpi 150"   # sparse + LSTM neural net + explicit DPI for phone photos
 
 # Column-format bands (fallback)
 DEFAULT_BANDS = {
@@ -403,9 +404,10 @@ class TesseractProcessor(BasePDFProcessor):
         all_sigs: list[ExtractedSignature] = []
         line_counter = 1
 
+        is_photo = pdf_path.suffix.lower() in IMAGE_SUFFIXES
         for page_num, image in enumerate(images, start=1):
             page_width = image.width
-            words = _parse_words(image)
+            words = _parse_words(image, config=_PSM11_PHOTO if is_photo else _PSM6)
 
             if _is_block_format(words):
                 page_sigs = _extract_block_format(
