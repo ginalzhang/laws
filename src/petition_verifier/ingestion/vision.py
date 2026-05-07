@@ -187,6 +187,28 @@ def _is_vision_block_format(words: list[_Word]) -> bool:
     return len(_find_print_name_anchors(words)) >= 2
 
 
+def _find_line_number_anchors(words: list[_Word], page_width: int) -> list[_Word]:
+    """
+    Find the printed line-number digits (1–8) that mark each signer row.
+    These are in the leftmost ~20% of the page and are reliably OCR'd even
+    when form labels like 'Print Name:' are not.
+    Returns words sorted by y-position.
+    """
+    seen_digits: set[str] = set()
+    anchors: list[_Word] = []
+    for w in words:
+        if not re.match(r"^[1-8]\.?$", w.text):
+            continue
+        digit = w.text.rstrip(".")
+        if digit in seen_digits:
+            continue
+        if w.left > page_width * 0.20:   # line numbers sit in the left margin
+            continue
+        seen_digits.add(digit)
+        anchors.append(w)
+    return sorted(anchors, key=lambda w: w.top)
+
+
 def _find_grid_top(words: list[_Word]) -> Optional[int]:
     """
     Return the y-coordinate of the 'All signers must be registered to vote in
@@ -527,6 +549,190 @@ def _extract_vision_block(
     return sigs
 
 
+# ── Line-number anchor extractor ─────────────────────────────────────────────
+
+def _extract_by_line_numbers(
+    words: list[_Word],
+    image: Image.Image,
+    page_num: int,
+    line_start: int,
+) -> list[ExtractedSignature]:
+    """
+    Extract signer fields using the printed line-number digits (1–8) as row
+    anchors.  Used when Vision fails to read 'Print Name:' labels.
+
+    For each row:
+      1. Try to find field labels ('Name:', 'Address:', 'City:', 'Zip:', etc.)
+         in the vertical window — same logic as _extract_vision_block.
+      2. If no labels found, fall back to fixed x-position bands derived from
+         the page width.  CA petitions are standardised enough that this works.
+    """
+    page_width  = image.width
+    anchors     = _find_line_number_anchors(words, page_width)
+    if not anchors:
+        return []
+
+    # Hard stop at DECLARATION row
+    declaration_top = next(
+        (w.top for w in words if re.match(r"^declaration$", w.text, re.I)), None
+    )
+
+    sigs: list[ExtractedSignature] = []
+    zip_pattern = re.compile(r"^\d{5}(-\d{4})?$")
+
+    for idx, anchor in enumerate(anchors):
+        next_top = anchors[idx + 1].top if idx + 1 < len(anchors) else anchor.top + _BLOCK_BELOW_PX
+        hard_stop = min(
+            next_top - 10,
+            (declaration_top - 10) if declaration_top else anchor.top + _BLOCK_BELOW_PX,
+        )
+        block_top    = anchor.top - _BLOCK_ABOVE_PX
+        block_bottom = min(anchor.top + _BLOCK_BELOW_PX, hard_stop)
+        block_words  = [w for w in words if block_top <= w.top <= block_bottom]
+
+        # Skip dense blocks (preamble text)
+        non_label_count = sum(1 for w in block_words if not _is_printed_label(w.text))
+        if non_label_count > 20:
+            continue
+
+        # ── Try label-guided extraction first (same as block extractor) ──────
+        name_label = next(
+            (w for w in block_words
+             if re.match(r"^name:?$", w.text, re.I) and w.left > anchor.right),
+            None,
+        )
+        addr_label = next(
+            (w for w in sorted(block_words, key=lambda w: (w.top, w.left))
+             if re.match(r"^(residence|address:?)$", w.text, re.I)),
+            None,
+        )
+        city_label = next(
+            (w for w in block_words if re.match(r"^city:?$", w.text, re.I)), None
+        )
+        zip_label = next(
+            (w for w in block_words if re.match(r"^zip:?$", w.text, re.I)), None
+        )
+        date_label = next(
+            (w for w in block_words if re.match(r"^date:?$", w.text, re.I)), None
+        )
+
+        # ── x-band fallback when labels are absent ───────────────────────────
+        # CA petition column layout (approximate fractions of page width):
+        #   sig box  0–18%  |  name  18–45%  |  address  45–68%
+        #   city  68–80%  |  zip  80–90%  |  date  90–100%
+        has_any_label = any([name_label, addr_label, city_label, zip_label])
+
+        if name_label:
+            name_words = _words_right_of(name_label, block_words, y_tol=_ROW_MERGE_PX,
+                                          max_x=int(page_width * 0.45))
+        else:
+            name_words = _words_in_region(block_words,
+                                           y_min=anchor.top - _ROW_MERGE_PX,
+                                           y_max=anchor.top + _ROW_MERGE_PX * 2,
+                                           x_min=int(page_width * 0.18),
+                                           x_max=int(page_width * 0.45))
+
+        if addr_label:
+            only_label = next(
+                (w for w in block_words
+                 if re.match(r"^only:?$", w.text, re.I)
+                 and abs(w.top - addr_label.top) <= _ROW_MERGE_PX),
+                addr_label,
+            )
+            street_words = _words_in_region(block_words,
+                                             y_min=only_label.top - 50,
+                                             y_max=only_label.top + 15,
+                                             x_min=only_label.right + 5)
+            street_words = [w for w in street_words if not zip_pattern.match(w.text)]
+            street_text  = _join(street_words)
+        else:
+            street_words = _words_in_region(block_words,
+                                             y_min=anchor.top - _ROW_MERGE_PX,
+                                             y_max=anchor.top + _ROW_MERGE_PX * 2,
+                                             x_min=int(page_width * 0.45),
+                                             x_max=int(page_width * 0.68))
+            street_text  = _join(street_words)
+
+        if zip_label:
+            zip_words = _words_right_of(zip_label, block_words, y_tol=_ROW_MERGE_PX)
+            zip_words = [w for w in zip_words if zip_pattern.match(w.text)]
+            zip_text  = _join(zip_words)
+        else:
+            zip_words = _words_in_region(block_words,
+                                          y_min=anchor.top - _ROW_MERGE_PX,
+                                          y_max=anchor.top + _ROW_MERGE_PX * 2,
+                                          x_min=int(page_width * 0.80),
+                                          x_max=int(page_width * 0.90))
+            zip_text  = _join(w for w in zip_words if zip_pattern.match(w.text))
+
+        if city_label:
+            city_max_x   = zip_label.left - 10 if zip_label else None
+            city_words   = _words_in_region(block_words,
+                                             y_min=city_label.top - 35,
+                                             y_max=city_label.top + 10,
+                                             x_min=city_label.right + 5,
+                                             x_max=city_max_x or 99999)
+            city_words   = [w for w in city_words
+                            if not re.match(r"^(state:?|zip:?|ca)$", w.text, re.I)
+                            and not zip_pattern.match(w.text)]
+            city_text    = _join(city_words)
+        else:
+            city_words   = _words_in_region(block_words,
+                                             y_min=anchor.top - _ROW_MERGE_PX,
+                                             y_max=anchor.top + _ROW_MERGE_PX * 2,
+                                             x_min=int(page_width * 0.68),
+                                             x_max=int(page_width * 0.80))
+            city_text    = _join(city_words)
+
+        raw_address = ", ".join(filter(None, [street_text, city_text, zip_text]))
+
+        if date_label:
+            date_words = _words_in_region(block_words,
+                                           y_min=date_label.top - 40,
+                                           y_max=date_label.top + 10,
+                                           x_min=date_label.right + 5)
+            raw_date   = _join(date_words)
+        else:
+            date_words = _words_in_region(block_words,
+                                           y_min=anchor.top - _ROW_MERGE_PX,
+                                           y_max=anchor.top + _ROW_MERGE_PX * 2,
+                                           x_min=int(page_width * 0.90))
+            raw_date   = _join(date_words)
+
+        raw_name = _join(name_words)
+
+        # Signature: non-label words in the signature column (0–18% of width)
+        sig_col_words = _words_in_region(block_words,
+                                          y_min=anchor.top - 60,
+                                          y_max=anchor.top + _BLOCK_BELOW_PX,
+                                          x_min=int(page_width * 0.05),
+                                          x_max=int(page_width * 0.18))
+        sig_present = any(not _is_printed_label(w.text) for w in sig_col_words)
+        sig_bbox    = None
+        if sig_present:
+            sig_bbox = BoundingBox(
+                x=int(page_width * 0.05), y=anchor.top - 30,
+                width=int(page_width * 0.13), height=90,
+                page=page_num,
+            )
+
+        avg_conf     = (sum(w.conf for w in block_words) / max(len(block_words), 1))
+        handwritten  = [w for w in block_words if not _is_printed_label(w.text)]
+        sigs.append(ExtractedSignature(
+            line_number=line_start + len(sigs),
+            page=page_num,
+            raw_name=raw_name,
+            raw_address=raw_address,
+            raw_date=raw_date,
+            signature_present=sig_present,
+            signature_bbox=sig_bbox,
+            ocr_confidence=round(avg_conf, 1),
+            handwriting_vector=_handwriting_vector(image, handwritten),
+        ))
+
+    return sigs
+
+
 # ── Column-format fallback ────────────────────────────────────────────────────
 
 def _extract_vision_columns(
@@ -613,9 +819,16 @@ class VisionProcessor(BasePDFProcessor):
                     words, image, page_num, line_counter
                 )
             else:
-                page_sigs = _extract_vision_columns(
+                # Try line-number anchors before falling back to column bands.
+                # Vision reliably reads "1." "2." etc. even when "Print Name:"
+                # labels are unreadable on photographed petitions.
+                page_sigs = _extract_by_line_numbers(
                     words, image, page_num, line_counter
                 )
+                if not page_sigs:
+                    page_sigs = _extract_vision_columns(
+                        words, image, page_num, line_counter
+                    )
 
             line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
