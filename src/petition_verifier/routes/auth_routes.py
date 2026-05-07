@@ -105,8 +105,8 @@ class FMPasswordRequest(BaseModel):
 @router.post("/fm-users")
 async def fm_users(payload: FMPasswordRequest):
     """Verify the FM team password and return the list of field managers."""
-    stored = db.get_setting("fm_password", "seals")
-    if payload.password != stored:
+    stored = db.get_setting("fm_password", "seals") or "seals"
+    if payload.password.strip() != stored.strip():
         raise HTTPException(401, "Wrong password")
     users = db.list_users()
     result = [
