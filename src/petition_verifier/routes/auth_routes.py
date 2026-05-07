@@ -89,11 +89,15 @@ async def list_active_users():
         "office_worker": "Staff",
     }
     users = db.list_users()
-    result = [
-        {"full_name": u.full_name, "role_label": role_labels.get(u.role, u.role.title())}
-        for u in users
-        if u.is_active and u.role not in ("boss", "admin", "field_manager", "evan")
-    ]
+    seen: set[str] = set()
+    result = []
+    for u in sorted(users, key=lambda u: (0 if u.is_active else 1, u.id)):
+        if not u.is_active or u.role in ("boss", "admin", "field_manager", "evan"):
+            continue
+        key = u.full_name.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            result.append({"full_name": u.full_name, "role_label": role_labels.get(u.role, u.role.title())})
     result.sort(key=lambda x: x["full_name"].lower())
     return result
 
@@ -109,13 +113,17 @@ async def fm_users(payload: FMPasswordRequest):
     if payload.password.strip() != stored.strip():
         raise HTTPException(401, "Wrong password")
     users = db.list_users()
-    result = [
-        {"full_name": u.full_name, "role_label": "Field Manager"}
-        for u in users
-        if u.is_active and u.role in ("field_manager", "evan")
-    ]
-    result.sort(key=lambda x: x["full_name"].lower())
-    return result
+    seen: set[str] = set()
+    deduped = []
+    for u in sorted(users, key=lambda u: (0 if u.is_active else 1, u.id)):
+        if not u.is_active or u.role not in ("field_manager", "evan"):
+            continue
+        key = u.full_name.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append({"full_name": u.full_name, "role_label": "Field Manager"})
+    deduped.sort(key=lambda x: x["full_name"].lower())
+    return deduped
 
 
 class UpdateFMPasswordRequest(BaseModel):

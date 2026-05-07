@@ -849,7 +849,8 @@ def _cluster_rows_px(words: list[_Word], merge_px: int = 40) -> list[list[_Word]
     ordered = sorted(words, key=lambda w: w.top)
     rows: list[list[_Word]] = [[ordered[0]]]
     for word in ordered[1:]:
-        if word.top - rows[-1][0].top <= merge_px:
+        row_top = min(w.top for w in rows[-1])
+        if word.top - row_top <= merge_px:
             rows[-1].append(word)
         else:
             rows.append([word])
@@ -878,7 +879,7 @@ def _find_col_headers(words: list[_Word]) -> Optional[dict]:
     for w in words:
         for field, pat in _H.items():
             if pat.match(w.text):
-                bucket = w.top // 30
+                bucket = w.top // 60   # 60px bins tolerate tilted/perspective photos
                 by_bucket.setdefault(bucket, []).append((field, w))
 
     best_bucket, best_count = None, 0
