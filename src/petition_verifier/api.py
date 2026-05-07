@@ -420,6 +420,9 @@ async def fraud_scan(
             project_id=str(uuid.uuid4())[:8],
             source_path=orig_name,
         )
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"OCR failed: {exc}")
     finally:
         tmp_path.unlink(missing_ok=True)
 

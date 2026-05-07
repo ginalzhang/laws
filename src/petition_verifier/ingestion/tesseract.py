@@ -360,6 +360,21 @@ def _extract_block_format(
 IMAGE_SUFFIXES = {".heic", ".heif", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp"}
 
 
+def _preprocess_photo(img: Image.Image) -> Image.Image:
+    """Improve phone-photo quality for Tesseract: grayscale, upscale, sharpen."""
+    from PIL import ImageEnhance, ImageFilter
+    img = img.convert("L")  # grayscale
+    # Upscale short dimension to at least 2000px so Tesseract has enough detail
+    min_side = min(img.width, img.height)
+    if min_side < 2000:
+        scale = 2000 / min_side
+        img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
+    img = ImageEnhance.Contrast(img).enhance(1.8)
+    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+    return img.convert("RGB")
+
+
 def _load_images(path: Path) -> list[Image.Image]:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
@@ -369,7 +384,7 @@ def _load_images(path: Path) -> list[Image.Image]:
         import pillow_heif
         pillow_heif.register_heif_opener()
         img = Image.open(path).convert("RGB")
-        return [img]
+        return [_preprocess_photo(img)]
     raise ValueError(
         f"Unsupported file type: {suffix}. "
         f"Supported: .pdf, .heic, .heif, .jpg, .png, .tiff"
