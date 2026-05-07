@@ -292,6 +292,13 @@ def _extract_vision_block(
         block_bottom = min(anchor.top + _BLOCK_BELOW_PX, hard_stop)
         block_words  = [w for w in words if block_top <= w.top <= block_bottom]
 
+        # Dense blocks are header/preamble text, not signer rows.
+        # Real signer blocks have only a handful of handwritten tokens;
+        # reject anything with more than 20 non-label words.
+        non_label_count = sum(1 for w in block_words if not _is_printed_label(w.text))
+        if non_label_count > 20:
+            continue
+
         zip_pattern = re.compile(r"^\d{5}(-\d{4})?$")
 
         # ── Name ──────────────────────────────────────────────────────────────
