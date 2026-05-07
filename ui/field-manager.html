@@ -346,22 +346,21 @@
       }
     }
 
-    // ── Leaderboard ───────────────────────────────────────────────────────────
+    // ── Live sig counts ───────────────────────────────────────────────────────
     async function loadLeaderboard() {
       try {
-        const data = await api('/leaderboard');
-        const entries = (data.leaderboard || []).sort((a,b) => b.valid_sigs - a.valid_sigs);
+        const data = await api('/stats/live');
         const el = document.getElementById('lbList');
-        if (!entries.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
-        el.innerHTML = entries.map((e, i) => `
-          <div class="lb-row">
-            <div class="lb-rank">${i + 1}</div>
+        const sorted = [...data].filter(e => e.sig_count > 0).sort((a,b) => b.sig_count - a.sig_count);
+        if (!sorted.length) { el.innerHTML = '<div class="empty">No counts submitted yet</div>'; return; }
+        el.innerHTML = sorted.map((e, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
+          return `<div class="lb-row">
+            <div class="lb-rank">${medal}</div>
             <div class="lb-name">${e.full_name}</div>
-            <div>
-              <span class="lb-sigs">${e.valid_sigs.toLocaleString()}</span>
-              <span class="lb-rate">${e.validity_rate}%</span>
-            </div>
-          </div>`).join('');
+            <div class="lb-sigs">${e.sig_count.toLocaleString()}</div>
+          </div>`;
+        }).join('');
       } catch(e) {
         document.getElementById('lbList').innerHTML = '<div class="empty">Could not load</div>';
       }

@@ -205,8 +205,7 @@
 
     document.getElementById('workerName').textContent = userName || 'Canvasser';
 
-    const storedCount = sessionStorage.getItem('pv_sig_count');
-    document.getElementById('sigCount').textContent = storedCount ?? '—';
+    document.getElementById('sigCount').textContent = sessionStorage.getItem('pv_sig_count') ?? '—';
 
     function api(path, opts = {}) {
       return fetch(path, {
@@ -227,7 +226,7 @@
 
     function openSigSheet() {
       const stored = sessionStorage.getItem('pv_sig_count');
-      document.getElementById('sigInput').value = stored || '';
+      document.getElementById('sigInput').value = stored != null ? stored : '';
       document.getElementById('sigOverlay').classList.add('open');
       setTimeout(() => document.getElementById('sigInput').focus(), 80);
     }
@@ -330,6 +329,19 @@
       if (e.target === e.currentTarget) closeSheet();
     });
 
+    async function initMyCount() {
+      try {
+        const data = await api('/stats/live');
+        const myName = (userName || '').toLowerCase();
+        const me = data.find(e => e.full_name.toLowerCase() === myName);
+        if (me && me.sig_count > 0) {
+          sessionStorage.setItem('pv_sig_count', me.sig_count);
+          document.getElementById('sigCount').textContent = me.sig_count;
+        }
+      } catch(e) {}
+    }
+
+    initMyCount();
     loadLeaderboard();
     setInterval(loadLeaderboard, 30000);
   </script>
