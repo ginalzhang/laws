@@ -87,6 +87,11 @@ app.include_router(stats_router, prefix="/stats", tags=["stats"])
 app.include_router(review_router, tags=["review"])
 
 
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+
 @app.get("/stats/live-count")
 async def live_sig_count():
     """Total approved signatures across all projects — poll for live updates."""
