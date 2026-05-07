@@ -449,10 +449,22 @@ class Database:
 
     def get_user_by_name(self, full_name: str) -> Optional[UserRow]:
         with self._Session() as session:
+            role_priority = case(
+                (UserRow.role == 'boss', 0),
+                (UserRow.role == 'admin', 1),
+                (UserRow.role == 'field_manager', 2),
+                (UserRow.role == 'evan', 2),
+                (UserRow.role == 'office_worker', 3),
+                (UserRow.role == 'worker', 4),
+                else_=9,
+            )
             user = (
                 session.query(UserRow)
-                .filter(func.lower(UserRow.full_name) == full_name.lower().strip())
-                .order_by(UserRow.is_active.desc(), UserRow.id)
+                .filter(
+                    func.lower(UserRow.full_name) == full_name.lower().strip(),
+                    UserRow.is_active == True,
+                )
+                .order_by(role_priority, UserRow.id)
                 .first()
             )
             if user:
