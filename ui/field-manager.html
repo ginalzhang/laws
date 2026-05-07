@@ -666,12 +666,12 @@
             if (!outT) {
               return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                 <span style="font-size:.75rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
-                <button onclick="openClockOut(${w.id},'${w.full_name.replace(/'/g,"\\'")}\")" style="border:none;background:#ff3b30;color:#fff;border-radius:6px;padding:3px 8px;font-size:.72rem;font-weight:600;cursor:pointer">Clock out</button>
+                <button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:6px;padding:3px 8px;font-size:.72rem;font-weight:600;cursor:pointer">Clock out</button>
               </div>`;
             }
             return `<span class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</span>`;
           }).join('');
-          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Clock in</button>`;
+          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Clock in</button>`;
           rows += `<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:0.5px solid #f2f2f7">
             <span style="flex:1;font-size:.88rem;font-weight:600">${w.full_name}</span>
             <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">${shiftHtml}</div>
@@ -701,7 +701,7 @@
                 if (!outT) {
                   html += `<div style="display:flex;align-items:center;gap:4px">
                     <span style="font-size:.7rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
-                    <button onclick="openClockOut(${w.id},'${w.full_name.replace(/'/g,"\\'")}\")" style="border:none;background:#ff3b30;color:#fff;border-radius:5px;padding:2px 6px;font-size:.66rem;font-weight:600;cursor:pointer">Out</button>
+                    <button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:5px;padding:2px 6px;font-size:.66rem;font-weight:600;cursor:pointer">Out</button>
                   </div>`;
                 } else {
                   html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</div>`;
@@ -709,7 +709,7 @@
               });
               html += '</div>';
             } else {
-              html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${ds}')">
+              html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openFMAdd(${w.id},'','${ds}')">
                 <div style="color:#ccc;font-size:1rem;text-align:center;line-height:34px">+ In</div>
               </div>`;
             }
@@ -724,7 +724,8 @@
     function prevWeek() { _weekOffset--; loadSchedule(); }
     function nextWeek() { _weekOffset++; loadSchedule(); }
 
-    function openFMAdd(workerId, workerName, dateStr) {
+    function openFMAdd(workerId, _ignored, dateStr) {
+      const workerName = (_schedWorkers.find(w => w.id === workerId) || {}).full_name || 'Worker';
       document.getElementById('fmAddShiftWorkerId').value = workerId;
       document.getElementById('fmAddShiftDate').value = dateStr;
       document.getElementById('fmAddShiftTitle').textContent = `Clock In — ${workerName}`;
@@ -737,8 +738,9 @@
     }
 
     function openClockOut(workerId, workerName) {
+      const name = workerName || (_schedWorkers.find(w => w.id === workerId) || {}).full_name || 'Worker';
       document.getElementById('fmClockOutWorkerId').value = workerId;
-      document.getElementById('fmClockOutTitle').textContent = `Clock Out — ${workerName}`;
+      document.getElementById('fmClockOutTitle').textContent = `Clock Out — ${name}`;
       document.getElementById('fmClockOutErr').style.display = 'none';
       const now = new Date();
       document.getElementById('fmClockOutTime').value =
