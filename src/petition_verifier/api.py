@@ -42,6 +42,7 @@ from .routes.leaderboard_routes import router as leaderboard_router
 from .routes.payment_routes import router as payment_router
 from .routes.location_routes import router as location_router
 from .routes.stats_routes import router as stats_router
+from .routes.review_routes import router as review_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
@@ -83,6 +84,7 @@ app.include_router(leaderboard_router, tags=["leaderboard"])
 app.include_router(payment_router, prefix="/payment-preferences", tags=["payment"])
 app.include_router(location_router, prefix="/locations", tags=["locations"])
 app.include_router(stats_router, prefix="/stats", tags=["stats"])
+app.include_router(review_router, tags=["review"])
 
 
 @app.get("/stats/live-count")

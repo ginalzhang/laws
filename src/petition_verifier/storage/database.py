@@ -216,6 +216,58 @@ class AppSettingRow(Base):
     value = Column(String, nullable=False, default="")
 
 
+# ── Signature Review Center ───────────────────────────────────────────────────
+
+class PacketRow(Base):
+    __tablename__ = "review_packets"
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id        = Column(Integer, ForeignKey("users.id"), nullable=True)
+    uploaded_at      = Column(DateTime, default=datetime.utcnow)
+    original_name    = Column(String, default="")
+    raw_path         = Column(String, default="")
+    cleaned_path     = Column(String, default="")
+    status           = Column(String, default="pending")   # pending|processing|done|failed
+    error_msg        = Column(String, default="")
+    total_lines      = Column(Integer, default=0)
+    # Versioning / duplicate detection
+    page_fingerprint = Column(String, default="")          # dHash of cleaned image
+    new_sigs         = Column(Integer, default=0)          # count of new_signature rows
+    already_counted  = Column(Integer, default=0)          # count of already_counted rows
+    needs_review     = Column(Integer, default=0)          # count of changed_needs_review rows
+    result_json      = Column(Text, default="{}")          # full page_result JSON
+    lines            = relationship("PacketLineRow", back_populates="packet",
+                                    cascade="all, delete-orphan")
+
+
+class PacketLineRow(Base):
+    __tablename__ = "review_packet_lines"
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    packet_id        = Column(Integer, ForeignKey("review_packets.id"), nullable=False)
+    line_no          = Column(Integer, nullable=False)
+    row_fingerprint  = Column(String, default="")          # composite fingerprint for versioning
+    # Row status from versioning
+    row_status       = Column(String, default="blank")     # blank|new_signature|already_counted|changed_needs_review
+    # OCR fields
+    raw_name         = Column(String, default="")
+    norm_name        = Column(String, default="")
+    raw_address      = Column(String, default="")
+    norm_address     = Column(String, default="")
+    raw_city         = Column(String, default="")
+    raw_zip          = Column(String, default="")
+    valid_zip        = Column(Boolean, default=False)
+    raw_date         = Column(String, default="")
+    has_signature    = Column(Boolean, default=False)
+    # Legacy AI verdict fields (kept for backward compat with basic review flow)
+    ai_verdict       = Column(String, default="needs_review")
+    ai_reason        = Column(String, default="")
+    flags_json       = Column(Text, default="[]")
+    # Reviewer action
+    action           = Column(String, nullable=True)       # approved|rejected|escalated
+    reviewed_by      = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at      = Column(DateTime, nullable=True)
+    packet           = relationship("PacketRow", back_populates="lines")
+
+
 def init_db(url: str = DATABASE_URL) -> sessionmaker:
     is_postgres = url.startswith("postgresql")
     engine = create_engine(
@@ -1062,6 +1114,167 @@ class Database:
             )
             session.commit()
             return deleted
+
+    # ── Review packet methods ─────────────────────────────────────────────────
+
+    def create_packet(self, worker_id: int, original_name: str, raw_path: str) -> int:
+        with self._Session() as session:
+            pkt = PacketRow(
+                worker_id=worker_id,
+                original_name=original_name,
+                raw_path=raw_path,
+                status="processing",
+            )
+            session.add(pkt)
+            session.commit()
+            session.refresh(pkt)
+            return pkt.id
+
+    def list_packets(self) -> list:
+        with self._Session() as session:
+            pkts = session.query(PacketRow).order_by(PacketRow.uploaded_at.desc()).all()
+            for p in pkts:
+                session.expunge(p)
+            return pkts
+
+    def get_packet_detail(self, packet_id: int) -> tuple:
+        with self._Session() as session:
+            pkt = session.query(PacketRow).filter_by(id=packet_id).first()
+            if not pkt:
+                return None, []
+            lines = (
+                session.query(PacketLineRow)
+                .filter_by(packet_id=packet_id)
+                .order_by(PacketLineRow.line_no)
+                .all()
+            )
+            session.expunge(pkt)
+            for l in lines:
+                session.expunge(l)
+            return pkt, lines
+
+    def finish_packet(
+        self,
+        packet_id: int,
+        cleaned_path: str,
+        lines: list,
+        page_fingerprint: str = "",
+        new_sigs: int = 0,
+        already_counted: int = 0,
+        needs_review: int = 0,
+        result_json: str = "{}",
+    ) -> None:
+        with self._Session() as session:
+            pkt = session.query(PacketRow).filter_by(id=packet_id).first()
+            if pkt:
+                pkt.cleaned_path     = cleaned_path
+                pkt.status           = "done"
+                pkt.total_lines      = len(lines)
+                pkt.page_fingerprint = page_fingerprint
+                pkt.new_sigs         = new_sigs
+                pkt.already_counted  = already_counted
+                pkt.needs_review     = needs_review
+                pkt.result_json      = result_json
+            for l in lines:
+                session.add(l)
+            session.commit()
+
+    def get_prev_rows_for_fingerprint(
+        self,
+        page_fingerprint: str,
+        exclude_packet_id: Optional[int] = None,
+        hamming_threshold: int = 10,
+    ) -> list[dict]:
+        """
+        Return rows from previous uploads of the same physical page.
+        Matches using Hamming distance on page_fingerprint dHash.
+        """
+        try:
+            fp_int = int(page_fingerprint, 16)
+        except ValueError:
+            return []
+
+        with self._Session() as session:
+            packets = session.query(PacketRow).filter(
+                PacketRow.status == "done",
+                PacketRow.page_fingerprint != "",
+            ).all()
+            matching_ids = []
+            for p in packets:
+                if exclude_packet_id and p.id == exclude_packet_id:
+                    continue
+                try:
+                    diff = bin(fp_int ^ int(p.page_fingerprint, 16)).count("1")
+                    if diff <= hamming_threshold:
+                        matching_ids.append(p.id)
+                except ValueError:
+                    continue
+
+            if not matching_ids:
+                return []
+
+            rows = (
+                session.query(PacketLineRow)
+                .filter(
+                    PacketLineRow.packet_id.in_(matching_ids),
+                    PacketLineRow.row_status.in_(["new_signature", "already_counted"]),
+                )
+                .all()
+            )
+            result = []
+            for r in rows:
+                result.append({
+                    "row_number":      r.line_no,
+                    "row_fingerprint": r.row_fingerprint,
+                    "status":          r.row_status,
+                    "name":            {"normalized": r.norm_name, "raw": r.raw_name},
+                    "street_address":  {"normalized": r.norm_address, "raw": r.raw_address},
+                })
+            return result
+
+    def fail_packet(self, packet_id: int, error: str) -> None:
+        with self._Session() as session:
+            pkt = session.query(PacketRow).filter_by(id=packet_id).first()
+            if pkt:
+                pkt.status = "failed"
+                pkt.error_msg = str(error)[:500]
+                session.commit()
+
+    def set_packet_line_action(
+        self, packet_id: int, line_no: int, action: str, reviewer_id: int
+    ) -> None:
+        with self._Session() as session:
+            line = (
+                session.query(PacketLineRow)
+                .filter_by(packet_id=packet_id, line_no=line_no)
+                .first()
+            )
+            if line:
+                line.action = action
+                line.reviewed_by = reviewer_id
+                line.reviewed_at = datetime.utcnow()
+                session.commit()
+
+    def approve_all_valid_lines(self, packet_id: int, reviewer_id: int) -> int:
+        return self.approve_all_new_sigs(packet_id, reviewer_id)
+
+    def approve_all_new_sigs(self, packet_id: int, reviewer_id: int) -> int:
+        """Approve all rows classified as new_signature."""
+        with self._Session() as session:
+            lines = (
+                session.query(PacketLineRow)
+                .filter_by(packet_id=packet_id, row_status="new_signature")
+                .all()
+            )
+            n = 0
+            for l in lines:
+                if not l.action:
+                    l.action      = "approved"
+                    l.reviewed_by = reviewer_id
+                    l.reviewed_at = datetime.utcnow()
+                    n += 1
+            session.commit()
+            return n
 
     def get_total_valid_sigs(self) -> int:
         with self._Session() as session:

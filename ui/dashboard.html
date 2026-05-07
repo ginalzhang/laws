@@ -388,7 +388,44 @@
       .lb-sigs .num { font-size: 1.3rem; }
       /* Action rows wrap */
       .action-row-wrap { flex-wrap: wrap; }
+      /* Review center mobile */
+      .rc-split { grid-template-columns: 1fr !important; }
+      .rc-image-findings { grid-template-columns: 1fr !important; }
     }
+    /* ── Review Center ── */
+    .rc-split { display: grid; grid-template-columns: 240px 1fr; gap: 14px; align-items: start; }
+    .rc-packet-card { background: #fff; border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px 14px; cursor: pointer; margin-bottom: 8px; transition: border-color .15s; }
+    .rc-packet-card:hover { border-color: #b0b0b8; }
+    .rc-packet-card.rc-active { border-color: #0a84ff; background: #f0f6ff; }
+    .rc-pkt-name { font-size:.87rem;font-weight:600;color:#1c1c1e;margin-bottom:2px;word-break:break-all }
+    .rc-pkt-meta { font-size:.74rem;color:#8e8e93 }
+    .rc-pkt-status { font-size:.71rem;font-weight:600;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:5px }
+    .rc-pkt-status.done { background:#dcfce7;color:#15803d }
+    .rc-pkt-status.processing { background:#e8efff;color:#1a56db }
+    .rc-pkt-status.failed { background:#fee2e2;color:#991b1b }
+    .rc-pkt-status.pending { background:#fef3c7;color:#92400e }
+    .rc-image-findings { display: grid; grid-template-columns: 1fr 260px; gap: 12px; margin-bottom: 14px; align-items: start; }
+    .rc-img-wrap { background: #f5f5f3; border-radius: 12px; overflow: hidden; min-height: 160px; display: flex; align-items: center; justify-content: center; }
+    .rc-img-wrap img { max-width: 100%; max-height: 420px; object-fit: contain; display: block; }
+    .rc-findings-panel { background: #fff; border: 1px solid #e5e5ea; border-radius: 12px; padding: 14px; }
+    .rc-findings-panel h4 { font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8e8e93;margin-bottom:10px }
+    .rc-findings-row { display:flex;justify-content:space-between;align-items:center;font-size:.83rem;padding:4px 0; }
+    .verdict-badge { font-size:.72rem;font-weight:600;padding:3px 8px;border-radius:20px;display:inline-block }
+    .verdict-badge.likely_valid { background:#dcfce7;color:#15803d }
+    .verdict-badge.needs_review { background:#fef3c7;color:#92400e }
+    .verdict-badge.likely_invalid { background:#fee2e2;color:#991b1b }
+    .flag-chip { font-size:.7rem;padding:2px 6px;border-radius:20px;background:#f2f2f7;color:#3c3c43;display:inline-block;margin:1px;white-space:nowrap }
+    .rc-table { width:100%;border-collapse:collapse;font-size:.81rem }
+    .rc-table th { text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;color:#8e8e93;padding:7px 8px;border-bottom:1.5px solid #e5e5ea;font-weight:600 }
+    .rc-table td { padding:7px 8px;border-bottom:0.5px solid #f2f2f7;color:#1c1c1e;vertical-align:middle }
+    .rc-table tr:hover td { background:#f9f9fb }
+    .rc-act { font-size:.74rem;padding:4px 9px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-weight:500;margin-right:2px }
+    .rc-act.approve { background:#dcfce7;color:#15803d }
+    .rc-act.reject  { background:#fee2e2;color:#991b1b }
+    .rc-act.escalate { background:#fef3c7;color:#92400e }
+    .rc-act.done-approved  { background:#15803d;color:#fff;cursor:default }
+    .rc-act.done-rejected  { background:#991b1b;color:#fff;cursor:default }
+    .rc-act.done-escalated { background:#92400e;color:#fff;cursor:default }
   </style>
 </head>
 <body>
@@ -447,6 +484,9 @@
         </div>
         <div class="nav-item" data-section="fraud-scan">
           <span class="icon">🔍</span> Fraud Scan
+        </div>
+        <div class="nav-item" data-section="review">
+          <span class="icon">🔬</span> Review Center
         </div>
         <div class="nav-item" data-section="quick-entry">
           <span class="icon">⚡</span> Quick Entry
@@ -705,6 +745,69 @@
             </div>
           </div>
           <div id="qeMsg" style="margin-top:10px;font-size:.83rem"></div>
+        </div>
+      </section>
+
+      <!-- ── REVIEW CENTER ── -->
+      <section class="section" id="section-review">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          Review Center
+          <button class="btn btn-primary btn-sm" onclick="rcOpenUpload()">+ Upload Packet</button>
+        </div>
+
+        <div class="rc-split" id="rcSplit">
+          <!-- Left: packet list -->
+          <div id="rcSidebar">
+            <div id="rcNoPackets" style="font-size:.85rem;color:#8e8e93;padding:12px 0">No packets uploaded yet.</div>
+            <div id="rcPacketList"></div>
+          </div>
+
+          <!-- Right: detail -->
+          <div id="rcDetail" style="display:none">
+            <div id="rcDetailHeader"></div>
+            <div class="rc-image-findings">
+              <div class="rc-img-wrap">
+                <img id="rcImage" src="" alt="Packet image" style="display:none">
+                <div id="rcImgPlaceholder" style="color:#c7c7cc;font-size:.85rem;padding:40px">No image</div>
+              </div>
+              <div class="rc-findings-panel" id="rcFindingsPanel">
+                <h4>AI Summary</h4>
+                <div style="color:#c7c7cc;font-size:.83rem">Select a packet</div>
+              </div>
+            </div>
+            <div class="card" style="margin-top:0;padding:0;overflow:hidden">
+              <div style="overflow-x:auto">
+                <table class="rc-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Status</th><th>Name</th><th>Address</th><th>ZIP</th><th>Date</th>
+                      <th style="text-align:center">Sig</th><th>Flags</th><th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rcTableBody">
+                    <tr><td colspan="9" style="text-align:center;color:#8e8e93;padding:20px">Select a packet</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upload modal -->
+        <div class="modal-overlay" id="rcUploadModal">
+          <div class="modal" style="max-width:420px">
+            <span class="modal-close" onclick="closeModal('rcUploadModal')">✕</span>
+            <div class="modal-title">Upload Signature Packet</div>
+            <p style="font-size:.82rem;color:#6e6e73;margin-bottom:16px">Take a clear photo of a petition sheet. The AI will extract and classify each signature row.</p>
+            <input type="file" id="rcFileInput" accept="image/*,.pdf" capture="environment"
+              style="display:block;width:100%;padding:12px;border:2px dashed #ddd;border-radius:10px;cursor:pointer;font-size:.85rem;font-family:inherit;background:#f9f9fb">
+            <div id="rcUploadProgress" style="margin-top:12px;display:none;font-size:.84rem;color:#1a56db">Uploading…</div>
+            <div id="rcUploadMsg" style="margin-top:8px;font-size:.82rem;min-height:16px"></div>
+            <div class="modal-footer" style="margin-top:16px">
+              <button class="btn btn-outline" onclick="closeModal('rcUploadModal')">Cancel</button>
+              <button class="btn btn-primary" onclick="rcUpload()">Upload & Analyze</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1083,6 +1186,7 @@
       case 'pl':         loadPayPeriodsPL(); break;
       case 'settings':   loadSettings(); break;
       case 'map':        loadMap(); break;
+      case 'review':     loadReviewCenter(); break;
     }
     if (cacheable.has(sec)) _sectionLoaded[sec] = true;
   }
@@ -2610,6 +2714,224 @@
     }
   }
 
+  // ── Review Center ──────────────────────────────────────────────────────────
+
+  let _rcPackets = [];
+  let _rcSelected = null;
+  let _rcPollTimer = null;
+
+  async function loadReviewCenter() {
+    try {
+      _rcPackets = await api('/review/packets');
+      _rcRenderList();
+    } catch(e) { /* ignore */ }
+  }
+
+  function _rcRenderList() {
+    const list = document.getElementById('rcPacketList');
+    const none = document.getElementById('rcNoPackets');
+    if (!list) return;
+    if (!_rcPackets.length) { none.style.display = ''; list.innerHTML = ''; return; }
+    none.style.display = 'none';
+    list.innerHTML = _rcPackets.map(p => {
+      const d = p.uploaded_at ? new Date(p.uploaded_at + 'Z').toLocaleDateString() : '—';
+      const active = _rcSelected && _rcSelected.id === p.id ? ' rc-active' : '';
+      return `<div class="rc-packet-card${active}" onclick="rcSelectPacket(${p.id})">
+        <div class="rc-pkt-name">${_escHtml(p.original_name || 'Packet #' + p.id)}</div>
+        <div class="rc-pkt-meta">${d} · ${p.total_lines || '?'} lines</div>
+        <span class="rc-pkt-status ${p.status}">${p.status}</span>
+      </div>`;
+    }).join('');
+  }
+
+  async function rcSelectPacket(id) {
+    clearInterval(_rcPollTimer);
+    try {
+      const p = await api('/review/packets/' + id);
+      _rcSelected = p;
+      _rcRenderList();
+      _rcRenderDetail(p);
+      document.getElementById('rcDetail').style.display = '';
+      if (p.status === 'processing' || p.status === 'pending') {
+        _rcPollTimer = setInterval(async () => {
+          const updated = await api('/review/packets/' + id);
+          if (updated.status !== 'processing' && updated.status !== 'pending') {
+            clearInterval(_rcPollTimer);
+            _rcSelected = updated;
+            _rcRenderList();
+            _rcRenderDetail(updated);
+            loadReviewCenter();
+          }
+        }, 3000);
+      }
+    } catch(e) { alert('Failed to load packet: ' + e.message); }
+  }
+
+  // Row status metadata
+  const _RC_STATUS = {
+    new_signature:        { label: 'New',            bg: '#dcfce7', color: '#15803d', rowBg: '' },
+    already_counted:      { label: 'Already counted',bg: '#f2f2f7', color: '#6e6e73', rowBg: '#fafaf9' },
+    changed_needs_review: { label: 'Needs review',   bg: '#fef3c7', color: '#92400e', rowBg: '#fffdf0' },
+    blank:                { label: 'Blank',           bg: '#f2f2f7', color: '#c7c7cc', rowBg: '#fafaf9' },
+  };
+
+  function _rcStatusBadge(status) {
+    const m = _RC_STATUS[status] || _RC_STATUS.blank;
+    return `<span style="font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:20px;background:${m.bg};color:${m.color}">${m.label}</span>`;
+  }
+
+  function _rcRenderDetail(p) {
+    // Header
+    const hdr = document.getElementById('rcDetailHeader');
+    const s = p.summary || {};
+    const approveAllBtn = p.status === 'done'
+      ? `<button class="btn btn-primary btn-sm" onclick="rcApproveAll(${p.id})">✓ Approve New Sigs</button>`
+      : '';
+    const sumHtml = p.status === 'done' ? `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:.76rem;color:#3c3c43;margin-top:4px">
+        <span style="color:#15803d;font-weight:600">${s.new_signatures || 0} new</span>
+        <span style="color:#6e6e73">${s.previously_counted || 0} already counted</span>
+        ${s.needs_review ? `<span style="color:#92400e">${s.needs_review} needs review</span>` : ''}
+      </div>` : '';
+    hdr.innerHTML = `<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:.95rem;font-weight:600;color:#1c1c1e">${_escHtml(p.original_name)}</div>
+        <div style="font-size:.76rem;color:#8e8e93">${p.total_lines} rows · ${p.status}${p.error_msg ? ' — ' + _escHtml(p.error_msg) : ''}</div>
+        ${sumHtml}
+      </div>
+      ${approveAllBtn}
+    </div>`;
+
+    // Image
+    const img = document.getElementById('rcImage');
+    const placeholder = document.getElementById('rcImgPlaceholder');
+    img.src = '/review/packets/' + p.id + '/image?type=' + (p.has_cleaned ? 'cleaned' : 'raw') + '&t=' + Date.now();
+    img.style.display = '';
+    placeholder.style.display = 'none';
+    img.onerror = () => { img.style.display = 'none'; placeholder.style.display = ''; };
+
+    // Findings panel
+    const panel = document.getElementById('rcFindingsPanel');
+    if (p.status === 'processing' || p.status === 'pending') {
+      panel.innerHTML = '<h4>Pre-Review</h4><div style="color:#8e8e93;font-size:.83rem;padding:10px 0">Processing… ⏳</div>';
+    } else if (p.status === 'failed') {
+      panel.innerHTML = `<h4>Pre-Review</h4><div style="color:#c62828;font-size:.83rem">${_escHtml(p.error_msg || 'Processing failed')}</div>`;
+    } else {
+      const lines   = p.lines || [];
+      const newSigs = lines.filter(l => l.row_status === 'new_signature').length;
+      const already = lines.filter(l => l.row_status === 'already_counted').length;
+      const rev     = lines.filter(l => l.row_status === 'changed_needs_review').length;
+      const actioned= lines.filter(l => l.action).length;
+      const pct     = lines.length ? Math.round(actioned / lines.length * 100) : 0;
+      panel.innerHTML = `
+        <h4>Signature Count</h4>
+        <div class="rc-findings-row"><span>New signatures</span>${_rcStatusBadge('new_signature').replace('>', `>${newSigs}`)}</div>
+        <div class="rc-findings-row"><span>Already counted</span>${_rcStatusBadge('already_counted').replace('>', `>${already}`)}</div>
+        ${rev ? `<div class="rc-findings-row"><span>Needs review</span>${_rcStatusBadge('changed_needs_review').replace('>', `>${rev}`)}</div>` : ''}
+        <div style="border-top:.5px solid #f2f2f7;margin:10px 0"></div>
+        <h4>Review Progress</h4>
+        <div style="font-size:.82rem;color:#3c3c43;margin-bottom:6px">${actioned} / ${lines.filter(l=>l.row_status!=='blank').length} actioned</div>
+        <div style="height:5px;background:#f2f2f7;border-radius:99px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#0a84ff;border-radius:99px;transition:width .3s"></div>
+        </div>
+        <div style="margin-top:14px;font-size:.72rem;color:#8e8e93;font-style:italic">AI-assisted pre-review workflow.<br>All decisions made by staff.</div>`;
+    }
+
+    // Row table
+    const tbody = document.getElementById('rcTableBody');
+    const lines = p.lines || [];
+    if (p.status !== 'done' || !lines.length) {
+      const msg = (p.status === 'processing' || p.status === 'pending') ? 'Processing…'
+                : p.status === 'failed' ? 'Processing failed'
+                : 'No rows found';
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#8e8e93;padding:20px">${msg}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lines.map(l => {
+      const rowMeta = _RC_STATUS[l.row_status] || _RC_STATUS.blank;
+      const rowBg = rowMeta.rowBg ? `style="background:${rowMeta.rowBg}"` : '';
+      const flags = (l.flags || []).map(f => `<span class="flag-chip">${f.replace(/_/g,' ')}</span>`).join('');
+      const nameCell  = _escHtml(l.norm_name  || l.raw_name)  || '<span style="color:#c7c7cc">—</span>';
+      const addrCell  = _escHtml(l.norm_address || l.raw_address) || '<span style="color:#c7c7cc">—</span>';
+      const showAction = l.row_status !== 'blank' && l.row_status !== 'already_counted';
+      const actionHtml = l.action
+        ? `<span class="rc-act done-${l.action}">${l.action}</span>`
+        : showAction
+        ? `<button class="rc-act approve"  onclick="rcAct(${p.id},${l.line_no},'approved')">✓</button>` +
+          `<button class="rc-act reject"   onclick="rcAct(${p.id},${l.line_no},'rejected')">✗</button>` +
+          `<button class="rc-act escalate" onclick="rcAct(${p.id},${l.line_no},'escalated')">!</button>`
+        : '—';
+      return `<tr ${rowBg}>
+        <td>${l.line_no}</td>
+        <td>${_rcStatusBadge(l.row_status)}</td>
+        <td>${nameCell}</td>
+        <td style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_escHtml(l.norm_address || l.raw_address)}">${addrCell}</td>
+        <td>${_escHtml(l.raw_zip) || '<span style="color:#c7c7cc">—</span>'}</td>
+        <td>${_escHtml(l.raw_date) || '<span style="color:#c7c7cc">—</span>'}</td>
+        <td style="text-align:center">${l.has_signature ? '✓' : '<span style="color:#c7c7cc">—</span>'}</td>
+        <td>${flags || '<span style="color:#c7c7cc;font-size:.72rem">—</span>'}</td>
+        <td style="white-space:nowrap">${actionHtml}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function rcAct(packetId, lineNo, action) {
+    try {
+      await api('/review/packets/' + packetId + '/lines/' + lineNo + '/action', {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      await rcSelectPacket(packetId);
+    } catch(e) { alert('Failed: ' + e.message); }
+  }
+
+  async function rcApproveAll(packetId) {
+    try {
+      await api('/review/packets/' + packetId + '/approve-all', { method: 'POST' });
+      await rcSelectPacket(packetId);
+      await loadReviewCenter();
+    } catch(e) { alert('Failed: ' + e.message); }
+  }
+
+  function rcOpenUpload() {
+    document.getElementById('rcFileInput').value = '';
+    document.getElementById('rcUploadMsg').textContent = '';
+    document.getElementById('rcUploadProgress').style.display = 'none';
+    openModal('rcUploadModal');
+  }
+
+  async function rcUpload() {
+    const input = document.getElementById('rcFileInput');
+    const msg   = document.getElementById('rcUploadMsg');
+    if (!input.files.length) { msg.textContent = 'Select a file first.'; return; }
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    document.getElementById('rcUploadProgress').style.display = '';
+    msg.textContent = '';
+    try {
+      const r = await fetch('/review/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + _token },
+        body: fd,
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Upload failed');
+      closeModal('rcUploadModal');
+      await loadReviewCenter();
+      setTimeout(() => rcSelectPacket(data.packet_id), 300);
+    } catch(e) {
+      msg.style.color = '#c62828';
+      msg.textContent = e.message;
+    } finally {
+      document.getElementById('rcUploadProgress').style.display = 'none';
+    }
+  }
+
+  function _escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // Unregister any cached service workers so we always get the latest dashboard
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
@@ -2640,6 +2962,7 @@
     <div class="mobile-nav-more-item" onclick="mobNav('payroll');closeMobMore()"><span class="mn-icon">💰</span>Payroll</div>
     <div class="mobile-nav-more-item" onclick="mobNav('leaderboard');closeMobMore()"><span class="mn-icon">🏆</span>Leaderboard</div>
     <div class="mobile-nav-more-item" onclick="mobNav('petitions');closeMobMore()"><span class="mn-icon">📋</span>Petitions</div>
+    <div class="mobile-nav-more-item" onclick="mobNav('review');closeMobMore()"><span class="mn-icon">🔬</span>Review</div>
     <div class="mobile-nav-more-item" onclick="mobNav('settings');closeMobMore()"><span class="mn-icon">⚙️</span>Settings</div>
     <div class="mobile-nav-more-item" onclick="doLogout()"><span class="mn-icon">🚪</span>Sign out</div>
   </div>

@@ -63,4 +63,16 @@ def get_processor(backend: str | None = None) -> BasePDFProcessor:
         from .claude_extractor import ClaudeProcessor
         return ClaudeProcessor()
 
-    raise ValueError(f"Unknown OCR_BACKEND: {backend!r}. Use 'tesseract', 'vision', 'reducto', or 'claude'.")
+    if backend == "vision_field":
+        creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if not creds:
+            raise EnvironmentError(
+                "OCR_BACKEND=vision_field but GOOGLE_APPLICATION_CREDENTIALS is not set."
+            )
+        from .field_vision import FieldVisionProcessor
+        return FieldVisionProcessor()
+
+    raise ValueError(
+        f"Unknown OCR_BACKEND: {backend!r}. "
+        "Use 'tesseract', 'vision', 'vision_field', 'reducto', or 'claude'."
+    )
