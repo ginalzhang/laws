@@ -513,10 +513,11 @@
       _schedMonday = monday;
       document.getElementById('fmWeekLabel').textContent = fmtWeekLabel(monday);
       try {
-        const [workers, shifts] = await Promise.all([
+        const [allWorkers, shifts] = await Promise.all([
           api('/workers'),
           api('/shifts?date_from=' + fmtDate(monday)),
         ]);
+        const workers = allWorkers.filter(w => w.role === 'petitioner' || w.role === 'worker' || w.role === 'office_worker');
         _schedWorkers = workers;
         _schedShifts  = shifts;
         _mobileDayIdx = 0;
