@@ -63,6 +63,9 @@ async def ensure_permanent_users():
         else:
             # Keep password and role in sync on every deploy
             db.update_user(existing.id, password_hash=hash_password(u["password"]), role=u["role"], full_name=u["full_name"], is_active=True)
+    # Seed default FM team password if not already set
+    if not db.get_setting("fm_password"):
+        db.set_setting("fm_password", "seals")
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():

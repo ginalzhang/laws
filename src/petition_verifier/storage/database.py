@@ -203,6 +203,12 @@ class PayrollRecordRow(Base):
     calculated_at    = Column(DateTime, default=datetime.utcnow)
 
 
+class AppSettingRow(Base):
+    __tablename__ = "app_settings"
+    key   = Column(String, primary_key=True)
+    value = Column(String, nullable=False, default="")
+
+
 def init_db(url: str = DATABASE_URL) -> sessionmaker:
     is_postgres = url.startswith("postgresql")
     engine = create_engine(
@@ -998,6 +1004,20 @@ class Database:
             for p in pins:
                 session.expunge(p)
             return pins
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        with self._Session() as session:
+            row = session.query(AppSettingRow).filter(AppSettingRow.key == key).first()
+            return row.value if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._Session() as session:
+            row = session.query(AppSettingRow).filter(AppSettingRow.key == key).first()
+            if row:
+                row.value = value
+            else:
+                session.add(AppSettingRow(key=key, value=value))
+            session.commit()
 
     def delete_worker_pins(self, worker_id: int) -> int:
         with self._Session() as session:

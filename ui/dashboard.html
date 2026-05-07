@@ -745,6 +745,18 @@
       <!-- ── SETTINGS ── -->
       <section class="section" id="section-settings">
         <div class="section-title">Settings</div>
+
+        <div class="card" style="max-width:480px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:8px">Field Manager Team Password</div>
+          <p style="font-size:.8rem;color:#888;margin-bottom:12px">Workers must enter this password to access the field manager login on the sign-in page.</p>
+          <div style="display:flex;gap:8px">
+            <input type="password" id="fmPwSettingInput" placeholder="New password"
+              style="flex:1;padding:10px 13px;border:1.5px solid #e5e5ea;border-radius:10px;font-size:.9rem;font-family:inherit;outline:none;background:#f9f9fb">
+            <button class="btn btn-primary btn-sm" onclick="saveFMPassword()">Save</button>
+          </div>
+          <div id="fmPwMsg" style="margin-top:8px;font-size:.8rem;color:#8e8e93;min-height:16px"></div>
+        </div>
+
         <div class="card non-manager-only" style="max-width:480px;margin-bottom:16px">
           <div class="card-title" style="margin-bottom:8px">Pay Periods</div>
           <p style="font-size:.8rem;color:#888;margin-bottom:12px">Workers are paid every Friday. Each period runs Monday–Friday.</p>
@@ -2544,6 +2556,23 @@
       }
     } catch(e) {
       console.error('loadMap error', e);
+    }
+  }
+
+  async function saveFMPassword() {
+    const input = document.getElementById('fmPwSettingInput');
+    const msg   = document.getElementById('fmPwMsg');
+    const pw = input.value.trim();
+    if (!pw) { msg.style.color = '#c62828'; msg.textContent = 'Password cannot be empty'; return; }
+    try {
+      const res = await api('/auth/fm-password', { method: 'PUT', body: JSON.stringify({ new_password: pw }) });
+      input.value = '';
+      msg.style.color = '#2e7d32';
+      msg.textContent = 'Password updated!';
+      setTimeout(() => { msg.textContent = ''; }, 3000);
+    } catch(e) {
+      msg.style.color = '#c62828';
+      msg.textContent = e.message || 'Failed to update';
     }
   }
 

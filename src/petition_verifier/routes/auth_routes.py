@@ -92,10 +92,44 @@ async def list_active_users():
     result = [
         {"full_name": u.full_name, "role_label": role_labels.get(u.role, u.role.title())}
         for u in users
-        if u.is_active and u.role not in ("boss", "admin", "petitioner")
+        if u.is_active and u.role not in ("boss", "admin", "petitioner", "field_manager", "evan")
     ]
     result.sort(key=lambda x: x["full_name"].lower())
     return result
+
+
+class FMPasswordRequest(BaseModel):
+    password: str
+
+
+@router.post("/fm-users")
+async def fm_users(payload: FMPasswordRequest):
+    """Verify the FM team password and return the list of field managers."""
+    stored = db.get_setting("fm_password", "seals")
+    if payload.password != stored:
+        raise HTTPException(401, "Wrong password")
+    users = db.list_users()
+    result = [
+        {"full_name": u.full_name, "role_label": "Field Manager"}
+        for u in users
+        if u.is_active and u.role in ("field_manager", "evan")
+    ]
+    result.sort(key=lambda x: x["full_name"].lower())
+    return result
+
+
+class UpdateFMPasswordRequest(BaseModel):
+    new_password: str
+
+
+@router.put("/fm-password")
+async def update_fm_password(payload: UpdateFMPasswordRequest, user: dict = Depends(get_current_user)):
+    if user["role"] != "boss":
+        raise HTTPException(403, "Boss only")
+    if not payload.new_password.strip():
+        raise HTTPException(400, "Password cannot be empty")
+    db.set_setting("fm_password", payload.new_password.strip())
+    return {"ok": True}
 
 
 class ChangePasswordRequest(BaseModel):

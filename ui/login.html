@@ -144,6 +144,50 @@
       display: none; text-align: center;
     }
     .error-msg.show { display: block; }
+
+    .fm-toggle {
+      margin-top: 18px; text-align: center;
+      font-size: .8rem; color: #8e8e93; cursor: pointer;
+    }
+    .fm-toggle:hover { color: #0a84ff; }
+
+    .fm-section { display: none; margin-top: 16px; }
+    .fm-section.open { display: block; }
+    .fm-section .fm-title {
+      font-size: .82rem; font-weight: 600; color: #3c3c43;
+      text-align: center; margin-bottom: 12px;
+    }
+    .fm-pw-wrap { position: relative; margin-bottom: 10px; }
+    .fm-pw-wrap input {
+      width: 100%; padding: 13px 14px;
+      border: 1px solid #e5e5ea; border-radius: 12px;
+      font-size: .97rem; font-family: inherit;
+      background: #fafafa; color: #000; outline: none;
+      -webkit-appearance: none;
+    }
+    .fm-pw-wrap input:focus { border-color: #0a84ff; background: #fff; box-shadow: 0 0 0 3px rgba(10,132,255,.1); }
+    .fm-unlock-btn {
+      width: 100%; padding: 13px;
+      background: #5856d6; color: #fff; border: none;
+      border-radius: 12px; font-size: .97rem; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+      transition: background .15s, opacity .15s;
+      -webkit-appearance: none;
+    }
+    .fm-unlock-btn:hover { background: #4846c0; }
+    .fm-unlock-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .fm-error {
+      margin-top: 10px; padding: 10px 14px;
+      background: #fff2f2; color: #ff3b30;
+      border-radius: 10px; font-size: .84rem;
+      display: none; text-align: center;
+    }
+    .fm-error.show { display: block; }
+    .fm-name-list {
+      display: flex; flex-direction: column; gap: 6px; margin-top: 12px;
+      max-height: 40vh; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
   </style>
 </head>
 <body>
@@ -176,6 +220,19 @@
     </form>
 
     <div class="error-msg" id="errorMsg"></div>
+
+    <div class="fm-toggle" id="fmToggle" onclick="toggleFMSection()">Are you a Field Manager?</div>
+
+    <div class="fm-section" id="fmSection">
+      <div class="fm-title">Enter field manager team password</div>
+      <div class="fm-pw-wrap">
+        <input type="password" id="fmPwInput" placeholder="Team password" autocomplete="off"
+               onkeydown="if(event.key==='Enter') unlockFM()">
+      </div>
+      <button class="fm-unlock-btn" id="fmUnlockBtn" onclick="unlockFM()">Unlock</button>
+      <div class="fm-error" id="fmError"></div>
+      <div class="fm-name-list" id="fmNameList"></div>
+    </div>
   </div>
 
   <script>
@@ -266,21 +323,35 @@
       }
     }
 
+    async function attemptLogin(input) {
+      // Try name-based login first
+      const r1 = await fetch('/auth/login-by-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name: input }),
+      });
+      if (r1.ok) return await r1.json();
+
+      // Fall back to username login (e.g. arianafan2000 → arianafan2000@app.local)
+      const r2 = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: input + '@app.local', password: input }),
+      });
+      const d2 = await r2.json();
+      if (!r2.ok) throw new Error('Name or username not found');
+      return d2;
+    }
+
     document.getElementById('nameForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.getElementById('nameInput').value.trim();
-      if (!name) return;
+      const input = document.getElementById('nameInput').value.trim();
+      if (!input) return;
       const btn = document.getElementById('nameBtn');
       btn.disabled = true; btn.textContent = 'Signing in…';
       document.getElementById('errorMsg').classList.remove('show');
       try {
-        const res  = await fetch('/auth/login-by-name', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ full_name: name }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Login failed');
+        const data = await attemptLogin(input);
         localStorage.setItem('pv_token',     data.access_token);
         localStorage.setItem('pv_role',      data.role);
         localStorage.setItem('pv_user_id',   data.user_id);
@@ -292,6 +363,47 @@
         btn.disabled = false; btn.textContent = 'Sign In';
       }
     });
+
+    function toggleFMSection() {
+      const sec = document.getElementById('fmSection');
+      const tog = document.getElementById('fmToggle');
+      const isOpen = sec.classList.toggle('open');
+      tog.textContent = isOpen ? 'Hide Field Manager login' : 'Are you a Field Manager?';
+      if (isOpen) setTimeout(() => document.getElementById('fmPwInput').focus(), 80);
+    }
+
+    async function unlockFM() {
+      const pw  = document.getElementById('fmPwInput').value;
+      const err = document.getElementById('fmError');
+      const btn = document.getElementById('fmUnlockBtn');
+      const list = document.getElementById('fmNameList');
+      err.classList.remove('show');
+      if (!pw) return;
+      btn.disabled = true; btn.textContent = 'Checking…';
+      try {
+        const res  = await fetch('/auth/fm-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Wrong password');
+        list.innerHTML = data.map(u => {
+          const safeName = u.full_name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          return `<button class="name-btn" data-name="${safeName}">
+            <span class="name-text">${u.full_name}</span>
+            <span class="role-pill field_manager">Field Manager</span>
+          </button>`;
+        }).join('') || '<div style="text-align:center;padding:16px;font-size:.85rem;color:#8e8e93">No field managers found</div>';
+        list.querySelectorAll('.name-btn').forEach(b =>
+          b.addEventListener('click', () => loginAs(b, b.dataset.name))
+        );
+      } catch(e) {
+        err.textContent = e.message;
+        err.classList.add('show');
+      }
+      btn.disabled = false; btn.textContent = 'Unlock';
+    }
 
     loadNames();
   </script>
