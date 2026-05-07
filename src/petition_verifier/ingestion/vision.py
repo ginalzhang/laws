@@ -150,6 +150,31 @@ def _is_vision_block_format(words: list[_Word]) -> bool:
     return len(_find_print_name_anchors(words)) >= 2
 
 
+def _find_grid_top(words: list[_Word]) -> Optional[int]:
+    """
+    Return the y-coordinate of the 'All signers must be registered to vote in
+    ___ County' row, which marks the top of the CA initiative signature grid.
+
+    Requires 'registered' and 'county' to appear on the same horizontal row
+    (within ±40px vertically) so incidental occurrences of either word in the
+    ballot summary text don't trigger a false match.
+    """
+    registered_words = [w for w in words if re.match(r"^registered$", w.text, re.I)]
+    county_words     = [w for w in words if re.match(r"^county$",     w.text, re.I)]
+    for r in registered_words:
+        for c in county_words:
+            if abs(r.top - c.top) <= 40:
+                return min(r.top, c.top)
+    # Fallback: look for 'signers' + 'petition' on the same row
+    signers_words   = [w for w in words if re.match(r"^signers$",  w.text, re.I)]
+    petition_words  = [w for w in words if re.match(r"^petition$", w.text, re.I)]
+    for s in signers_words:
+        for p in petition_words:
+            if abs(s.top - p.top) <= 40:
+                return min(s.top, p.top)
+    return None
+
+
 # ── Word classification helpers ───────────────────────────────────────────────
 
 _ALL_LABELS = re.compile(
@@ -249,21 +274,9 @@ def _extract_vision_block(
     anchors    = _find_print_name_anchors(words)
     sigs: list[ExtractedSignature] = []
 
-    # ── Find the "registered to vote in ___ County" header row ───────────────
-    # CA initiative petitions always print this sentence immediately above the
-    # signature grid.  Any "Print Name" anchor above this line is preamble text,
-    # not a real signer row.
-    _GRID_MARKER = re.compile(r"^(registered|signers|county)$", re.I)
-    grid_marker_top = next(
-        (w.top for w in words if _GRID_MARKER.match(w.text)),
-        None,
-    )
-    if grid_marker_top is not None:
-        # Keep anchors that start at or below the marker row.
-        anchors = [a for a in anchors if a.top >= grid_marker_top]
-        words   = [w for w in words   if w.top  >= grid_marker_top]
-    elif anchors:
-        # Fallback: 200px buffer above the first detected anchor.
+    # Words are already filtered to the signature grid by VisionProcessor.extract.
+    # Apply a 200px buffer above the first anchor as an extra safety margin.
+    if anchors:
         grid_top = anchors[0].top - 200
         words    = [w for w in words if w.top >= grid_top]
         anchors  = _find_print_name_anchors(words)
@@ -508,6 +521,8 @@ def _extract_vision_columns(
             sig_bbox.page = page_num
         if not name_text and not address_text:
             continue
+        if len(sigs) >= 10:
+            break
         avg_conf = sum(w.conf for w in row.words) / len(row.words)
         sigs.append(ExtractedSignature(
             line_number=line_counter,
@@ -541,6 +556,12 @@ class VisionProcessor(BasePDFProcessor):
 
         for page_num, image in enumerate(images, start=1):
             words = _vision_words(image)
+
+            # Discard everything above the signature grid before dispatching
+            # to either extractor.  Both paths benefit from this filter.
+            grid_top = _find_grid_top(words)
+            if grid_top is not None:
+                words = [w for w in words if w.top >= grid_top]
 
             if _is_vision_block_format(words):
                 page_sigs = _extract_vision_block(
