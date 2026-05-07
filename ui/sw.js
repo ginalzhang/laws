@@ -7,7 +7,7 @@
  *   - Offline fallback: show offline.html when network unavailable
  */
 
-const CACHE_NAME = 'pv-shell-v5';
+const CACHE_NAME = 'pv-shell-v6';
 
 const SHELL_ASSETS = [
   '/static/login.html',
