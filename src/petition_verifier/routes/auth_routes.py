@@ -92,7 +92,7 @@ async def list_active_users():
     result = [
         {"full_name": u.full_name, "role_label": role_labels.get(u.role, u.role.title())}
         for u in users
-        if u.is_active and u.role not in ("boss", "admin")
+        if u.is_active and u.role not in ("boss", "admin", "petitioner")
     ]
     result.sort(key=lambda x: x["full_name"].lower())
     return result
