@@ -97,6 +97,28 @@
 
     .empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
 
+    /* Clock in/out list */
+    .clock-list { padding: 0 16px 8px; }
+    .clock-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 0; border-bottom: 0.5px solid #f2f2f7;
+    }
+    .clock-row:last-child { border-bottom: none; }
+    .clock-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .clock-dot.in  { background: #30d158; }
+    .clock-dot.out { background: #c7c7cc; }
+    .clock-name { flex: 1; font-size: .9rem; font-weight: 600; }
+    .clock-time { font-size: .72rem; color: #8e8e93; }
+    .clock-btn {
+      padding: 6px 14px; border: none; border-radius: 8px;
+      font-size: .78rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; flex-shrink: 0;
+      transition: opacity .15s;
+    }
+    .clock-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .clock-btn.in-btn  { background: #30d158; color: #fff; }
+    .clock-btn.out-btn { background: #ff3b30; color: #fff; }
+
     .logout-link {
       text-align: center; padding: 8px;
       font-size: .8rem; color: #8e8e93; cursor: pointer;
@@ -180,6 +202,12 @@
     <div class="card">
       <div class="card-title">Live Signature Counts</div>
       <div class="leaderboard-list" id="lbList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Clock in / out workers -->
+    <div class="card">
+      <div class="card-title" style="padding-bottom:10px">Clock Workers In / Out</div>
+      <div class="clock-list" id="clockList"><div class="empty">Loading…</div></div>
     </div>
 
     <div class="logout-link" onclick="logout()">Sign out</div>
@@ -379,11 +407,69 @@
       }
     }
 
+    // ── Clock in / out ────────────────────────────────────────────────────────
+    let _workers = [];
+
+    async function loadClockList() {
+      try {
+        const [workers, activeShifts] = await Promise.all([
+          api('/workers'),
+          api('/shifts/active'),
+        ]);
+        _workers = workers;
+        const activeById = {};
+        for (const s of activeShifts) activeById[s.worker_id] = s;
+
+        const el = document.getElementById('clockList');
+        if (!workers.length) { el.innerHTML = '<div class="empty">No workers found</div>'; return; }
+
+        el.innerHTML = workers.map(w => {
+          const shift = activeById[w.id];
+          const clocked = !!shift;
+          const since = clocked
+            ? ' since ' + new Date(shift.clock_in + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+            : '';
+          return `<div class="clock-row" id="crow-${w.id}">
+            <div class="clock-dot ${clocked ? 'in' : 'out'}"></div>
+            <div style="flex:1;min-width:0">
+              <div class="clock-name">${w.full_name}</div>
+              <div class="clock-time">${clocked ? 'Clocked in' + since : 'Not clocked in'}</div>
+            </div>
+            <button class="clock-btn ${clocked ? 'out-btn' : 'in-btn'}" id="cbtn-${w.id}"
+              onclick="toggleClock(${w.id}, ${clocked})">
+              ${clocked ? 'Clock Out' : 'Clock In'}
+            </button>
+          </div>`;
+        }).join('');
+      } catch(e) {
+        document.getElementById('clockList').innerHTML = '<div class="empty">Could not load workers</div>';
+      }
+    }
+
+    async function toggleClock(workerId, isClockedIn) {
+      const btn = document.getElementById('cbtn-' + workerId);
+      if (!btn) return;
+      btn.disabled = true;
+      try {
+        if (isClockedIn) {
+          await api('/shifts/clock-out', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
+        } else {
+          await api('/shifts/clock-in', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
+        }
+        await loadClockList();
+        setMsg(isClockedIn ? 'Clocked out!' : 'Clocked in!', 'success');
+      } catch(e) {
+        setMsg(e.message, 'error');
+        btn.disabled = false;
+      }
+    }
+
     async function refresh() {
       try {
         const [pins] = await Promise.all([
           api('/locations/pins'),
           loadLeaderboard(),
+          loadClockList(),
         ]);
         await loadMap(pins);
         document.getElementById('lastRefresh').textContent =
