@@ -113,10 +113,10 @@ async def list_workers(user: dict = Depends(require_manager)):
     users = db.list_users()
     # Never show boss or evan accounts in the workers list
     users = [u for u in users if u.role not in ("boss", "evan")]
-    # Deduplicate by (full_name lower, role) — keep lowest id
+    # Deduplicate by (full_name lower, role) — prefer active, then lowest id
     seen: set[tuple] = set()
     deduped = []
-    for u in sorted(users, key=lambda u: u.id):
+    for u in sorted(users, key=lambda u: (0 if u.is_active else 1, u.id)):
         key = (u.full_name.strip().lower(), u.role)
         if key not in seen:
             seen.add(key)
