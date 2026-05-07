@@ -57,7 +57,7 @@ async def upload_packet(
     raw_path.write_bytes(data)
 
     packet_id = db.create_packet(
-        worker_id=current_user.id,
+        worker_id=current_user["user_id"],
         original_name=file.filename or filename,
         raw_path=str(raw_path),
     )
@@ -172,7 +172,7 @@ async def set_line_action(
 ):
     if body.action not in ("approved", "rejected", "escalated"):
         raise HTTPException(400, "action must be approved, rejected, or escalated")
-    db.set_packet_line_action(packet_id, line_no, body.action, current_user.id)
+    db.set_packet_line_action(packet_id, line_no, body.action, current_user["user_id"])
     return {"ok": True}
 
 
@@ -180,7 +180,7 @@ async def set_line_action(
 
 @router.post("/packets/{packet_id}/approve-all")
 async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)):
-    n = db.approve_all_new_sigs(packet_id, current_user.id)
+    n = db.approve_all_new_sigs(packet_id, current_user["user_id"])
     return {"approved": n}
 
 
