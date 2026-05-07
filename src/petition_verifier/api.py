@@ -62,7 +62,7 @@ async def ensure_permanent_users():
             db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
         else:
             # Keep password and role in sync on every deploy
-            db.update_user(existing.id, password_hash=hash_password(u["password"]), role=u["role"], is_active=True)
+            db.update_user(existing.id, password_hash=hash_password(u["password"]), role=u["role"], full_name=u["full_name"], is_active=True)
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():
