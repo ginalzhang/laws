@@ -48,7 +48,7 @@ app  = FastAPI(title="Petition Verifier", version="0.2.0")
 # ── Hardcoded permanent accounts ─────────────────────────────────────────────
 # Permanent accounts — recreated/updated on every startup so role/password stay correct.
 _PERMANENT_USERS = [
-    {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss",         "full_name": "Gina"},
+    {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss",         "full_name": "arianafan2000"},
     {"email": "evan@app.local",          "password": "evan",          "role": "evan",          "full_name": "Evan"},
     {"email": "kaykay@app.local",        "password": "kaykay",        "role": "field_manager", "full_name": "Kay Kay"},
 ]
