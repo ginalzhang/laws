@@ -187,11 +187,15 @@
       }
       el.innerHTML = users.map(u => {
         const cls = rolePillClass[u.role_label] || 'staff';
-        return `<button class="name-btn" onclick="loginAs(this, ${JSON.stringify(u.full_name)})">
+        const safeName = u.full_name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<button class="name-btn" data-name="${safeName}">
           <span class="name-text">${u.full_name}</span>
           <span class="role-pill ${cls}">${u.role_label}</span>
         </button>`;
       }).join('');
+      el.querySelectorAll('.name-btn').forEach(btn => {
+        btn.addEventListener('click', () => loginAs(btn, btn.dataset.name));
+      });
     }
 
     async function loginAs(btn, name) {
