@@ -46,10 +46,11 @@ from .routes.stats_routes import router as stats_router
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
 # ── Hardcoded permanent accounts ─────────────────────────────────────────────
-# Permanent accounts — recreated/updated on every startup so passwords are always correct.
+# Permanent accounts — recreated/updated on every startup so role/password stay correct.
 _PERMANENT_USERS = [
-    {"email": "arianafan2000@app.local", "username": "arianafan2000", "password": "arianafan2000", "role": "boss",          "full_name": "Gina"},
-    {"email": "evan@app.local",          "username": "evan",           "password": "evan",          "role": "field_manager", "full_name": "Evan"},
+    {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss",         "full_name": "Gina"},
+    {"email": "evan@app.local",          "password": "evan",          "role": "evan",          "full_name": "Evan"},
+    {"email": "kaykay@app.local",        "password": "kaykay",        "role": "field_manager", "full_name": "Kay Kay"},
 ]
 
 @app.on_event("startup")
@@ -60,8 +61,8 @@ async def ensure_permanent_users():
         if not existing:
             db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
         else:
-            # Always keep password in sync in case it changed
-            db.update_user(existing.id, password_hash=hash_password(u["password"]))
+            # Keep password and role in sync on every deploy
+            db.update_user(existing.id, password_hash=hash_password(u["password"]), role=u["role"], is_active=True)
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():
