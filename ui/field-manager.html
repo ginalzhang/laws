@@ -9,10 +9,23 @@
   <title>Field Manager</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
   <style>
+    :root {
+      --ink: #0f0f0f; --ink-2: #4a4a4a; --ink-3: #8a8a8a;
+      --surf: #ffffff; --surf-2: #f5f5f3; --surf-3: #e8e8e6;
+      --accent: #1a56db; --accent-light: #e8efff;
+      --green: #16a34a; --green-bg: #dcfce7; --green-text: #15803d;
+      --amber: #d97706; --amber-bg: #fef3c7; --amber-text: #92400e;
+      --red: #dc2626; --red-bg: #fee2e2; --red-text: #991b1b;
+      --border: rgba(0,0,0,0.09); --border-2: rgba(0,0,0,0.15);
+      --font: 'DM Sans', -apple-system, system-ui, sans-serif;
+      --mono: 'DM Mono', monospace;
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      font-family: var(--font);
       background: #f2f2f7;
       min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
@@ -203,6 +216,48 @@
     .mode-btn.add     { background: #30d158; color: #fff; }
     .mode-btn.replace { background: #f2f2f7; color: #000; }
     .mode-btn.back    { background: none; color: #0a84ff; font-size: .9rem; text-align: center; padding: 10px; }
+
+    /* ── Hourly goal design ──────────────────────────────────────────────────── */
+    .section-label { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin-bottom: 8px; }
+
+    .hour-clock-card { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 12px 14px; margin-bottom: 10px; }
+    .hc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .hc-title { font-size: .82rem; font-weight: 500; color: var(--ink); }
+    .hc-time  { font-size: .75rem; color: var(--ink-3); font-family: var(--mono); }
+    .hc-bar-track { height: 6px; background: var(--surf-3); border-radius: 99px; overflow: hidden; }
+    .hc-bar-fill  { height: 100%; border-radius: 99px; background: var(--accent); transition: width .5s; }
+    .hc-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: .68rem; color: var(--ink-3); }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
+    .sum-card { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 12px 14px; }
+    .sum-label { font-size: .7rem; color: var(--ink-3); margin-bottom: 4px; }
+    .sum-val { font-size: 1.4rem; font-weight: 500; font-family: var(--mono); color: var(--ink); letter-spacing: -.5px; }
+    .sum-sub { font-size: .7rem; color: var(--ink-3); margin-top: 2px; }
+    .sum-bar { height: 4px; background: var(--surf-3); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+    .sum-bar-fill { height: 100%; border-radius: 99px; transition: width .5s; }
+
+    .worker-row { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 11px 14px; cursor: pointer; margin-bottom: 6px; transition: border-color .12s; }
+    .worker-row.expanded { border-color: var(--accent); }
+    .wr-top { display: flex; align-items: center; gap: 10px; }
+    .wr-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 600; flex-shrink: 0; }
+    .wr-name { font-size: .88rem; font-weight: 500; color: var(--ink); flex: 1; }
+    .wr-count { font-size: .95rem; font-weight: 500; font-family: var(--mono); color: var(--ink-2); }
+    .pace-pill { font-size: .65rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 4px; white-space: nowrap; }
+    .pace-pill.great { background: var(--green-bg); color: var(--green-text); }
+    .pace-pill.good  { background: var(--accent-light); color: var(--accent); }
+    .pace-pill.warn  { background: var(--amber-bg); color: var(--amber-text); }
+    .pace-pill.low   { background: var(--red-bg); color: var(--red-text); }
+    .wr-bar-wrap { margin-top: 8px; }
+    .wr-bar-track { height: 5px; background: var(--surf-3); border-radius: 99px; overflow: hidden; }
+    .wr-bar-fill  { height: 100%; border-radius: 99px; transition: width .3s; }
+    .wr-bar-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: .65rem; color: var(--ink-3); }
+    .wr-detail { margin-top: 10px; padding-top: 10px; border-top: .5px solid var(--border); display: none; }
+    .wr-detail.open { display: block; }
+    .wr-detail-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .wd-cell { text-align: center; }
+    .wd-day { font-size: .62rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: .03em; }
+    .wd-num { font-size: .95rem; font-weight: 500; font-family: var(--mono); color: var(--ink-2); margin-top: 2px; }
+    .wd-num.zero { color: var(--surf-3); }
   </style>
 </head>
 <body>
@@ -248,10 +303,33 @@
       <div class="pins-list" id="pinsList"><div class="empty">Loading…</div></div>
     </div>
 
-    <!-- Sig counts leaderboard -->
-    <div class="card">
-      <div class="card-title">Live Signature Counts</div>
-      <div class="leaderboard-list" id="lbList"><div class="empty">Loading…</div></div>
+    <!-- Hourly goal section -->
+    <div>
+      <div class="section-label">This hour · goal 10 per person</div>
+      <div class="hour-clock-card">
+        <div class="hc-top">
+          <span class="hc-title">⏱ Hour progress</span>
+          <span class="hc-time" id="hcTime">—</span>
+        </div>
+        <div class="hc-bar-track"><div class="hc-bar-fill" id="hcBar" style="width:0%"></div></div>
+        <div class="hc-meta"><span id="hcElapsed">0m elapsed</span><span id="hcRemain">60m left</span></div>
+      </div>
+      <div class="summary-grid">
+        <div class="sum-card">
+          <div class="sum-label">Team total</div>
+          <div class="sum-val" id="teamTotal">—</div>
+          <div class="sum-sub">of <span id="teamGoalEl">—</span> goal</div>
+          <div class="sum-bar"><div class="sum-bar-fill" id="teamBar" style="width:0%;background:var(--accent)"></div></div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">On track</div>
+          <div class="sum-val" id="onTrackCount">—</div>
+          <div class="sum-sub">workers on pace</div>
+          <div class="sum-bar"><div class="sum-bar-fill" id="onTrackBar" style="width:0%;background:var(--green)"></div></div>
+        </div>
+      </div>
+      <div class="section-label">Team · tap to expand</div>
+      <div id="lbList"><div class="empty" style="padding:20px;text-align:center;color:#8e8e93;font-size:.85rem">Loading…</div></div>
     </div>
 
     <!-- Weekly schedule -->
@@ -553,85 +631,122 @@
     }
 
     // ── Live sig counts ───────────────────────────────────────────────────────
+    const AVATAR_COLORS = [
+      ['#e8efff','#0c447c'],['#dcfce7','#15803d'],['#fef3c7','#92400e'],
+      ['#fee2e2','#991b1b'],['#f3e8ff','#6b21a8'],['#e0f2fe','#0c4a6e'],['#fce7f3','#9d174d'],
+      ['#fef9c3','#713f12'],['#e0fdf4','#065f46'],
+    ];
+    function _initials(name) { return name.trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2); }
+    function _getPace(sigs, elapsedMins) {
+      const expected = (elapsedMins / 60) * HOURLY_GOAL;
+      if (sigs >= HOURLY_GOAL) return 'great';
+      if (sigs >= expected)    return 'good';
+      if (sigs >= expected * 0.6) return 'warn';
+      return 'low';
+    }
+    const _paceLabel = { great: 'Goal met', good: 'On track', warn: 'Behind', low: 'Way behind' };
+    const _paceColor = { great: '#16a34a', good: '#1a56db', warn: '#d97706', low: '#dc2626' };
+
+    function updateHourClock() {
+      const now = new Date();
+      const elapsedMins = now.getMinutes() + now.getSeconds() / 60;
+      const remainMins  = 60 - elapsedMins;
+      const hourPct     = Math.round((elapsedMins / 60) * 100);
+      document.getElementById('hcTime').textContent    = now.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      document.getElementById('hcBar').style.width     = hourPct + '%';
+      document.getElementById('hcElapsed').textContent = Math.round(elapsedMins) + 'm elapsed';
+      document.getElementById('hcRemain').textContent  = Math.round(remainMins) + 'm left';
+    }
+
     async function loadLeaderboard() {
+      updateHourClock();
       try {
         const [live, active] = await Promise.all([
           api('/stats/live'),
           api('/shifts/active'),
         ]);
 
-        // Build map: worker_id → { clock_in, clock_out }
         const shiftMap = {};
-        for (const s of active) {
-          shiftMap[s.worker_id] = { clock_in: s.clock_in, clock_out: s.clock_out || null };
-        }
+        for (const s of active) shiftMap[s.worker_id] = s;
 
-        const el = document.getElementById('lbList');
-
-        // Include workers who are clocked in even if sig_count is 0
         const allActive = active.map(s => s.worker_id);
         const sorted = [...live]
           .filter(e => e.sig_count > 0 || allActive.includes(e.worker_id))
           .sort((a, b) => b.sig_count - a.sig_count);
 
+        const el = document.getElementById('lbList');
         if (!sorted.length) {
-          el.innerHTML = '<div class="empty">No counts submitted yet</div>';
+          el.innerHTML = '<div style="padding:20px;text-align:center;color:#8e8e93;font-size:.85rem">No counts submitted yet</div>';
           return;
         }
 
-        el.innerHTML = sorted.map((e, i) => {
-          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
-          let paceHtml = '';
-          let goalBarHtml = '';
+        const now = new Date();
+        const elapsedMins = now.getMinutes() + now.getSeconds() / 60;
+        let totalSigs = 0, onTrackCount = 0;
 
+        el.innerHTML = '';
+        sorted.forEach((e, idx) => {
+          const sigs = e.sig_count || 0;
+          totalSigs += sigs;
+          const pace = _getPace(sigs, elapsedMins);
+          if (pace !== 'low' && sigs > 0) onTrackCount++;
+
+          const pct    = Math.min(Math.round((sigs / HOURLY_GOAL) * 100), 100);
+          const needed = Math.max(0, HOURLY_GOAL - sigs);
+          const [avatarBg, avatarColor] = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+
+          // Shift-based pace detail
+          let shiftDetail = '';
           const shift = shiftMap[e.worker_id];
           if (shift) {
             const raw   = shift.clock_in;
             const start = new Date(raw.includes('Z') ? raw : raw + 'Z');
             const hrs   = (Date.now() - start.getTime()) / 3600000;
-
             if (hrs >= 0.05) {
-              const pace      = e.sig_count / hrs;
-              const pct       = Math.min((pace / HOURLY_GOAL) * 100, 100);
-              const color     = pace >= HOURLY_GOAL            ? '#30d158'
-                              : pace >= HOURLY_GOAL * 0.7      ? '#ff9f0a'
-                              :                                  '#ff3b30';
-              const paceLabel = pace >= HOURLY_GOAL ? '✓ On pace' : 'Behind';
-
-              let projStr = '';
-              if (shift.clock_out) {
-                const end       = new Date(shift.clock_out.includes('Z') ? shift.clock_out : shift.clock_out + 'Z');
-                const totalHrs  = (end.getTime() - start.getTime()) / 3600000;
-                const projected = Math.round(pace * totalHrs);
-                projStr = `· proj. <strong>${projected}</strong>`;
-              }
-
-              paceHtml = `<span style="font-size:.72rem;font-weight:600;color:${color};margin-left:6px">${pace.toFixed(1)}/hr</span>`;
-              goalBarHtml = `
-                <div style="margin-top:5px">
-                  <div style="display:flex;justify-content:space-between;font-size:.65rem;color:#8e8e93;margin-bottom:3px">
-                    <span style="color:${color};font-weight:600">${paceLabel} ${projStr}</span>
-                    <span>Goal ${HOURLY_GOAL}/hr · ${hrs.toFixed(1)}h on shift</span>
-                  </div>
-                  <div style="height:4px;background:#f2f2f7;border-radius:3px;overflow:hidden">
-                    <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
-                  </div>
-                </div>`;
+              const shiftPace = sigs / hrs;
+              shiftDetail = `<span style="font-size:.65rem;color:var(--ink-3)">${shiftPace.toFixed(1)}/hr avg · ${hrs.toFixed(1)}h shift</span>`;
             }
           }
 
-          return `<div class="lb-row" style="flex-direction:column;align-items:stretch;gap:0;padding:12px 0">
-            <div style="display:flex;align-items:center;gap:12px">
-              <div class="lb-rank">${medal}</div>
-              <div class="lb-name">${e.full_name}</div>
-              <div class="lb-sigs">${e.sig_count.toLocaleString()}${paceHtml}</div>
+          const row = document.createElement('div');
+          row.className = 'worker-row';
+          row.innerHTML = `
+            <div class="wr-top">
+              <div class="wr-avatar" style="background:${avatarBg};color:${avatarColor}">${_initials(e.full_name)}</div>
+              <div class="wr-name">${e.full_name}</div>
+              <div class="wr-count">${sigs}</div>
+              <span class="pace-pill ${pace}">${_paceLabel[pace]}</span>
             </div>
-            ${goalBarHtml}
-          </div>`;
-        }).join('');
+            <div class="wr-bar-wrap">
+              <div class="wr-bar-track"><div class="wr-bar-fill" style="width:${pct}%;background:${_paceColor[pace]}"></div></div>
+              <div class="wr-bar-meta">
+                <span>${sigs} / ${HOURLY_GOAL} this hour</span>
+                <span>${needed > 0 ? needed + ' more needed' : 'Goal reached!'}</span>
+              </div>
+            </div>
+            <div class="wr-detail" id="lbd-${idx}">
+              <div style="padding:4px 0;font-size:.75rem;color:var(--ink-3)">${shiftDetail}</div>
+            </div>`;
+          row.addEventListener('click', () => {
+            const det = document.getElementById('lbd-' + idx);
+            const open = det.classList.toggle('open');
+            row.classList.toggle('expanded', open);
+          });
+          el.appendChild(row);
+        });
+
+        // Update summary cards
+        const teamGoal = sorted.length * HOURLY_GOAL;
+        const teamPct  = Math.min(Math.round((totalSigs / teamGoal) * 100), 100);
+        const onPct    = Math.round((onTrackCount / sorted.length) * 100);
+        document.getElementById('teamTotal').textContent   = totalSigs;
+        document.getElementById('teamGoalEl').textContent  = teamGoal;
+        document.getElementById('teamBar').style.width     = teamPct + '%';
+        document.getElementById('onTrackCount').textContent = onTrackCount + ' / ' + sorted.length;
+        document.getElementById('onTrackBar').style.width  = onPct + '%';
 
       } catch(e) {
-        document.getElementById('lbList').innerHTML = '<div class="empty">Could not load</div>';
+        document.getElementById('lbList').innerHTML = '<div style="padding:20px;text-align:center;color:#c62828;font-size:.85rem">Could not load</div>';
       }
     }
 
