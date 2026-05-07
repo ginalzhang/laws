@@ -287,8 +287,10 @@
     document.getElementById('workerName').textContent = userName || 'Canvasser';
     document.getElementById('sigCount').textContent = sessionStorage.getItem('pv_sig_count') ?? '—';
 
+    const HOURLY_GOAL = 10;
     let currentCount = 0;
-    let shiftStartTime = null; // set from active shift clock_in
+    let shiftStartTime = null;
+    let shiftEndTime   = null;
 
     function api(path, opts = {}) {
       return fetch(path, {
@@ -479,25 +481,55 @@
 
     function updatePaceDisplay() {
       const el = document.getElementById('paceInfo');
-      if (!el || !shiftStartTime || currentCount <= 0) { if(el) el.innerHTML = ''; return; }
+      if (!el) return;
+      if (!shiftStartTime || currentCount <= 0) { el.innerHTML = ''; return; }
+
       const hoursElapsed = (Date.now() - shiftStartTime.getTime()) / 3600000;
       if (hoursElapsed < 0.05) { el.innerHTML = ''; return; }
+
       const pace  = currentCount / hoursElapsed;
-      const pct   = Math.min(pace / 10 * 100, 100);
-      const color = pace >= 10 ? '#30d158' : pace >= 7 ? '#ff9f0a' : '#ff3b30';
-      const label = pace >= 10 ? '✓ On pace' : 'Behind pace';
-      el.innerHTML = `<div class="pace-bar-wrap">
-        <div class="pace-bar-meta"><span style="color:${color};font-weight:600">${label} · ${pace.toFixed(1)}/hr</span><span>Goal: 10/hr</span></div>
-        <div class="pace-bar-track"><div class="pace-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-      </div>`;
+      const pct   = Math.min((pace / HOURLY_GOAL) * 100, 100);
+      const color = pace >= HOURLY_GOAL       ? '#30d158'
+                  : pace >= HOURLY_GOAL * 0.7  ? '#ff9f0a'
+                  :                              '#ff3b30';
+      const label = pace >= HOURLY_GOAL ? '✓ On pace' : 'Behind pace';
+
+      const projectedLabel = shiftEndTime
+        ? (() => {
+            const totalHrs  = (shiftEndTime.getTime() - shiftStartTime.getTime()) / 3600000;
+            const projected = Math.round(pace * totalHrs);
+            return `Projected end total: <strong>${projected}</strong>`;
+          })()
+        : `${hoursElapsed.toFixed(1)} hrs on shift`;
+
+      const minsLeft = 60 - new Date().getMinutes();
+
+      el.innerHTML = `
+        <div class="pace-bar-wrap">
+          <div class="pace-bar-meta">
+            <span style="color:${color};font-weight:600">${label} · ${pace.toFixed(1)}/hr</span>
+            <span>Goal: ${HOURLY_GOAL}/hr</span>
+          </div>
+          <div class="pace-bar-track">
+            <div class="pace-bar-fill" style="width:${pct}%;background:${color}"></div>
+          </div>
+          <div class="pace-bar-meta" style="margin-top:4px">
+            <span style="font-size:.7rem;color:#8e8e93">${projectedLabel}</span>
+            <span style="font-size:.7rem;color:#8e8e93">${minsLeft}m left this hour</span>
+          </div>
+        </div>`;
     }
 
     async function initMyShift() {
       try {
         const data = await api(`/shifts/active/${userId}`);
         if (data.active && data.shift) {
-          const raw = data.shift.clock_in;
-          shiftStartTime = new Date(raw.includes('Z') ? raw : raw + 'Z');
+          const rawIn = data.shift.clock_in;
+          shiftStartTime = new Date(rawIn.includes('Z') ? rawIn : rawIn + 'Z');
+          if (data.shift.clock_out) {
+            const rawOut = data.shift.clock_out;
+            shiftEndTime = new Date(rawOut.includes('Z') ? rawOut : rawOut + 'Z');
+          }
         }
       } catch(e) {}
       updatePaceDisplay();

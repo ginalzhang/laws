@@ -363,6 +363,7 @@
   </div>
 
   <script>
+    const HOURLY_GOAL = 10;
     const token    = localStorage.getItem('pv_token');
     const userName = localStorage.getItem('pv_full_name');
     if (!token) { window.location.href = '/'; }
@@ -558,32 +559,77 @@
           api('/stats/live'),
           api('/shifts/active'),
         ]);
-        // Build map: worker_id → clock_in time
-        const clockInMap = {};
-        for (const s of active) clockInMap[s.worker_id] = s.clock_in;
+
+        // Build map: worker_id → { clock_in, clock_out }
+        const shiftMap = {};
+        for (const s of active) {
+          shiftMap[s.worker_id] = { clock_in: s.clock_in, clock_out: s.clock_out || null };
+        }
 
         const el = document.getElementById('lbList');
-        const sorted = [...live].filter(e => e.sig_count > 0).sort((a,b) => b.sig_count - a.sig_count);
-        if (!sorted.length) { el.innerHTML = '<div class="empty">No counts submitted yet</div>'; return; }
+
+        // Include workers who are clocked in even if sig_count is 0
+        const allActive = active.map(s => s.worker_id);
+        const sorted = [...live]
+          .filter(e => e.sig_count > 0 || allActive.includes(e.worker_id))
+          .sort((a, b) => b.sig_count - a.sig_count);
+
+        if (!sorted.length) {
+          el.innerHTML = '<div class="empty">No counts submitted yet</div>';
+          return;
+        }
+
         el.innerHTML = sorted.map((e, i) => {
           const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
           let paceHtml = '';
-          if (clockInMap[e.worker_id]) {
-            const raw = clockInMap[e.worker_id];
+          let goalBarHtml = '';
+
+          const shift = shiftMap[e.worker_id];
+          if (shift) {
+            const raw   = shift.clock_in;
             const start = new Date(raw.includes('Z') ? raw : raw + 'Z');
-            const hrs = (Date.now() - start.getTime()) / 3600000;
+            const hrs   = (Date.now() - start.getTime()) / 3600000;
+
             if (hrs >= 0.05) {
-              const pace  = e.sig_count / hrs;
-              const color = pace >= 10 ? '#30d158' : pace >= 7 ? '#ff9f0a' : '#ff3b30';
+              const pace      = e.sig_count / hrs;
+              const pct       = Math.min((pace / HOURLY_GOAL) * 100, 100);
+              const color     = pace >= HOURLY_GOAL            ? '#30d158'
+                              : pace >= HOURLY_GOAL * 0.7      ? '#ff9f0a'
+                              :                                  '#ff3b30';
+              const paceLabel = pace >= HOURLY_GOAL ? '✓ On pace' : 'Behind';
+
+              let projStr = '';
+              if (shift.clock_out) {
+                const end       = new Date(shift.clock_out.includes('Z') ? shift.clock_out : shift.clock_out + 'Z');
+                const totalHrs  = (end.getTime() - start.getTime()) / 3600000;
+                const projected = Math.round(pace * totalHrs);
+                projStr = `· proj. <strong>${projected}</strong>`;
+              }
+
               paceHtml = `<span style="font-size:.72rem;font-weight:600;color:${color};margin-left:6px">${pace.toFixed(1)}/hr</span>`;
+              goalBarHtml = `
+                <div style="margin-top:5px">
+                  <div style="display:flex;justify-content:space-between;font-size:.65rem;color:#8e8e93;margin-bottom:3px">
+                    <span style="color:${color};font-weight:600">${paceLabel} ${projStr}</span>
+                    <span>Goal ${HOURLY_GOAL}/hr · ${hrs.toFixed(1)}h on shift</span>
+                  </div>
+                  <div style="height:4px;background:#f2f2f7;border-radius:3px;overflow:hidden">
+                    <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
+                  </div>
+                </div>`;
             }
           }
-          return `<div class="lb-row">
-            <div class="lb-rank">${medal}</div>
-            <div class="lb-name">${e.full_name}</div>
-            <div class="lb-sigs">${e.sig_count.toLocaleString()}${paceHtml}</div>
+
+          return `<div class="lb-row" style="flex-direction:column;align-items:stretch;gap:0;padding:12px 0">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="lb-rank">${medal}</div>
+              <div class="lb-name">${e.full_name}</div>
+              <div class="lb-sigs">${e.sig_count.toLocaleString()}${paceHtml}</div>
+            </div>
+            ${goalBarHtml}
           </div>`;
         }).join('');
+
       } catch(e) {
         document.getElementById('lbList').innerHTML = '<div class="empty">Could not load</div>';
       }
@@ -628,6 +674,14 @@
         _schedWorkers = workers;
         _schedShifts  = shifts;
         _mobileDayIdx = 0;
+
+        // Build sig count map for pace display in grid
+        try {
+          const live = await api('/stats/live');
+          window._sigCountMap = {};
+          for (const e of live) window._sigCountMap[e.worker_id] = e.sig_count;
+        } catch(e) { window._sigCountMap = {}; }
+
         renderSchedule();
       } catch(e) {
         document.getElementById('fmScheduleGrid').innerHTML = '<div class="empty">Could not load schedule</div>';
@@ -664,8 +718,18 @@
             const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
             const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
             if (!outT) {
+              const clockInDate = new Date(`${selStr}T${inT}`);
+              const hrsNow = (Date.now() - clockInDate.getTime()) / 3600000;
+              const sigEntry = typeof _sigCountMap !== 'undefined' && _sigCountMap[w.id] != null ? _sigCountMap[w.id] : null;
+              let paceBadge = '';
+              if (hrsNow >= 0.05 && sigEntry !== null) {
+                const p = sigEntry / hrsNow;
+                const c = p >= HOURLY_GOAL ? '#30d158' : p >= HOURLY_GOAL * 0.7 ? '#ff9f0a' : '#ff3b30';
+                paceBadge = `<span style="font-size:.68rem;font-weight:600;color:${c}">${p.toFixed(1)}/hr</span>`;
+              }
               return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                 <span style="font-size:.75rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
+                ${paceBadge}
                 <button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:6px;padding:3px 8px;font-size:.72rem;font-weight:600;cursor:pointer">Clock out</button>
               </div>`;
             }
@@ -699,9 +763,19 @@
                 const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
                 const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
                 if (!outT) {
-                  html += `<div style="display:flex;align-items:center;gap:4px">
+                  const clockInDate = new Date(`${ds}T${inT}`);
+                  const hrsNow = (Date.now() - clockInDate.getTime()) / 3600000;
+                  const sigEntry = typeof _sigCountMap !== 'undefined' && _sigCountMap[w.id] != null ? _sigCountMap[w.id] : null;
+                  let paceBadge = '';
+                  if (hrsNow >= 0.05 && sigEntry !== null) {
+                    const p = sigEntry / hrsNow;
+                    const c = p >= HOURLY_GOAL ? '#30d158' : p >= HOURLY_GOAL * 0.7 ? '#ff9f0a' : '#ff3b30';
+                    paceBadge = `<div style="font-size:.66rem;font-weight:600;color:${c}">${p.toFixed(1)}/hr</div>`;
+                  }
+                  html += `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
                     <span style="font-size:.7rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
                     <button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:5px;padding:2px 6px;font-size:.66rem;font-weight:600;cursor:pointer">Out</button>
+                    ${paceBadge}
                   </div>`;
                 } else {
                   html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</div>`;
