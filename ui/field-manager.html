@@ -97,27 +97,53 @@
 
     .empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
 
-    /* Clock in/out list */
-    .clock-list { padding: 0 16px 8px; }
-    .clock-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 11px 0; border-bottom: 0.5px solid #f2f2f7;
+    /* Schedule grid */
+    .week-nav { display: flex; align-items: center; gap: 10px; padding: 12px 16px 8px; }
+    .week-label { flex: 1; font-size: .85rem; font-weight: 700; text-align: center; }
+    .nav-btn {
+      padding: 6px 12px; border: 1.5px solid #e5e5ea; border-radius: 8px;
+      background: #fff; font-size: .82rem; font-weight: 600; color: #0a84ff;
+      cursor: pointer; font-family: inherit;
     }
-    .clock-row:last-child { border-bottom: none; }
-    .clock-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-    .clock-dot.in  { background: #30d158; }
-    .clock-dot.out { background: #c7c7cc; }
-    .clock-name { flex: 1; font-size: .9rem; font-weight: 600; }
-    .clock-time { font-size: .72rem; color: #8e8e93; }
-    .clock-btn {
-      padding: 6px 14px; border: none; border-radius: 8px;
-      font-size: .78rem; font-weight: 600; font-family: inherit;
-      cursor: pointer; flex-shrink: 0;
-      transition: opacity .15s;
+    .nav-btn:active { background: #f2f2f7; }
+    .week-grid { display: grid; }
+    .wg-header { background: #f2f2f7; padding: 7px 8px; font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #8e8e93; text-align: center; }
+    .wg-worker { background: #fafafa; padding: 8px 10px; font-size: .82rem; font-weight: 600; color: #1c1c1e; }
+    .wg-cell { background: #fff; padding: 5px; min-height: 44px; }
+    .wg-shift { background: rgba(48,209,88,.15); color: #248a3d; border-radius: 6px; padding: 3px 6px; font-size: .68rem; font-weight: 600; cursor: pointer; display: block; margin-bottom: 2px; }
+
+    /* Modals */
+    .fm-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
+      align-items: center; justify-content: center; z-index: 200;
     }
-    .clock-btn:disabled { opacity: .45; cursor: not-allowed; }
-    .clock-btn.in-btn  { background: #30d158; color: #fff; }
-    .clock-btn.out-btn { background: #ff3b30; color: #fff; }
+    .fm-modal-overlay.open { display: flex; }
+    .fm-modal {
+      background: #fff; border-radius: 20px; padding: 24px 22px;
+      width: 92%; max-width: 360px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.2);
+    }
+    .fm-modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
+    .fm-modal-close { float: right; cursor: pointer; color: #8e8e93; font-size: 1rem;
+      width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%; background: #f2f2f7; margin-top: -2px; }
+    .fm-form-group { margin-bottom: 14px; }
+    .fm-form-group label { display: block; font-size: .75rem; font-weight: 600; color: #6e6e73; margin-bottom: 4px; }
+    .fm-form-group input {
+      width: 100%; padding: 10px 12px; border: 1.5px solid #e5e5ea; border-radius: 10px;
+      font-size: .9rem; font-family: inherit; background: #f9f9fb; outline: none; color: #1c1c1e;
+    }
+    .fm-form-group input:focus { border-color: #0a84ff; background: #fff; }
+    .fm-modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .fm-btn {
+      padding: 9px 18px; border: none; border-radius: 10px; cursor: pointer;
+      font-size: .875rem; font-weight: 600; font-family: inherit;
+    }
+    .fm-btn-outline { background: rgba(10,132,255,.1); color: #0a84ff; }
+    .fm-btn-primary { background: #0a84ff; color: #fff; }
+    .fm-btn-danger  { background: #ff3b30; color: #fff; }
+    .fm-modal-err { color: #c62828; font-size: .8rem; margin-bottom: 8px; display: none; }
 
     .logout-link {
       text-align: center; padding: 8px;
@@ -204,13 +230,62 @@
       <div class="leaderboard-list" id="lbList"><div class="empty">Loading…</div></div>
     </div>
 
-    <!-- Clock in / out workers -->
-    <div class="card">
-      <div class="card-title" style="padding-bottom:10px">Clock Workers In / Out</div>
-      <div class="clock-list" id="clockList"><div class="empty">Loading…</div></div>
+    <!-- Weekly schedule -->
+    <div class="card" style="overflow:visible">
+      <div class="week-nav">
+        <button class="nav-btn" onclick="prevWeek()">← Prev</button>
+        <div class="week-label" id="fmWeekLabel"></div>
+        <button class="nav-btn" onclick="nextWeek()">Next →</button>
+      </div>
+      <div id="fmScheduleGrid" style="overflow-x:auto;padding-bottom:8px"></div>
     </div>
 
     <div class="logout-link" onclick="logout()">Sign out</div>
+  </div>
+
+  <!-- Add Shift Modal -->
+  <div class="fm-modal-overlay" id="fmAddShiftModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddShiftModal')">✕</span>
+      <div class="fm-modal-title" id="fmAddShiftTitle">Add Shift</div>
+      <input type="hidden" id="fmAddShiftWorkerId">
+      <input type="hidden" id="fmAddShiftDate">
+      <div class="fm-form-group">
+        <label>Start Time</label>
+        <input type="time" id="fmAddShiftStart" value="09:00">
+      </div>
+      <p style="font-size:.78rem;color:#8e8e93;margin:0 0 12px">End time is open — clock out when done.</p>
+      <div class="fm-modal-err" id="fmAddShiftErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddShiftModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" onclick="submitFMAddShift()">Add Shift</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Shift Modal -->
+  <div class="fm-modal-overlay" id="fmEditShiftModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmEditShiftModal')">✕</span>
+      <div class="fm-modal-title" id="fmEditShiftTitle">Edit Shift</div>
+      <input type="hidden" id="fmEditShiftId">
+      <div class="fm-form-group">
+        <label>Start Time</label>
+        <input type="time" id="fmEditShiftStart">
+      </div>
+      <div class="fm-form-group">
+        <label>End Time <span style="font-weight:400;color:#8e8e93">(leave blank if still active)</span></label>
+        <input type="time" id="fmEditShiftEnd">
+      </div>
+      <div class="fm-modal-err" id="fmEditShiftErr"></div>
+      <div class="fm-modal-footer" style="justify-content:space-between">
+        <button class="fm-btn fm-btn-danger" onclick="removeFMShift()">Remove</button>
+        <div style="display:flex;gap:8px">
+          <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmEditShiftModal')">Cancel</button>
+          <button class="fm-btn fm-btn-primary" onclick="submitFMEditShift()">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Sig count sheet -->
@@ -407,69 +482,193 @@
       }
     }
 
-    // ── Clock in / out ────────────────────────────────────────────────────────
-    let _workers = [];
+    // ── Schedule grid ─────────────────────────────────────────────────────────
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    let _weekOffset = 0;
+    let _schedWorkers = [];
+    let _schedShifts  = [];
+    let _schedMonday  = null;
+    let _mobileDayIdx = 0;
 
-    async function loadClockList() {
+    function getMonday(offset) {
+      const d = new Date();
+      const day = d.getDay() || 7;
+      d.setDate(d.getDate() - day + 1 + offset * 7);
+      d.setHours(0,0,0,0);
+      return d;
+    }
+
+    function fmtDate(d) {
+      return d.toISOString().slice(0,10);
+    }
+
+    function fmtWeekLabel(mon) {
+      const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+      const opts = {month:'short', day:'numeric'};
+      return mon.toLocaleDateString([],opts) + ' — ' + sun.toLocaleDateString([],opts);
+    }
+
+    async function loadSchedule() {
+      const monday = getMonday(_weekOffset);
+      _schedMonday = monday;
+      document.getElementById('fmWeekLabel').textContent = fmtWeekLabel(monday);
       try {
-        const [workers, activeShifts] = await Promise.all([
+        const [workers, shifts] = await Promise.all([
           api('/workers'),
-          api('/shifts/active'),
+          api('/shifts?date_from=' + fmtDate(monday)),
         ]);
-        _workers = workers;
-        const activeById = {};
-        for (const s of activeShifts) activeById[s.worker_id] = s;
+        _schedWorkers = workers;
+        _schedShifts  = shifts;
+        _mobileDayIdx = 0;
+        renderSchedule();
+      } catch(e) {
+        document.getElementById('fmScheduleGrid').innerHTML = '<div class="empty">Could not load schedule</div>';
+      }
+    }
 
-        const el = document.getElementById('clockList');
-        if (!workers.length) { el.innerHTML = '<div class="empty">No workers found</div>'; return; }
+    function renderSchedule() {
+      const el = document.getElementById('fmScheduleGrid');
+      if (!_schedWorkers.length) { el.innerHTML = '<div class="empty">No workers</div>'; return; }
+      const monday = _schedMonday;
+      const isMobile = window.innerWidth <= 600;
 
-        el.innerHTML = workers.map(w => {
-          const shift = activeById[w.id];
-          const clocked = !!shift;
-          const since = clocked
-            ? ' since ' + new Date(shift.clock_in + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-            : '';
-          return `<div class="clock-row" id="crow-${w.id}">
-            <div class="clock-dot ${clocked ? 'in' : 'out'}"></div>
-            <div style="flex:1;min-width:0">
-              <div class="clock-name">${w.full_name}</div>
-              <div class="clock-time">${clocked ? 'Clocked in' + since : 'Not clocked in'}</div>
-            </div>
-            <button class="clock-btn ${clocked ? 'out-btn' : 'in-btn'}" id="cbtn-${w.id}"
-              onclick="toggleClock(${w.id}, ${clocked})">
-              ${clocked ? 'Clock Out' : 'Clock In'}
-            </button>
+      if (isMobile) {
+        // Day pills + single-day list
+        let pills = '<div style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;-webkit-overflow-scrolling:touch">';
+        DAYS.forEach((d, i) => {
+          const date = new Date(monday); date.setDate(monday.getDate()+i);
+          const ds = fmtDate(date);
+          const active = i === _mobileDayIdx;
+          const has = _schedShifts.some(s => s.clock_in.startsWith(ds));
+          pills += `<button onclick="selectDay(${i})" style="flex-shrink:0;padding:7px 12px;border-radius:18px;border:1.5px solid ${active?'#0a84ff':'#e5e5ea'};background:${active?'#0a84ff':'#fff'};color:${active?'#fff':'#3c3c43'};font-size:.78rem;font-weight:${active?'700':'400'};cursor:pointer;position:relative">
+            ${d} <span style="opacity:.7">${date.getMonth()+1}/${date.getDate()}</span>
+            ${has?'<span style="position:absolute;top:3px;right:3px;width:5px;height:5px;background:#30d158;border-radius:50%"></span>':''}
+          </button>`;
+        });
+        pills += '</div>';
+
+        const selDate = new Date(monday); selDate.setDate(monday.getDate()+_mobileDayIdx);
+        const selStr = fmtDate(selDate);
+        let rows = '<div style="padding:0 16px 8px">';
+        _schedWorkers.forEach(w => {
+          const dayShifts = _schedShifts.filter(s => s.worker_id===w.id && s.clock_in.startsWith(selStr));
+          let shiftHtml = dayShifts.map(s => {
+            const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
+            const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+            const lbl = outT ? `${inT}–${outT}` : `${inT} ●`;
+            return `<span class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${lbl}</span>`;
+          }).join('');
+          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Add</button>`;
+          rows += `<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:0.5px solid #f2f2f7">
+            <span style="flex:1;font-size:.88rem;font-weight:600">${w.full_name}</span>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">${shiftHtml}</div>
           </div>`;
-        }).join('');
-      } catch(e) {
-        document.getElementById('clockList').innerHTML = '<div class="empty">Could not load workers</div>';
+        });
+        rows += '</div>';
+        el.innerHTML = pills + rows;
+      } else {
+        // Desktop grid
+        let html = `<div class="week-grid" style="grid-template-columns:140px repeat(7,1fr);padding:0 16px 8px">`;
+        html += '<div class="wg-header">Worker</div>';
+        DAYS.forEach((d,i) => {
+          const date = new Date(monday); date.setDate(monday.getDate()+i);
+          html += `<div class="wg-header">${d}<br><span style="font-weight:400">${date.getMonth()+1}/${date.getDate()}</span></div>`;
+        });
+        _schedWorkers.forEach(w => {
+          html += `<div class="wg-worker">${w.full_name}</div>`;
+          for (let i=0;i<7;i++) {
+            const date = new Date(monday); date.setDate(monday.getDate()+i);
+            const ds = fmtDate(date);
+            const dayShifts = _schedShifts.filter(s => s.worker_id===w.id && s.clock_in.startsWith(ds));
+            if (dayShifts.length) {
+              html += '<div class="wg-cell">';
+              dayShifts.forEach(s => {
+                const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
+                const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+                const lbl = outT ? `${inT}–${outT}` : `${inT} ●`;
+                html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${lbl}</div>`;
+              });
+              html += '</div>';
+            } else {
+              html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${ds}')">
+                <div style="color:#ccc;font-size:1.1rem;text-align:center;line-height:34px">+</div>
+              </div>`;
+            }
+          }
+        });
+        html += '</div>';
+        el.innerHTML = html;
       }
     }
 
-    async function toggleClock(workerId, isClockedIn) {
-      const btn = document.getElementById('cbtn-' + workerId);
-      if (!btn) return;
-      btn.disabled = true;
-      try {
-        if (isClockedIn) {
-          await api('/shifts/clock-out', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
-        } else {
-          await api('/shifts/clock-in', { method: 'POST', body: JSON.stringify({ worker_id: workerId }) });
-        }
-        await loadClockList();
-        setMsg(isClockedIn ? 'Clocked out!' : 'Clocked in!', 'success');
-      } catch(e) {
-        setMsg(e.message, 'error');
-        btn.disabled = false;
-      }
+    function selectDay(i) { _mobileDayIdx = i; renderSchedule(); }
+    function prevWeek() { _weekOffset--; loadSchedule(); }
+    function nextWeek() { _weekOffset++; loadSchedule(); }
+
+    function openFMAdd(workerId, workerName, dateStr) {
+      document.getElementById('fmAddShiftWorkerId').value = workerId;
+      document.getElementById('fmAddShiftDate').value = dateStr;
+      document.getElementById('fmAddShiftTitle').textContent = `Add Shift — ${workerName} (${dateStr})`;
+      document.getElementById('fmAddShiftErr').style.display = 'none';
+      document.getElementById('fmAddShiftModal').classList.add('open');
     }
+
+    async function submitFMAddShift() {
+      const workerId = document.getElementById('fmAddShiftWorkerId').value;
+      const date     = document.getElementById('fmAddShiftDate').value;
+      const start    = document.getElementById('fmAddShiftStart').value;
+      const errEl    = document.getElementById('fmAddShiftErr');
+      errEl.style.display = 'none';
+      if (!start) { errEl.textContent = 'Enter a start time.'; errEl.style.display='block'; return; }
+      try {
+        await api('/shifts/clock-in-at', { method:'POST', body: JSON.stringify({ worker_id: parseInt(workerId), clock_in: `${date}T${start}:00` }) });
+        closeFMModal('fmAddShiftModal');
+        loadSchedule();
+      } catch(e) { errEl.textContent = e.message; errEl.style.display='block'; }
+    }
+
+    function openFMEdit(shiftId, clockIn, clockOut) {
+      document.getElementById('fmEditShiftId').value = shiftId;
+      document.getElementById('fmEditShiftStart').value = clockIn.split('T')[1]?.slice(0,5)||'';
+      document.getElementById('fmEditShiftEnd').value = clockOut ? clockOut.split('T')[1]?.slice(0,5) : '';
+      const date = clockIn.split('T')[0];
+      document.getElementById('fmEditShiftTitle').textContent = `Edit Shift — ${date}`;
+      document.getElementById('fmEditShiftErr').style.display = 'none';
+      document.getElementById('fmEditShiftModal').classList.add('open');
+    }
+
+    async function submitFMEditShift() {
+      const id      = document.getElementById('fmEditShiftId').value;
+      const startV  = document.getElementById('fmEditShiftStart').value;
+      const endV    = document.getElementById('fmEditShiftEnd').value;
+      const errEl   = document.getElementById('fmEditShiftErr');
+      const dateStr = document.getElementById('fmEditShiftTitle').textContent.split('— ')[1]||'';
+      errEl.style.display = 'none';
+      if (!startV) { errEl.textContent='Start time required.'; errEl.style.display='block'; return; }
+      try {
+        await api(`/shifts/${id}/times`, { method:'PATCH', body: JSON.stringify({ clock_in:`${dateStr}T${startV}:00`, clock_out: endV?`${dateStr}T${endV}:00`:null }) });
+        closeFMModal('fmEditShiftModal');
+        loadSchedule();
+      } catch(e) { errEl.textContent=e.message; errEl.style.display='block'; }
+    }
+
+    async function removeFMShift() {
+      const id = document.getElementById('fmEditShiftId').value;
+      if (!confirm('Remove this shift?')) return;
+      try {
+        await api(`/shifts/${id}`, { method:'DELETE' });
+        closeFMModal('fmEditShiftModal');
+        loadSchedule();
+      } catch(e) { alert(e.message); }
+    }
+
+    function closeFMModal(id) { document.getElementById(id).classList.remove('open'); }
 
     async function refresh() {
       try {
         const [pins] = await Promise.all([
           api('/locations/pins'),
           loadLeaderboard(),
-          loadClockList(),
         ]);
         await loadMap(pins);
         document.getElementById('lastRefresh').textContent =
@@ -485,6 +684,7 @@
     }
 
     refresh();
+    loadSchedule();
     setInterval(refresh, 30000);
   </script>
 </body>
