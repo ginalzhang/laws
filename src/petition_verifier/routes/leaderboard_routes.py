@@ -36,6 +36,15 @@ async def leaderboard(
     user: dict = Depends(require_worker),
 ):
     workers = db.list_users()
+    # Deduplicate by full_name only — prefer active, then lowest id
+    seen: set[str] = set()
+    deduped = []
+    for u in sorted(workers, key=lambda u: (0 if u.is_active else 1, u.id)):
+        key = u.full_name.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(u)
+    workers = deduped
     entries = []
 
     # Bulk fetch everything in a few queries instead of N×M
