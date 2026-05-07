@@ -240,33 +240,45 @@ def _find_line_number_anchors(words: list[_Word], page_width: int) -> list[_Word
 
 def _find_grid_top(words: list[_Word]) -> Optional[int]:
     """
-    Return the y-coordinate of the 'All signers must be registered to vote in
-    ___ County' instruction row that always appears above the CA signature grid.
+    Return the y-coordinate of the 'All signers of this petition must be
+    registered to vote in ___ County' row that sits above the signature grid.
 
-    Strategy: require three specific words from that sentence to co-occur within
-    a tight vertical band.  This prevents false matches from 'registered' voters
-    appearing in handwritten addresses or 'County' in ballot summary text.
-
-    Tries, in order:
-      1. 'registered' + 'vote' on the same row  (most specific to the sentence)
-      2. 'signers'    + 'registered' on the same row
-      3. 'All'        + 'signers'    on the same row
-    Returns the minimum y of the matching pair, or None if nothing found.
+    Tries, in order of reliability:
+      1. 'registered' + 'vote' on the same row (±80px — tolerant of photo tilt)
+      2. 'signers' + 'registered' on the same row
+      3. 'All' + 'signers' on the same row
+      4. The word 'signers' alone — it only appears in this one sentence
+      5. Page-height fallback: 44 % of the tallest word's y position,
+         which is where the signature grid starts on a standard CA petition
     """
-    def _first_match(pattern_a: str, pattern_b: str) -> Optional[int]:
-        a_words = [w for w in words if re.match(pattern_a, w.text, re.I)]
-        b_words = [w for w in words if re.match(pattern_b, w.text, re.I)]
-        for a in a_words:
-            for b in b_words:
-                if abs(a.top - b.top) <= 40:
+    def _co_occur(pat_a: str, pat_b: str) -> Optional[int]:
+        a_ws = [w for w in words if re.match(pat_a, w.text, re.I)]
+        b_ws = [w for w in words if re.match(pat_b, w.text, re.I)]
+        for a in a_ws:
+            for b in b_ws:
+                if abs(a.top - b.top) <= 80:   # wider tolerance for tilted photos
                     return min(a.top, b.top)
         return None
 
-    return (
-        _first_match(r"^registered$", r"^vote$")
-        or _first_match(r"^signers$",    r"^registered$")
-        or _first_match(r"^all$",        r"^signers$")
+    result = (
+        _co_occur(r"^registered$", r"^vote$")
+        or _co_occur(r"^signers$",    r"^registered$")
+        or _co_occur(r"^all$",        r"^signers$")
     )
+    if result is not None:
+        return result
+
+    # 'signers' alone is specific to the instruction sentence
+    signers = [w for w in words if re.match(r"^signers$", w.text, re.I)]
+    if signers:
+        return min(w.top for w in signers)
+
+    # Last resort: the signature grid always starts in the bottom 56% of the page
+    if words:
+        page_h = max(w.top + w.height for w in words)
+        return int(page_h * 0.44)
+
+    return None
 
 
 # ── Word classification helpers ───────────────────────────────────────────────
@@ -845,11 +857,17 @@ class VisionProcessor(BasePDFProcessor):
         for page_num, image in enumerate(images, start=1):
             words = _vision_words(image)
 
-            # Discard everything above the signature grid before dispatching
-            # to either extractor.  Both paths benefit from this filter.
+            # Clip words to the signature grid: above the instruction row is
+            # ballot text; below DECLARATION is the circulator section.
             grid_top = _find_grid_top(words)
+            decl_top = next(
+                (w.top for w in words if re.match(r"^declaration$", w.text, re.I)),
+                None,
+            )
             if grid_top is not None:
                 words = [w for w in words if w.top >= grid_top]
+            if decl_top is not None:
+                words = [w for w in words if w.top < decl_top]
 
             if _is_vision_block_format(words):
                 page_sigs = _extract_vision_block(
