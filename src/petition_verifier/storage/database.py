@@ -999,6 +999,16 @@ class Database:
                 session.expunge(p)
             return pins
 
+    def delete_worker_pins(self, worker_id: int) -> int:
+        with self._Session() as session:
+            deleted = (
+                session.query(WorkerLocationRow)
+                .filter(WorkerLocationRow.worker_id == worker_id)
+                .delete()
+            )
+            session.commit()
+            return deleted
+
     def get_total_valid_sigs(self) -> int:
         with self._Session() as session:
             result = session.query(func.sum(ProjectRow.approved)).scalar()

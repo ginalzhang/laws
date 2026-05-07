@@ -46,6 +46,7 @@
 
     .btn-blue  { background: #0a84ff; color: #fff; }
     .btn-green { background: #30d158; color: #fff; }
+    .btn-red   { background: #ff3b30; color: #fff; }
 
     .msg {
       font-size: .82rem; color: #8e8e93; text-align: center;
@@ -159,6 +160,14 @@
       </span>
     </button>
 
+    <button class="big-btn btn-red" id="clearPinBtn" onclick="clearPin()">
+      <span class="icon">🗑️</span>
+      <span class="label">
+        <span class="title">Remove My Pin</span>
+        <span class="sub">Delete your location from the map</span>
+      </span>
+    </button>
+
     <div class="msg" id="statusMsg"></div>
 
     <!-- Live leaderboard -->
@@ -243,6 +252,16 @@
         setMsg(e.message, 'error');
       }
       btn.disabled = false; btn.textContent = 'Submit';
+    }
+
+    async function clearPin() {
+      const btn = document.getElementById('clearPinBtn');
+      btn.disabled = true;
+      try {
+        await api('/stats/location', { method: 'DELETE' });
+        setMsg('Pin removed!', 'success');
+      } catch(e) { setMsg(e.message, 'error'); }
+      btn.disabled = false;
     }
 
     async function shareLocation() {

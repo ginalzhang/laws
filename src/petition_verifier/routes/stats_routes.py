@@ -58,6 +58,17 @@ async def submit_location(payload: LocationPayload, user: dict = Depends(get_cur
     return {"ok": True}
 
 
+@router.delete("/location")
+async def delete_location(user: dict = Depends(get_current_user)):
+    entry = _live.get(user["user_id"])
+    if entry:
+        entry["lat"] = None
+        entry["lng"] = None
+        entry["updated_at"] = _now_iso()
+    db.delete_worker_pins(user["user_id"])
+    return {"ok": True}
+
+
 @router.get("/live")
 async def live_stats(user: dict = Depends(get_current_user)):
     return list(_live.values()) if _live else []

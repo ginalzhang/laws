@@ -52,6 +52,7 @@
     .action-btn .sub    { font-size: .68rem; font-weight: 400; opacity: .75; }
     .btn-blue  { background: #0a84ff; color: #fff; }
     .btn-green { background: #30d158; color: #fff; }
+    .btn-red   { background: #ff3b30; color: #fff; }
 
     .msg {
       font-size: .82rem; text-align: center; min-height: 16px;
@@ -155,6 +156,11 @@
         <span class="label">Drop Pin</span>
         <span class="sub">Share my location</span>
       </button>
+      <button class="action-btn btn-red" id="clearPinBtn" onclick="clearPin()">
+        <span class="icon">🗑️</span>
+        <span class="label">Remove Pin</span>
+        <span class="sub">Delete my location</span>
+      </button>
     </div>
     <div class="msg" id="statusMsg"></div>
 
@@ -250,6 +256,17 @@
     });
 
     // ── Location ──────────────────────────────────────────────────────────────
+    async function clearPin() {
+      const btn = document.getElementById('clearPinBtn');
+      btn.disabled = true;
+      try {
+        await api('/stats/location', { method: 'DELETE' });
+        setMsg('Pin removed!', 'success');
+        refresh();
+      } catch(e) { setMsg(e.message, 'error'); }
+      btn.disabled = false;
+    }
+
     async function shareLocation() {
       if (!navigator.geolocation) { setMsg('Geolocation not supported', 'error'); return; }
       const btn = document.getElementById('locBtn');
