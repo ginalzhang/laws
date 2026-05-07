@@ -116,7 +116,7 @@
     .fm-modal-overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
-      align-items: center; justify-content: center; z-index: 200;
+      align-items: center; justify-content: center; z-index: 1100;
     }
     .fm-modal-overlay.open { display: flex; }
     .fm-modal {
@@ -151,11 +151,11 @@
     }
     .logout-link:hover { color: #ff3b30; }
 
-    /* Sig count sheet */
+    /* Sig count sheet — z-index must beat Leaflet's 700 */
     .overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
-      align-items: flex-end; justify-content: center; z-index: 100;
+      align-items: flex-end; justify-content: center; z-index: 1000;
     }
     .overlay.open { display: flex; }
     .sheet {
@@ -163,7 +163,8 @@
       padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
       width: 100%; max-width: 480px;
     }
-    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .sheet .current-label { font-size: .85rem; color: #8e8e93; margin-bottom: 16px; }
     .sheet input[type=number] {
       width: 100%; padding: 16px; border: 1.5px solid #e5e5ea; border-radius: 14px;
       font-size: 2rem; font-weight: 700; font-family: inherit;
@@ -179,6 +180,29 @@
     .btn-cancel { background: #f2f2f7; color: #000; }
     .btn-submit { background: #0a84ff; color: #fff; }
     .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Mode picker step */
+    .mode-step { display: none; }
+    .mode-step.active { display: block; }
+    .input-step.hidden { display: none; }
+
+    .mode-info {
+      background: #f2f2f7; border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 16px;
+      font-size: .9rem; color: #3a3a3c; line-height: 1.5;
+    }
+    .mode-info strong { color: #000; }
+    .mode-btns { display: flex; flex-direction: column; gap: 10px; }
+    .mode-btn {
+      width: 100%; padding: 16px; border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 600; font-family: inherit; cursor: pointer;
+      text-align: left; transition: opacity .15s, transform .1s;
+    }
+    .mode-btn:active { transform: scale(.98); opacity: .88; }
+    .mode-btn .sub { font-size: .8rem; font-weight: 400; opacity: .7; display: block; margin-top: 2px; }
+    .mode-btn.add     { background: #30d158; color: #fff; }
+    .mode-btn.replace { background: #f2f2f7; color: #000; }
+    .mode-btn.back    { background: none; color: #0a84ff; font-size: .9rem; text-align: center; padding: 10px; }
   </style>
 </head>
 <body>
@@ -291,11 +315,31 @@
   <!-- Sig count sheet -->
   <div class="overlay" id="sigOverlay">
     <div class="sheet">
-      <h2>How many signatures today?</h2>
-      <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
-      <div class="sheet-btns">
-        <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
-        <button class="btn-submit" id="sigSubmitBtn" onclick="submitSigCount()">Submit</button>
+      <!-- Step 1: enter number -->
+      <div class="input-step" id="inputStep">
+        <h2 id="sheetTitle">How many signatures?</h2>
+        <div class="current-label" id="currentLabel"></div>
+        <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
+        <div class="sheet-btns">
+          <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
+          <button class="btn-submit" id="sigSubmitBtn" onclick="goToModeStep()">Next</button>
+        </div>
+      </div>
+      <!-- Step 2: replace or add? -->
+      <div class="mode-step" id="modeStep">
+        <h2>What do you want to do?</h2>
+        <div class="mode-info" id="modeInfo"></div>
+        <div class="mode-btns">
+          <button class="mode-btn add" onclick="submitSigCount('add')">
+            Add to my total
+            <span class="sub" id="addSub"></span>
+          </button>
+          <button class="mode-btn replace" onclick="submitSigCount('replace')">
+            Replace — I typed the wrong number
+            <span class="sub" id="replaceSub"></span>
+          </button>
+          <button class="mode-btn back" onclick="goBackToInput()">← Edit number</button>
+        </div>
       </div>
     </div>
   </div>
@@ -306,8 +350,9 @@
     if (!token) { window.location.href = '/'; }
     document.getElementById('managerName').textContent = userName || 'Field Manager';
 
+    let currentCount = 0;
     const storedCount = sessionStorage.getItem('pv_sig_count');
-    if (storedCount) document.getElementById('mySigCount').textContent = storedCount + ' sigs today';
+    if (storedCount) { currentCount = parseInt(storedCount,10)||0; document.getElementById('mySigCount').textContent = storedCount + ' sigs today'; }
 
     async function initMyCount() {
       try {
@@ -315,6 +360,7 @@
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
         }).then(r => r.json());
         if (data.sig_count > 0) {
+          currentCount = data.sig_count;
           sessionStorage.setItem('pv_sig_count', data.sig_count);
           document.getElementById('mySigCount').textContent = data.sig_count + ' sigs today';
         }
@@ -342,7 +388,11 @@
 
     // ── Sig count ─────────────────────────────────────────────────────────────
     function openSigSheet() {
-      document.getElementById('sigInput').value = sessionStorage.getItem('pv_sig_count') || '';
+      document.getElementById('inputStep').classList.remove('hidden');
+      document.getElementById('modeStep').classList.remove('active');
+      document.getElementById('sheetTitle').textContent = currentCount > 0 ? 'Update sig count' : 'How many signatures?';
+      document.getElementById('currentLabel').textContent = currentCount > 0 ? `Your current count: ${currentCount}` : '';
+      document.getElementById('sigInput').value = '';
       document.getElementById('sigOverlay').classList.add('open');
       setTimeout(() => document.getElementById('sigInput').focus(), 80);
     }
@@ -351,20 +401,41 @@
       document.getElementById('sigOverlay').classList.remove('open');
     }
 
-    async function submitSigCount() {
+    function goToModeStep() {
       const val = parseInt(document.getElementById('sigInput').value, 10);
       if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); return; }
-      const btn = document.getElementById('sigSubmitBtn');
-      btn.disabled = true; btn.textContent = 'Saving…';
+      if (currentCount <= 0) { submitSigCount('replace'); return; }
+      const newTotal = currentCount + val;
+      document.getElementById('modeInfo').innerHTML = `You entered <strong>${val}</strong>. Your current total is <strong>${currentCount}</strong>.`;
+      document.getElementById('addSub').textContent = `${currentCount} + ${val} = ${newTotal} total`;
+      document.getElementById('replaceSub').textContent = `New total: ${val}`;
+      document.getElementById('inputStep').classList.add('hidden');
+      document.getElementById('modeStep').classList.add('active');
+    }
+
+    function goBackToInput() {
+      document.getElementById('modeStep').classList.remove('active');
+      document.getElementById('inputStep').classList.remove('hidden');
+      setTimeout(() => document.getElementById('sigInput').focus(), 80);
+    }
+
+    async function submitSigCount(mode) {
+      const val = parseInt(document.getElementById('sigInput').value, 10);
+      if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); closeSheet(); return; }
+      const finalCount = mode === 'add' ? currentCount + val : val;
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
+      document.getElementById('sigSubmitBtn').disabled = true;
       try {
-        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: val }) });
-        sessionStorage.setItem('pv_sig_count', val);
-        document.getElementById('mySigCount').textContent = val + ' sigs today';
+        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: finalCount }) });
+        currentCount = finalCount;
+        sessionStorage.setItem('pv_sig_count', finalCount);
+        document.getElementById('mySigCount').textContent = finalCount + ' sigs today';
         closeSheet();
         setMsg('Sig count updated!', 'success');
         loadLeaderboard();
-      } catch(e) { setMsg(e.message, 'error'); }
-      btn.disabled = false; btn.textContent = 'Submit';
+      } catch(e) { setMsg(e.message, 'error'); closeSheet(); }
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = false);
+      document.getElementById('sigSubmitBtn').disabled = false;
     }
 
     document.getElementById('sigOverlay').addEventListener('click', (e) => {
