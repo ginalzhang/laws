@@ -65,6 +65,10 @@ async def ensure_permanent_users():
     # Seed default FM team password if not already set
     if not db.get_setting("fm_password"):
         db.set_setting("fm_password", "seals")
+    # Remove old hardcoded Kay Kay entry left over from previous deploys
+    old_kaykay = db.get_user_by_email("kaykay@app.local")
+    if old_kaykay:
+        db.update_user(old_kaykay.id, is_active=False)
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():
