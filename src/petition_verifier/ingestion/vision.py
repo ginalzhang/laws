@@ -249,15 +249,27 @@ def _extract_vision_block(
     anchors    = _find_print_name_anchors(words)
     sigs: list[ExtractedSignature] = []
 
-    # Ignore everything above the signature grid.  The preamble/header text
-    # can contain "Print" + "Name" coincidences that look like anchors and
-    # produce spurious signer lines.  Use a 200px buffer above the topmost
-    # real anchor so we don't accidentally clip the first signer's block.
-    if anchors:
+    # ── Find the "registered to vote in ___ County" header row ───────────────
+    # CA initiative petitions always print this sentence immediately above the
+    # signature grid.  Any "Print Name" anchor above this line is preamble text,
+    # not a real signer row.
+    _GRID_MARKER = re.compile(r"^(registered|signers|county)$", re.I)
+    grid_marker_top = next(
+        (w.top for w in words if _GRID_MARKER.match(w.text)),
+        None,
+    )
+    if grid_marker_top is not None:
+        # Keep anchors that start at or below the marker row.
+        anchors = [a for a in anchors if a.top >= grid_marker_top]
+        words   = [w for w in words   if w.top  >= grid_marker_top]
+    elif anchors:
+        # Fallback: 200px buffer above the first detected anchor.
         grid_top = anchors[0].top - 200
-        words = [w for w in words if w.top >= grid_top]
-        # Re-derive anchors from the filtered word list so the indexes stay consistent.
-        anchors = _find_print_name_anchors(words)
+        words    = [w for w in words if w.top >= grid_top]
+        anchors  = _find_print_name_anchors(words)
+
+    # CA petitions have at most 7–8 signer lines per page; hard-cap at 10.
+    anchors = anchors[:10]
 
     # Find any "DECLARATION" marker to use as a hard stop
     declaration_top = next(
