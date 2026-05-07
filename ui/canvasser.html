@@ -47,6 +47,7 @@
     .btn-blue  { background: #0a84ff; color: #fff; }
     .btn-green { background: #30d158; color: #fff; }
     .btn-red   { background: #ff3b30; color: #fff; }
+    .btn-gray  { background: #e5e5ea; color: #3a3a3c; }
 
     .msg {
       font-size: .82rem; color: #8e8e93; text-align: center;
@@ -54,6 +55,30 @@
     }
     .msg.success { color: #2e7d32; }
     .msg.error   { color: #c62828; }
+
+    /* Location section — collapsible */
+    .loc-section { background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 .5px rgba(0,0,0,.04); }
+    .loc-toggle {
+      width: 100%; background: none; border: none; padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: .9rem; font-weight: 600; font-family: inherit; cursor: pointer; color: #000;
+    }
+    .loc-toggle .arrow { font-size: .75rem; color: #8e8e93; transition: transform .2s; }
+    .loc-toggle.open .arrow { transform: rotate(180deg); }
+    .loc-inner { display: none; flex-direction: column; gap: 10px; padding: 0 12px 12px; }
+    .loc-inner.open { display: flex; }
+    .loc-btn {
+      width: 100%; padding: 14px 16px;
+      border: none; border-radius: 12px;
+      font-size: .95rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; display: flex; align-items: center; gap: 12px;
+      transition: opacity .15s, transform .1s;
+      -webkit-appearance: none;
+    }
+    .loc-btn:active { transform: scale(.97); opacity: .88; }
+    .loc-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    .loc-btn.green { background: #30d158; color: #fff; }
+    .loc-btn.red   { background: #ff3b30; color: #fff; }
 
     /* Leaderboard card */
     .card {
@@ -99,7 +124,7 @@
     .lb-sigs { font-size: .95rem; font-weight: 700; color: #0a84ff; }
     .lb-empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
 
-    /* Sig input overlay */
+    /* Bottom sheet overlay */
     .overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
@@ -111,7 +136,8 @@
       padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
       width: 100%; max-width: 480px;
     }
-    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .sheet .current-label { font-size: .85rem; color: #8e8e93; margin-bottom: 16px; }
     .sheet input[type=number] {
       width: 100%; padding: 16px; border: 1.5px solid #e5e5ea; border-radius: 14px;
       font-size: 2rem; font-weight: 700; font-family: inherit;
@@ -128,6 +154,31 @@
     .btn-submit { background: #0a84ff; color: #fff; }
     .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 
+    /* Mode picker step */
+    .mode-step { display: none; }
+    .mode-step.active { display: block; }
+    .input-step { display: block; }
+    .input-step.hidden { display: none; }
+
+    .mode-info {
+      background: #f2f2f7; border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 16px;
+      font-size: .9rem; color: #3a3a3c; line-height: 1.5;
+    }
+    .mode-info strong { color: #000; }
+
+    .mode-btns { display: flex; flex-direction: column; gap: 10px; }
+    .mode-btn {
+      width: 100%; padding: 16px; border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 600; font-family: inherit; cursor: pointer;
+      text-align: left; transition: opacity .15s, transform .1s;
+    }
+    .mode-btn:active { transform: scale(.98); opacity: .88; }
+    .mode-btn .sub { font-size: .8rem; font-weight: 400; opacity: .7; display: block; margin-top: 2px; }
+    .mode-btn.add   { background: #30d158; color: #fff; }
+    .mode-btn.replace { background: #f2f2f7; color: #000; }
+    .mode-btn.back  { background: none; color: #0a84ff; font-size: .9rem; text-align: center; padding: 10px; }
+
     .logout-link {
       text-align: center;
       font-size: .8rem; color: #8e8e93; cursor: pointer; padding: 4px;
@@ -138,7 +189,7 @@
 <body>
   <div class="header">
     <div class="header-name" id="workerName">—</div>
-    <div class="header-sub">Today's signatures</div>
+    <div class="header-sub">Your signature count</div>
     <div class="sig-count" id="sigCount">—</div>
     <div class="sig-label">submitted today</div>
   </div>
@@ -147,28 +198,29 @@
     <button class="big-btn btn-blue" id="sigBtn" onclick="openSigSheet()">
       <span class="icon">✍️</span>
       <span class="label">
-        <span class="title">Submit Sig Count</span>
-        <span class="sub">Update your signature total</span>
-      </span>
-    </button>
-
-    <button class="big-btn btn-green" id="locBtn" onclick="shareLocation()">
-      <span class="icon">📍</span>
-      <span class="label">
-        <span class="title">Share My Location</span>
-        <span class="sub">Let your manager see where you are</span>
-      </span>
-    </button>
-
-    <button class="big-btn btn-red" id="clearPinBtn" onclick="clearPin()">
-      <span class="icon">🗑️</span>
-      <span class="label">
-        <span class="title">Remove My Pin</span>
-        <span class="sub">Delete your location from the map</span>
+        <span class="title" id="sigBtnTitle">Submit Sig Count</span>
+        <span class="sub">Tap to enter your signatures</span>
       </span>
     </button>
 
     <div class="msg" id="statusMsg"></div>
+
+    <!-- Location section — collapsed by default so it doesn't crowd the input -->
+    <div class="loc-section">
+      <button class="loc-toggle" id="locToggle" onclick="toggleLoc()">
+        <span>📍 Location</span>
+        <span class="arrow">▼</span>
+      </button>
+      <div class="loc-inner" id="locInner">
+        <button class="loc-btn green" id="locBtn" onclick="shareLocation()">
+          <span>📍</span> Share My Location
+        </button>
+        <button class="loc-btn red" id="clearPinBtn" onclick="clearPin()">
+          <span>🗑️</span> Remove My Pin
+        </button>
+        <div class="msg" id="locMsg"></div>
+      </div>
+    </div>
 
     <!-- Live leaderboard -->
     <div class="card">
@@ -187,12 +239,35 @@
   <!-- Sig count sheet -->
   <div class="overlay" id="sigOverlay">
     <div class="sheet">
-      <h2>How many signatures today?</h2>
-      <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
-      <div class="sheet-btns">
-        <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
-        <button class="btn-submit" id="sigSubmitBtn" onclick="submitSigCount()">Submit</button>
+
+      <!-- Step 1: enter the number -->
+      <div class="input-step" id="inputStep">
+        <h2 id="sheetTitle">How many signatures?</h2>
+        <div class="current-label" id="currentLabel"></div>
+        <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
+        <div class="sheet-btns">
+          <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
+          <button class="btn-submit" id="sigSubmitBtn" onclick="goToModeStep()">Next</button>
+        </div>
       </div>
+
+      <!-- Step 2: replace or add? -->
+      <div class="mode-step" id="modeStep">
+        <h2>What do you want to do?</h2>
+        <div class="mode-info" id="modeInfo"></div>
+        <div class="mode-btns">
+          <button class="mode-btn add" id="addBtn" onclick="submitSigCount('add')">
+            Add to my total
+            <span class="sub" id="addSub"></span>
+          </button>
+          <button class="mode-btn replace" onclick="submitSigCount('replace')">
+            Replace — I typed the wrong number
+            <span class="sub" id="replaceSub"></span>
+          </button>
+          <button class="mode-btn back" onclick="goBackToInput()">← Edit number</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -204,8 +279,9 @@
     if (!token) { window.location.href = '/'; }
 
     document.getElementById('workerName').textContent = userName || 'Canvasser';
-
     document.getElementById('sigCount').textContent = sessionStorage.getItem('pv_sig_count') ?? '—';
+
+    let currentCount = 0; // loaded from server on init
 
     function api(path, opts = {}) {
       return fetch(path, {
@@ -224,9 +300,26 @@
       el.className = 'msg' + (type ? ' ' + type : '');
     }
 
+    function setLocMsg(text, type = '') {
+      const el = document.getElementById('locMsg');
+      el.textContent = text;
+      el.className = 'msg' + (type ? ' ' + type : '');
+    }
+
+    function toggleLoc() {
+      const toggle = document.getElementById('locToggle');
+      const inner  = document.getElementById('locInner');
+      toggle.classList.toggle('open');
+      inner.classList.toggle('open');
+    }
+
     function openSigSheet() {
-      const stored = sessionStorage.getItem('pv_sig_count');
-      document.getElementById('sigInput').value = stored != null ? stored : '';
+      document.getElementById('inputStep').classList.remove('hidden');
+      document.getElementById('modeStep').classList.remove('active');
+      const cur = currentCount > 0 ? currentCount : null;
+      document.getElementById('sheetTitle').textContent = cur ? 'Update sig count' : 'How many signatures?';
+      document.getElementById('currentLabel').textContent = cur ? `Your current count: ${cur}` : '';
+      document.getElementById('sigInput').value = '';
       document.getElementById('sigOverlay').classList.add('open');
       setTimeout(() => document.getElementById('sigInput').focus(), 80);
     }
@@ -235,22 +328,57 @@
       document.getElementById('sigOverlay').classList.remove('open');
     }
 
-    async function submitSigCount() {
+    function goToModeStep() {
       const val = parseInt(document.getElementById('sigInput').value, 10);
       if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); return; }
-      const btn = document.getElementById('sigSubmitBtn');
-      btn.disabled = true; btn.textContent = 'Saving…';
+
+      // If no existing count, just submit directly (no need to ask)
+      if (currentCount <= 0) {
+        submitSigCount('replace');
+        return;
+      }
+
+      const newTotal = currentCount + val;
+      document.getElementById('modeInfo').innerHTML =
+        `You entered <strong>${val}</strong>. Your current total is <strong>${currentCount}</strong>.`;
+      document.getElementById('addSub').textContent = `${currentCount} + ${val} = ${newTotal} total`;
+      document.getElementById('replaceSub').textContent = `New total: ${val}`;
+
+      document.getElementById('inputStep').classList.add('hidden');
+      document.getElementById('modeStep').classList.add('active');
+    }
+
+    function goBackToInput() {
+      document.getElementById('modeStep').classList.remove('active');
+      document.getElementById('inputStep').classList.remove('hidden');
+      setTimeout(() => document.getElementById('sigInput').focus(), 80);
+    }
+
+    async function submitSigCount(mode) {
+      const val = parseInt(document.getElementById('sigInput').value, 10);
+      if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); closeSheet(); return; }
+
+      const finalCount = mode === 'add' ? currentCount + val : val;
+
+      // Disable all mode buttons during save
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
+      document.getElementById('sigSubmitBtn').disabled = true;
+
       try {
-        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: val }) });
-        sessionStorage.setItem('pv_sig_count', val);
-        document.getElementById('sigCount').textContent = val;
+        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: finalCount }) });
+        currentCount = finalCount;
+        sessionStorage.setItem('pv_sig_count', finalCount);
+        document.getElementById('sigCount').textContent = finalCount;
+        document.getElementById('sigBtnTitle').textContent = 'Update Sig Count';
         closeSheet();
         setMsg('Sig count updated!', 'success');
         loadLeaderboard();
       } catch(e) {
         setMsg(e.message, 'error');
+        closeSheet();
       }
-      btn.disabled = false; btn.textContent = 'Submit';
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = false);
+      document.getElementById('sigSubmitBtn').disabled = false;
     }
 
     async function clearPin() {
@@ -258,16 +386,16 @@
       btn.disabled = true;
       try {
         await api('/stats/location', { method: 'DELETE' });
-        setMsg('Pin removed!', 'success');
-      } catch(e) { setMsg(e.message, 'error'); }
+        setLocMsg('Pin removed!', 'success');
+      } catch(e) { setLocMsg(e.message, 'error'); }
       btn.disabled = false;
     }
 
     async function shareLocation() {
-      if (!navigator.geolocation) { setMsg('Geolocation not supported on this device', 'error'); return; }
+      if (!navigator.geolocation) { setLocMsg('Geolocation not supported on this device', 'error'); return; }
       const btn = document.getElementById('locBtn');
       btn.disabled = true;
-      setMsg('Getting location…');
+      setLocMsg('Getting location…');
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
@@ -275,12 +403,12 @@
               method: 'POST',
               body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
             });
-            setMsg('Location shared!', 'success');
-          } catch(e) { setMsg(e.message, 'error'); }
+            setLocMsg('Location shared!', 'success');
+          } catch(e) { setLocMsg(e.message, 'error'); }
           btn.disabled = false;
         },
         (err) => {
-          setMsg(err.code === 1 ? 'Location access denied — allow it in browser settings' : 'Could not get location', 'error');
+          setLocMsg(err.code === 1 ? 'Location access denied — allow it in browser settings' : 'Could not get location', 'error');
           btn.disabled = false;
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -333,8 +461,10 @@
       try {
         const data = await api('/stats/my-count');
         if (data.sig_count > 0) {
+          currentCount = data.sig_count;
           sessionStorage.setItem('pv_sig_count', data.sig_count);
           document.getElementById('sigCount').textContent = data.sig_count;
+          document.getElementById('sigBtnTitle').textContent = 'Update Sig Count';
         }
       } catch(e) {}
     }
