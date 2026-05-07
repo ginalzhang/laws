@@ -267,22 +267,40 @@
     <div class="logout-link" onclick="logout()">Sign out</div>
   </div>
 
-  <!-- Add Shift Modal -->
+  <!-- Clock In Modal -->
   <div class="fm-modal-overlay" id="fmAddShiftModal">
     <div class="fm-modal">
       <span class="fm-modal-close" onclick="closeFMModal('fmAddShiftModal')">✕</span>
-      <div class="fm-modal-title" id="fmAddShiftTitle">Add Shift</div>
+      <div class="fm-modal-title" id="fmAddShiftTitle">Clock In</div>
       <input type="hidden" id="fmAddShiftWorkerId">
       <input type="hidden" id="fmAddShiftDate">
       <div class="fm-form-group">
         <label>Start Time</label>
-        <input type="time" id="fmAddShiftStart" value="09:00">
+        <input type="time" id="fmAddShiftStart">
       </div>
-      <p style="font-size:.78rem;color:#8e8e93;margin:0 0 12px">End time is open — clock out when done.</p>
+      <p style="font-size:.78rem;color:#8e8e93;margin:0 0 12px">Clock out when they leave.</p>
       <div class="fm-modal-err" id="fmAddShiftErr"></div>
       <div class="fm-modal-footer">
         <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddShiftModal')">Cancel</button>
-        <button class="fm-btn fm-btn-primary" onclick="submitFMAddShift()">Add Shift</button>
+        <button class="fm-btn fm-btn-primary" onclick="submitFMAddShift()">Clock In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clock Out Modal -->
+  <div class="fm-modal-overlay" id="fmClockOutModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmClockOutModal')">✕</span>
+      <div class="fm-modal-title" id="fmClockOutTitle">Clock Out</div>
+      <input type="hidden" id="fmClockOutWorkerId">
+      <div class="fm-form-group">
+        <label>End Time</label>
+        <input type="time" id="fmClockOutTime">
+      </div>
+      <div class="fm-modal-err" id="fmClockOutErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmClockOutModal')">Cancel</button>
+        <button class="fm-btn fm-btn-danger" onclick="submitClockOut()">Clock Out</button>
       </div>
     </div>
   </div>
@@ -536,16 +554,34 @@
     // ── Live sig counts ───────────────────────────────────────────────────────
     async function loadLeaderboard() {
       try {
-        const data = await api('/stats/live');
+        const [live, active] = await Promise.all([
+          api('/stats/live'),
+          api('/shifts/active'),
+        ]);
+        // Build map: worker_id → clock_in time
+        const clockInMap = {};
+        for (const s of active) clockInMap[s.worker_id] = s.clock_in;
+
         const el = document.getElementById('lbList');
-        const sorted = [...data].filter(e => e.sig_count > 0).sort((a,b) => b.sig_count - a.sig_count);
+        const sorted = [...live].filter(e => e.sig_count > 0).sort((a,b) => b.sig_count - a.sig_count);
         if (!sorted.length) { el.innerHTML = '<div class="empty">No counts submitted yet</div>'; return; }
         el.innerHTML = sorted.map((e, i) => {
           const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
+          let paceHtml = '';
+          if (clockInMap[e.worker_id]) {
+            const raw = clockInMap[e.worker_id];
+            const start = new Date(raw.includes('Z') ? raw : raw + 'Z');
+            const hrs = (Date.now() - start.getTime()) / 3600000;
+            if (hrs >= 0.05) {
+              const pace  = e.sig_count / hrs;
+              const color = pace >= 10 ? '#30d158' : pace >= 7 ? '#ff9f0a' : '#ff3b30';
+              paceHtml = `<span style="font-size:.72rem;font-weight:600;color:${color};margin-left:6px">${pace.toFixed(1)}/hr</span>`;
+            }
+          }
           return `<div class="lb-row">
             <div class="lb-rank">${medal}</div>
             <div class="lb-name">${e.full_name}</div>
-            <div class="lb-sigs">${e.sig_count.toLocaleString()}</div>
+            <div class="lb-sigs">${e.sig_count.toLocaleString()}${paceHtml}</div>
           </div>`;
         }).join('');
       } catch(e) {
@@ -627,10 +663,15 @@
           let shiftHtml = dayShifts.map(s => {
             const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
             const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
-            const lbl = outT ? `${inT}–${outT}` : `${inT} ●`;
-            return `<span class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${lbl}</span>`;
+            if (!outT) {
+              return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                <span style="font-size:.75rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
+                <button onclick="openClockOut(${w.id},'${w.full_name.replace(/'/g,"\\'")}\")" style="border:none;background:#ff3b30;color:#fff;border-radius:6px;padding:3px 8px;font-size:.72rem;font-weight:600;cursor:pointer">Clock out</button>
+              </div>`;
+            }
+            return `<span class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</span>`;
           }).join('');
-          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Add</button>`;
+          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Clock in</button>`;
           rows += `<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:0.5px solid #f2f2f7">
             <span style="flex:1;font-size:.88rem;font-weight:600">${w.full_name}</span>
             <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">${shiftHtml}</div>
@@ -657,13 +698,19 @@
               dayShifts.forEach(s => {
                 const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
                 const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
-                const lbl = outT ? `${inT}–${outT}` : `${inT} ●`;
-                html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${lbl}</div>`;
+                if (!outT) {
+                  html += `<div style="display:flex;align-items:center;gap:4px">
+                    <span style="font-size:.7rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
+                    <button onclick="openClockOut(${w.id},'${w.full_name.replace(/'/g,"\\'")}\")" style="border:none;background:#ff3b30;color:#fff;border-radius:5px;padding:2px 6px;font-size:.66rem;font-weight:600;cursor:pointer">Out</button>
+                  </div>`;
+                } else {
+                  html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</div>`;
+                }
               });
               html += '</div>';
             } else {
               html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openFMAdd(${w.id},'${w.full_name.replace(/'/g,"\\'")}','${ds}')">
-                <div style="color:#ccc;font-size:1.1rem;text-align:center;line-height:34px">+</div>
+                <div style="color:#ccc;font-size:1rem;text-align:center;line-height:34px">+ In</div>
               </div>`;
             }
           }
@@ -680,9 +727,38 @@
     function openFMAdd(workerId, workerName, dateStr) {
       document.getElementById('fmAddShiftWorkerId').value = workerId;
       document.getElementById('fmAddShiftDate').value = dateStr;
-      document.getElementById('fmAddShiftTitle').textContent = `Add Shift — ${workerName} (${dateStr})`;
+      document.getElementById('fmAddShiftTitle').textContent = `Clock In — ${workerName}`;
       document.getElementById('fmAddShiftErr').style.display = 'none';
+      // Default to current time
+      const now = new Date();
+      document.getElementById('fmAddShiftStart').value =
+        String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
       document.getElementById('fmAddShiftModal').classList.add('open');
+    }
+
+    function openClockOut(workerId, workerName) {
+      document.getElementById('fmClockOutWorkerId').value = workerId;
+      document.getElementById('fmClockOutTitle').textContent = `Clock Out — ${workerName}`;
+      document.getElementById('fmClockOutErr').style.display = 'none';
+      const now = new Date();
+      document.getElementById('fmClockOutTime').value =
+        String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      document.getElementById('fmClockOutModal').classList.add('open');
+    }
+
+    async function submitClockOut() {
+      const workerId = parseInt(document.getElementById('fmClockOutWorkerId').value);
+      const timeVal  = document.getElementById('fmClockOutTime').value;
+      const dateStr  = fmtDate(new Date()); // today
+      const errEl    = document.getElementById('fmClockOutErr');
+      errEl.style.display = 'none';
+      if (!timeVal) { errEl.textContent = 'Enter a time.'; errEl.style.display = 'block'; return; }
+      try {
+        await api('/shifts/clock-out-at', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_out: `${dateStr}T${timeVal}:00` }) });
+        closeFMModal('fmClockOutModal');
+        loadSchedule();
+        loadLeaderboard();
+      } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
     }
 
     async function submitFMAddShift() {

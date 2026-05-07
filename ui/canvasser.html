@@ -27,6 +27,11 @@
     .sig-count   { font-size: 3.5rem; font-weight: 800; color: #0a84ff; line-height: 1; margin-top: 4px; }
     .sig-label   { font-size: .8rem; color: #8e8e93; margin-top: 2px; }
 
+    .pace-bar-wrap { margin-top: 10px; }
+    .pace-bar-meta { display: flex; justify-content: space-between; font-size: .72rem; color: #8e8e93; margin-bottom: 4px; }
+    .pace-bar-track { height: 5px; background: #e5e5ea; border-radius: 3px; overflow: hidden; }
+    .pace-bar-fill  { height: 100%; border-radius: 3px; transition: width .5s, background .5s; }
+
     .content { padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; }
 
     .big-btn {
@@ -192,6 +197,7 @@
     <div class="header-sub">Your signature count</div>
     <div class="sig-count" id="sigCount">—</div>
     <div class="sig-label">submitted today</div>
+    <div id="paceInfo"></div>
   </div>
 
   <div class="content">
@@ -281,7 +287,8 @@
     document.getElementById('workerName').textContent = userName || 'Canvasser';
     document.getElementById('sigCount').textContent = sessionStorage.getItem('pv_sig_count') ?? '—';
 
-    let currentCount = 0; // loaded from server on init
+    let currentCount = 0;
+    let shiftStartTime = null; // set from active shift clock_in
 
     function api(path, opts = {}) {
       return fetch(path, {
@@ -372,6 +379,7 @@
         document.getElementById('sigBtnTitle').textContent = 'Update Sig Count';
         closeSheet();
         setMsg('Sig count updated!', 'success');
+        updatePaceDisplay();
         loadLeaderboard();
       } catch(e) {
         setMsg(e.message, 'error');
@@ -469,9 +477,37 @@
       } catch(e) {}
     }
 
+    function updatePaceDisplay() {
+      const el = document.getElementById('paceInfo');
+      if (!el || !shiftStartTime || currentCount <= 0) { if(el) el.innerHTML = ''; return; }
+      const hoursElapsed = (Date.now() - shiftStartTime.getTime()) / 3600000;
+      if (hoursElapsed < 0.05) { el.innerHTML = ''; return; }
+      const pace  = currentCount / hoursElapsed;
+      const pct   = Math.min(pace / 10 * 100, 100);
+      const color = pace >= 10 ? '#30d158' : pace >= 7 ? '#ff9f0a' : '#ff3b30';
+      const label = pace >= 10 ? '✓ On pace' : 'Behind pace';
+      el.innerHTML = `<div class="pace-bar-wrap">
+        <div class="pace-bar-meta"><span style="color:${color};font-weight:600">${label} · ${pace.toFixed(1)}/hr</span><span>Goal: 10/hr</span></div>
+        <div class="pace-bar-track"><div class="pace-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      </div>`;
+    }
+
+    async function initMyShift() {
+      try {
+        const data = await api(`/shifts/active/${userId}`);
+        if (data.active && data.shift) {
+          const raw = data.shift.clock_in;
+          shiftStartTime = new Date(raw.includes('Z') ? raw : raw + 'Z');
+        }
+      } catch(e) {}
+      updatePaceDisplay();
+    }
+
     initMyCount();
+    initMyShift();
     loadLeaderboard();
     setInterval(loadLeaderboard, 30000);
+    setInterval(updatePaceDisplay, 60000);
   </script>
 </body>
 </html>
