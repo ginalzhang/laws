@@ -941,12 +941,13 @@ def _extract_by_header_columns(
         x_date   = int(page_width * 0.88)
 
     signer_words = [w for w in words if w.top > header_y + 5]
-    rows         = _cluster_rows_px(signer_words, merge_px=40)
+    rows         = _cluster_rows_px(signer_words, merge_px=55)
     sigs: list[ExtractedSignature] = []
 
     for row_words in rows:
-        # Must contain a line number digit (1–8) to be a signer row
-        if not any(re.match(r"^[1-8]\.?$", w.text) for w in row_words):
+        # Must contain a line number digit (1–8) to be a signer row.
+        # Vision OCR returns various formats: "1", "1.", "1)", "1:" — accept all.
+        if not any(re.match(r"^[1-8][.):]*$", w.text) for w in row_words):
             continue
 
         def band(x_lo: int, x_hi: int) -> list[_Word]:
