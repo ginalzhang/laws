@@ -986,7 +986,7 @@
 
   function applyRoleVisibility() {
     const isAdmin = ['boss', 'admin'].includes(_role);
-    const canSeeMap = ['boss', 'admin', 'field_manager'].includes(_role);
+    const canSeeMap = ['boss', 'admin', 'field_manager', 'evan'].includes(_role);
     const isWorker = !isAdmin;
 
     // Show/hide map nav
@@ -997,8 +997,8 @@
     const dropPinCard = document.getElementById('dropPinCard');
     if (dropPinCard) dropPinCard.style.display = isWorker ? '' : 'none';
 
-    if (_role === 'field_manager') {
-      // Evan: workers + schedule + map only
+    if (_role === 'field_manager' || _role === 'evan') {
+      // Field managers: workers + schedule + map only
       const allowed = new Set(['workers', 'schedule', 'map']);
       document.querySelectorAll('.nav-item').forEach(el => {
         if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
@@ -1169,14 +1169,14 @@
       return;
     }
     tbody.innerHTML = workersCache.map(w => {
-      const ROLE_LABELS = {'field_manager':'Field Manager','office_worker':'Office Worker','petitioner':'Petitioner','worker':'Worker','admin':'Admin','boss':'Boss'};
-      const ROLE_COLORS = {'field_manager':'blue','office_worker':'purple','petitioner':'green','worker':'green','admin':'admin','boss':'boss'};
+      const ROLE_LABELS = {'field_manager':'Field Manager','evan':'Field Manager','office_worker':'Office Worker','petitioner':'Petitioner','worker':'Worker','admin':'Admin','boss':'Boss'};
+      const ROLE_COLORS = {'field_manager':'blue','evan':'blue','office_worker':'purple','petitioner':'green','worker':'green','admin':'admin','boss':'boss'};
       const roleLabel = ROLE_LABELS[w.role] || w.role;
       const roleColor = ROLE_COLORS[w.role] || 'gray';
       const statusDot = w.is_clocked_in
         ? `<span class="clocked-dot in"></span>In`
         : `<span class="clocked-dot out"></span>Out`;
-      const isManager = _role === 'field_manager';
+      const isManager = _role === 'field_manager' || _role === 'evan';
       return `<tr>
         ${isManager ? '' : `<td><input type="checkbox" class="worker-cb" value="${w.id}" onchange="onWorkerCheck()"></td>`}
         <td style="font-weight:600">${w.full_name}</td>
@@ -1910,7 +1910,7 @@
 
       const wkrSel = document.getElementById('assignWorkerSelect');
       wkrSel.innerHTML = '';
-      workers.filter(w => !['boss', 'field_manager', 'admin', 'office_worker'].includes(w.role)).forEach(w => {
+      workers.filter(w => !['boss', 'field_manager', 'evan', 'admin', 'office_worker'].includes(w.role)).forEach(w => {
         const opt = document.createElement('option');
         opt.value = w.id;
         opt.textContent = w.full_name;
@@ -2597,7 +2597,7 @@
     }
     // Hide mobile nav items Evan can't access
     document.addEventListener('DOMContentLoaded', () => {
-      if (localStorage.getItem('pv_role') === 'field_manager') {
+      if (['field_manager', 'evan'].includes(localStorage.getItem('pv_role'))) {
         document.getElementById('mobMoreBtn').style.display = 'none';
         // Hide "More" drawer home/overview button too
         document.querySelector('[data-mob-section="overview"]').style.display = 'none';

@@ -452,6 +452,7 @@ class Database:
             user = (
                 session.query(UserRow)
                 .filter(func.lower(UserRow.full_name) == full_name.lower().strip())
+                .order_by(UserRow.is_active.desc(), UserRow.id)
                 .first()
             )
             if user:

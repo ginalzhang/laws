@@ -151,7 +151,7 @@
     function redirect(role) {
       if (role === 'petitioner') {
         window.location.href = '/canvasser';
-      } else if (role === 'field_manager') {
+      } else if (role === 'field_manager' || role === 'evan') {
         window.location.href = '/field-manager';
       } else {
         window.location.href = '/static/dashboard.html';
