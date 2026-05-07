@@ -946,11 +946,9 @@
   }
 
   function doLogout() {
-    localStorage.removeItem('pv_token');
-    localStorage.removeItem('pv_role');
-    localStorage.removeItem('pv_name');
-    _token = ''; _role = ''; _name = '';
-    showLoginScreen();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = '/';
   }
 
   function showLoginScreen() {
