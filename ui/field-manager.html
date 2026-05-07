@@ -206,6 +206,19 @@
     const storedCount = sessionStorage.getItem('pv_sig_count');
     if (storedCount) document.getElementById('mySigCount').textContent = storedCount + ' sigs today';
 
+    async function initMyCount() {
+      try {
+        const data = await fetch('/stats/my-count', {
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        }).then(r => r.json());
+        if (data.sig_count > 0) {
+          sessionStorage.setItem('pv_sig_count', data.sig_count);
+          document.getElementById('mySigCount').textContent = data.sig_count + ' sigs today';
+        }
+      } catch(e) {}
+    }
+    initMyCount();
+
     function api(path, opts = {}) {
       return fetch(path, {
         ...opts,

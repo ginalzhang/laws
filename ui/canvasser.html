@@ -331,12 +331,10 @@
 
     async function initMyCount() {
       try {
-        const data = await api('/stats/live');
-        const myName = (userName || '').toLowerCase();
-        const me = data.find(e => e.full_name.toLowerCase() === myName);
-        if (me && me.sig_count > 0) {
-          sessionStorage.setItem('pv_sig_count', me.sig_count);
-          document.getElementById('sigCount').textContent = me.sig_count;
+        const data = await api('/stats/my-count');
+        if (data.sig_count > 0) {
+          sessionStorage.setItem('pv_sig_count', data.sig_count);
+          document.getElementById('sigCount').textContent = data.sig_count;
         }
       } catch(e) {}
     }

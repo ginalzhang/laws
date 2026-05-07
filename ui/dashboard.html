@@ -358,7 +358,7 @@
 
     @media (max-width: 768px) {
       .sidebar { display: none; }
-      .main { margin-left: 0; padding: 16px 14px; padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
+      .main { margin-left: 0; padding: 14px 12px; padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
       .mobile-nav { display: flex; }
       header { height: 48px; padding: 0 14px; }
       header h1 { font-size: .92rem; }
@@ -367,19 +367,27 @@
       .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
       .stat-card { padding: 14px; }
       .stat-card .value { font-size: 1.5rem; }
-      /* Make tables scrollable on mobile */
+      /* Tables scrollable */
       .table-wrap, [style*="overflow-x:auto"] { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       table { min-width: 500px; }
-      /* Bigger tap targets */
+      /* Tap targets */
       .btn { padding: 10px 16px; font-size: .85rem; }
       .btn-sm { padding: 7px 12px; font-size: .78rem; }
       /* Cards */
-      .card { padding: 14px 14px; border-radius: 10px; }
-      /* Modal full-width on mobile */
-      .modal { width: 96% !important; max-width: 96% !important; padding: 24px 18px; }
-      /* Schedule grid smaller font */
+      .card { padding: 14px 12px; border-radius: 12px; }
+      /* Modal full-width */
+      .modal { width: 96% !important; max-width: 96% !important; padding: 22px 16px; }
+      /* Schedule grid */
       .wg-header, .wg-worker, .wg-cell { font-size: .7rem; padding: 5px 4px; }
       .wg-shift { font-size: .65rem; padding: 2px 5px; }
+      /* Leaderboard cards stack nicely */
+      .lb-card { padding: 12px 14px; gap: 10px; }
+      .lb-rank { font-size: 1.1rem; width: 28px; }
+      .lb-name { font-size: .85rem; }
+      .lb-stats { font-size: .7rem; }
+      .lb-sigs .num { font-size: 1.3rem; }
+      /* Action rows wrap */
+      .action-row-wrap { flex-wrap: wrap; }
     }
   </style>
 </head>
@@ -1872,23 +1880,51 @@
   async function loadLeaderboard() {
     const el = document.getElementById('leaderboardGrid');
     try {
-      const data = await api('/leaderboard');
-      if (data.leaderboard.length === 0) {
+      const [data, liveData] = await Promise.all([
+        api('/leaderboard'),
+        api('/stats/live'),
+      ]);
+      // Build a map of name → live sig count
+      const liveByName = {};
+      for (const e of liveData) {
+        liveByName[e.full_name.toLowerCase()] = e.sig_count;
+      }
+
+      if (data.leaderboard.length === 0 && liveData.filter(e => e.sig_count > 0).length === 0) {
         el.innerHTML = '<div class="empty">No data yet</div>';
         return;
       }
-      el.innerHTML = data.leaderboard.map(e => {
+
+      // Merge leaderboard entries with live counts
+      const entries = data.leaderboard.map(e => ({
+        ...e,
+        live_sig_count: liveByName[e.full_name.toLowerCase()] || 0,
+      }));
+
+      // Also add anyone with a live count who's not on the DB leaderboard
+      const knownNames = new Set(entries.map(e => e.full_name.toLowerCase()));
+      for (const live of liveData) {
+        if (!knownNames.has(live.full_name.toLowerCase()) && live.sig_count > 0) {
+          entries.push({ full_name: live.full_name, rank: '—', valid_sigs: 0, total_hours: 0, validity_rate: 0, sigs_per_hour: 0, tier_label: '—', is_clocked_in: false, live_sig_count: live.sig_count });
+        }
+      }
+
+      const tierBadge = {
+        'Top Performer': 'badge-green', 'Gold': 'badge-orange', 'Silver': 'badge-gray',
+        'Bronze': 'badge-orange', 'Starting': 'badge-gray', 'No shifts': 'badge-gray', '—': 'badge-gray',
+      };
+
+      el.innerHTML = entries.map(e => {
         const rankClass = e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : '';
-        const tierBadge = {
-          'Top Performer': 'badge-green', 'Gold': 'badge-orange', 'Silver': 'badge-gray',
-          'Bronze': 'badge-orange', 'Starting': 'badge-gray', 'No shifts': 'badge-gray'
-        }[e.tier_label] || 'badge-gray';
+        const liveBadge = e.live_sig_count > 0
+          ? `<span class="badge badge-blue" style="margin-left:6px">${e.live_sig_count.toLocaleString()} live</span>`
+          : '';
         return `<div class="lb-card">
           <div class="lb-rank ${rankClass}">#${e.rank}</div>
-          <div>
-            <div class="lb-name">${e.full_name} ${e.is_clocked_in ? '<span class="clocked-dot in" style="width:7px;height:7px"></span>' : ''}</div>
-            <div class="lb-stats">${e.total_hours.toFixed(1)}h · ${fmtPct(e.validity_rate)} valid · ${e.sigs_per_hour.toFixed(1)} sig/h</div>
-            <span class="badge ${tierBadge}" style="margin-top:4px">${e.tier_label}</span>
+          <div style="flex:1;min-width:0">
+            <div class="lb-name">${e.full_name} ${e.is_clocked_in ? '<span class="clocked-dot in" style="width:7px;height:7px"></span>' : ''}${liveBadge}</div>
+            <div class="lb-stats">${e.total_hours > 0 ? e.total_hours.toFixed(1)+'h · '+fmtPct(e.validity_rate)+' valid · '+e.sigs_per_hour.toFixed(1)+' sig/h' : 'No shifts logged'}</div>
+            <span class="badge ${tierBadge[e.tier_label] || 'badge-gray'}" style="margin-top:4px">${e.tier_label}</span>
           </div>
           <div class="lb-sigs">
             <div class="num">${e.valid_sigs.toLocaleString()}</div>

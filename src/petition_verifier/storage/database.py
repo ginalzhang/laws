@@ -203,6 +203,13 @@ class PayrollRecordRow(Base):
     calculated_at    = Column(DateTime, default=datetime.utcnow)
 
 
+class LiveSigCountRow(Base):
+    __tablename__ = "live_sig_counts"
+    worker_id  = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    sig_count  = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AppSettingRow(Base):
     __tablename__ = "app_settings"
     key   = Column(String, primary_key=True)
@@ -1004,6 +1011,27 @@ class Database:
             for p in pins:
                 session.expunge(p)
             return pins
+
+    def upsert_live_sig_count(self, worker_id: int, count: int) -> None:
+        with self._Session() as session:
+            row = session.query(LiveSigCountRow).filter(LiveSigCountRow.worker_id == worker_id).first()
+            if row:
+                row.sig_count = count
+                row.updated_at = datetime.utcnow()
+            else:
+                session.add(LiveSigCountRow(worker_id=worker_id, sig_count=count))
+            session.commit()
+
+    def get_all_live_sig_counts(self) -> list:
+        with self._Session() as session:
+            rows = session.query(LiveSigCountRow).all()
+            result = [{"worker_id": r.worker_id, "sig_count": r.sig_count} for r in rows]
+            return result
+
+    def get_live_sig_count(self, worker_id: int) -> int:
+        with self._Session() as session:
+            row = session.query(LiveSigCountRow).filter(LiveSigCountRow.worker_id == worker_id).first()
+            return row.sig_count if row else 0
 
     def get_setting(self, key: str, default: str = "") -> str:
         try:
