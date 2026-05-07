@@ -49,7 +49,7 @@ app  = FastAPI(title="Petition Verifier", version="0.2.0")
 # Permanent accounts — recreated/updated on every startup so role/password stay correct.
 _PERMANENT_USERS = [
     {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss", "full_name": "arianafan2000"},
-    {"email": "evan@app.local",          "password": "evan",          "role": "evan", "full_name": "Evan"},
+    {"email": "evan@app.local",          "password": "evan",          "role": "evan", "full_name": "evann"},
 ]
 
 @app.on_event("startup")
