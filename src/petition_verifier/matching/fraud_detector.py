@@ -381,14 +381,36 @@ class FraudAnalyzer:
         results: list[LineFraudResult],
         extracted: list[ExtractedSignature],
     ) -> None:
+        by_line = {r.line_number: r for r in results}
+
+        # Claude backend: use visual handwriting assessment directly
+        claude_pairs: set[tuple[int, int]] = set()
+        for e in extracted:
+            if e.same_handwriting_as:
+                for other_ln in e.same_handwriting_as:
+                    pair = (min(e.line_number, other_ln), max(e.line_number, other_ln))
+                    claude_pairs.add(pair)
+
+        for ln_a, ln_b in claude_pairs:
+            desc = (
+                f"Handwriting on lines {ln_a} and {ln_b} appears visually identical "
+                f"— likely written by the same person"
+            )
+            if ln_a in by_line:
+                _add_if_missing(by_line[ln_a], SAME_HANDWRITING, desc, [ln_b])
+            if ln_b in by_line:
+                _add_if_missing(by_line[ln_b], SAME_HANDWRITING, desc, [ln_a])
+
+        if claude_pairs:
+            return  # Claude assessment takes precedence over pixel vectors
+
+        # Vision backend fallback: cosine similarity on pixel density vectors
         import math
         vecs = {e.line_number: e.handwriting_vector for e in extracted if e.handwriting_vector}
         if len(vecs) < 2:
             return
 
         line_nums = list(vecs.keys())
-        by_line   = {r.line_number: r for r in results}
-
         for i in range(len(line_nums)):
             for j in range(i + 1, len(line_nums)):
                 a, b = vecs[line_nums[i]], vecs[line_nums[j]]

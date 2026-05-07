@@ -54,4 +54,13 @@ def get_processor(backend: str | None = None) -> BasePDFProcessor:
         from .vision import VisionProcessor
         return VisionProcessor()
 
-    raise ValueError(f"Unknown OCR_BACKEND: {backend!r}. Use 'tesseract', 'vision', or 'reducto'.")
+    if backend == "claude":
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            raise EnvironmentError(
+                "OCR_BACKEND=claude but ANTHROPIC_API_KEY is not set.\n"
+                "Add it to your .env file."
+            )
+        from .claude_extractor import ClaudeProcessor
+        return ClaudeProcessor()
+
+    raise ValueError(f"Unknown OCR_BACKEND: {backend!r}. Use 'tesseract', 'vision', 'reducto', or 'claude'.")

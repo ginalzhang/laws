@@ -35,6 +35,9 @@ class ExtractedSignature(BaseModel):
     # Grayscale grid-cell density vector of the handwritten content area.
     # Populated by the Vision backend for same-handwriting fraud detection.
     handwriting_vector: Optional[list] = None
+    # Row numbers on the same page that appear to share the same handwriting.
+    # Populated by the Claude backend directly from visual assessment.
+    same_handwriting_as: Optional[list[int]] = None
 
 
 class NormalizedSignature(BaseModel):

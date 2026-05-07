@@ -19,3 +19,4 @@ pillow-heif>=0.16.0
 google-cloud-vision>=3.0.0
 pdf2image>=1.16.0
 pytesseract>=0.3.10
+anthropic>=0.40.0
