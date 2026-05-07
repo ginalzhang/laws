@@ -184,14 +184,7 @@ def _find_print_name_anchors(words: list[_Word]) -> list[_Word]:
 
 
 def _is_vision_block_format(words: list[_Word]) -> bool:
-    if len(_find_print_name_anchors(words)) >= 2:
-        return True
-    # Also treat as block format when there are multiple Signature: or
-    # Residence labels — Vision sometimes misses "Print"/"Name" pairs on
-    # photographed petitions but reliably reads these other labels.
-    sig_count = sum(1 for w in words if re.match(r"^signature:?$", w.text, re.I))
-    res_count = sum(1 for w in words if re.match(r"^residence$",   w.text, re.I))
-    return sig_count >= 2 or res_count >= 2
+    return len(_find_print_name_anchors(words)) >= 2
 
 
 def _find_grid_top(words: list[_Word]) -> Optional[int]:
