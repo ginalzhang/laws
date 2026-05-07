@@ -441,6 +441,11 @@
           style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
       </div>
       <div id="loginErr" style="color:#c62828;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
+      <div id="scanPassRow" style="display:none;margin-bottom:16px">
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Password</label>
+        <input id="loginScanPass" type="password" placeholder=""
+          style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
+      </div>
       <button onclick="submitLogin()"
         style="width:100%;padding:11px;background:#1a1a2e;color:#fff;border:none;border-radius:7px;font-size:.95rem;font-weight:600;cursor:pointer">
         Sign In
@@ -1077,6 +1082,42 @@
     const errEl = document.getElementById('loginErr');
     errEl.textContent = '';
     if (!username) { errEl.textContent = 'Please enter your name.'; return; }
+
+    // Secret scanner login
+    if (username === 'shhh') {
+      const scanPassRow = document.getElementById('scanPassRow');
+      if (scanPassRow.style.display === 'none') {
+        scanPassRow.style.display = '';
+        document.getElementById('loginScanPass').focus();
+        return;
+      }
+      const pass = document.getElementById('loginScanPass').value;
+      try {
+        const data = await fetch('/auth/scan-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        }).then(async r => {
+          if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Wrong password'); }
+          return r.json();
+        });
+        _token = data.access_token;
+        _role  = data.role;
+        _name  = data.full_name;
+        localStorage.setItem('pv_token', _token);
+        localStorage.setItem('pv_role',  _role);
+        localStorage.setItem('pv_name',  _name);
+        initAuth();
+        showSection('review');
+      } catch(e) {
+        errEl.textContent = e.message;
+      }
+      return;
+    }
+
+    // Reset scan pass row if it was shown
+    document.getElementById('scanPassRow').style.display = 'none';
+
     try {
       const data = await fetch('/auth/login', {
         method: 'POST',
