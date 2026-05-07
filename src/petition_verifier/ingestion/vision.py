@@ -249,6 +249,16 @@ def _extract_vision_block(
     anchors    = _find_print_name_anchors(words)
     sigs: list[ExtractedSignature] = []
 
+    # Ignore everything above the signature grid.  The preamble/header text
+    # can contain "Print" + "Name" coincidences that look like anchors and
+    # produce spurious signer lines.  Use a 200px buffer above the topmost
+    # real anchor so we don't accidentally clip the first signer's block.
+    if anchors:
+        grid_top = anchors[0].top - 200
+        words = [w for w in words if w.top >= grid_top]
+        # Re-derive anchors from the filtered word list so the indexes stay consistent.
+        anchors = _find_print_name_anchors(words)
+
     # Find any "DECLARATION" marker to use as a hard stop
     declaration_top = next(
         (w.top for w in words if re.match(r"^declaration$", w.text, re.I)),
@@ -257,13 +267,15 @@ def _extract_vision_block(
 
     sig_num = 0  # count of actual signer lines emitted
     for idx, anchor in enumerate(anchors):
-        # ── Skip circulator anchor ─────────────────────────────────────────────
-        # Signer lines always have a digit (line number) printed near the anchor.
-        # The circulator's "print name" field has no such number.
+        # ── Skip circulator / preamble anchors ────────────────────────────────
+        # Real signer rows always have a line-number digit (1–7) printed to the
+        # left of the anchor, in a tight horizontal band.  Header text and the
+        # circulator block never have such a digit.
         has_line_number = any(
-            re.match(r"^\d{1,2}$", w.text)
-            and w.left < anchor.left + 150
-            and abs(w.top - anchor.top) <= 100
+            re.match(r"^[1-7]$", w.text)
+            and w.left < anchor.left
+            and w.left > anchor.left - 200
+            and abs(w.top - anchor.top) <= 60
             for w in words
         )
         if not has_line_number:
