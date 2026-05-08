@@ -83,6 +83,14 @@
     .lb-sigs { font-size: .95rem; font-weight: 700; color: #0a84ff; }
     .lb-empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
 
+    .team-rank { font-size: .78rem; color: #8e8e93; width: 22px; flex-shrink: 0; text-align: center; font-weight: 600; }
+    .team-rank.top { color: #ff9f0a; }
+    .team-info { flex: 1; }
+    .team-name-row { font-size: .9rem; font-weight: 600; }
+    .team-name-row .my-tag { font-size: .68rem; font-weight: 600; color: #30d158; background: #e0f9ea; padding: 1px 6px; border-radius: 10px; margin-left: 6px; }
+    .team-mgr  { font-size: .72rem; color: #8e8e93; margin-top: 1px; }
+    .team-sigs { font-size: .95rem; font-weight: 700; color: #30d158; }
+
     .logout-link { text-align: center; font-size: .8rem; color: #8e8e93; cursor: pointer; padding: 4px; }
 
     /* ── Sig entry modal ─────────────────────────────────────────────────────── */
@@ -231,6 +239,16 @@
         <div class="last-update" id="lbUpdated"></div>
       </div>
       <div class="lb-list" id="lbList">
+        <div class="lb-empty">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card" id="teamCard" style="display:none">
+      <div class="card-header">
+        <div class="card-title">🏆 Team Standings</div>
+        <div class="last-update" id="teamUpdated"></div>
+      </div>
+      <div class="lb-list" id="teamList">
         <div class="lb-empty">Loading…</div>
       </div>
     </div>
@@ -585,6 +603,32 @@
       }
     }
 
+    // ── Team leaderboard ──────────────────────────────────────────────────────
+    async function loadTeamLeaderboard() {
+      try {
+        const teams = await api('/teams/leaderboard');
+        const card  = document.getElementById('teamCard');
+        const el    = document.getElementById('teamList');
+        if (!teams.length) { card.style.display = 'none'; return; }
+        card.style.display = '';
+        el.innerHTML = teams.map((t, i) => {
+          const rank  = i + 1;
+          const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+          const isMyTeam = t.members.some(m => m.id === userId);
+          return `<div class="lb-row${isMyTeam ? ' me' : ''}">
+            <div class="team-rank${rank <= 3 ? ' top' : ''}">${medal}</div>
+            <div class="team-info">
+              <div class="team-name-row">${t.name}${isMyTeam ? '<span class="my-tag">your team</span>' : ''}</div>
+              <div class="team-mgr">${t.manager_name ? 'Led by ' + t.manager_name : ''} · ${t.member_count} member${t.member_count !== 1 ? 's' : ''}</div>
+            </div>
+            <div class="team-sigs">${t.total_sigs.toLocaleString()}</div>
+          </div>`;
+        }).join('');
+        document.getElementById('teamUpdated').textContent =
+          new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      } catch(e) { /* silently hide if no teams */ }
+    }
+
     function logout() { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; }
 
     document.getElementById('sigOverlay').addEventListener('click', (e) => {
@@ -621,7 +665,9 @@
     initMyCount();
     initMyShift();
     loadLeaderboard();
+    loadTeamLeaderboard();
     setInterval(loadLeaderboard, 30000);
+    setInterval(loadTeamLeaderboard, 60000);
     setInterval(updatePaceDisplay, 60000);
   </script>
 </body>

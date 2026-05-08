@@ -121,6 +121,7 @@ class UserRow(Base):
     hourly_wage   = Column(Float, default=25.0)  # customizable per worker
     is_active     = Column(Boolean, default=True, server_default="true")
     created_at    = Column(DateTime, default=datetime.utcnow)
+    team_id       = Column(Integer, ForeignKey("teams.id"), nullable=True)
 
 
 class ShiftRow(Base):
@@ -216,6 +217,14 @@ class AppSettingRow(Base):
     value = Column(String, nullable=False, default="")
 
 
+class TeamRow(Base):
+    __tablename__ = "teams"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    name       = Column(String, nullable=False)
+    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ── Signature Review Center ───────────────────────────────────────────────────
 
 class PacketRow(Base):
@@ -280,6 +289,13 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
         execution_options={"prepared_statement_cache_size": 0},
     ) if is_postgres else create_engine(url, echo=False)
     Base.metadata.create_all(engine)
+    # Migrate: add team_id to users if the column doesn't exist yet
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN team_id INTEGER"))
+            conn.commit()
+        except Exception:
+            pass
     return sessionmaker(bind=engine)
 
 
@@ -1275,6 +1291,99 @@ class Database:
                     n += 1
             session.commit()
             return n
+
+    # ── Teams ─────────────────────────────────────────────────────────────────
+
+    def create_team(self, name: str, manager_id: int) -> int:
+        with self._Session() as session:
+            team = TeamRow(name=name, manager_id=manager_id)
+            session.add(team)
+            session.commit()
+            session.refresh(team)
+            return team.id
+
+    def get_team(self, team_id: int):
+        with self._Session() as session:
+            t = session.query(TeamRow).filter_by(id=team_id).first()
+            if t:
+                session.expunge(t)
+            return t
+
+    def get_team_by_manager(self, manager_id: int):
+        with self._Session() as session:
+            t = session.query(TeamRow).filter_by(manager_id=manager_id).first()
+            if t:
+                session.expunge(t)
+            return t
+
+    def set_user_team(self, user_id: int, team_id) -> None:
+        with self._Session() as session:
+            u = session.query(UserRow).filter_by(id=user_id).first()
+            if u:
+                u.team_id = team_id
+                session.commit()
+
+    def get_team_detail(self, team_id: int) -> dict | None:
+        with self._Session() as session:
+            team = session.query(TeamRow).filter_by(id=team_id).first()
+            if not team:
+                return None
+            members = session.query(UserRow).filter_by(team_id=team_id).all()
+            sig_counts = {r.worker_id: r.sig_count for r in session.query(LiveSigCountRow).all()}
+            manager = session.query(UserRow).filter_by(id=team.manager_id).first() if team.manager_id else None
+            return {
+                "id":           team.id,
+                "name":         team.name,
+                "manager_id":   team.manager_id,
+                "manager_name": manager.full_name if manager else "",
+                "total_sigs":   sum(sig_counts.get(m.id, 0) for m in members),
+                "members": [
+                    {"id": m.id, "full_name": m.full_name, "role": m.role,
+                     "sig_count": sig_counts.get(m.id, 0)}
+                    for m in members
+                ],
+            }
+
+    def get_team_leaderboard(self) -> list[dict]:
+        with self._Session() as session:
+            teams    = session.query(TeamRow).all()
+            sig_counts = {r.worker_id: r.sig_count for r in session.query(LiveSigCountRow).all()}
+            result = []
+            for team in teams:
+                members = session.query(UserRow).filter_by(team_id=team.id).all()
+                total   = sum(sig_counts.get(m.id, 0) for m in members)
+                manager = session.query(UserRow).filter_by(id=team.manager_id).first() if team.manager_id else None
+                result.append({
+                    "id":           team.id,
+                    "name":         team.name,
+                    "manager_name": manager.full_name if manager else "",
+                    "manager_id":   team.manager_id,
+                    "member_count": len(members),
+                    "total_sigs":   total,
+                    "members": [
+                        {"id": m.id, "full_name": m.full_name, "role": m.role,
+                         "sig_count": sig_counts.get(m.id, 0)}
+                        for m in members
+                    ],
+                })
+            result.sort(key=lambda t: t["total_sigs"], reverse=True)
+            return result
+
+    def get_unassigned_workers(self) -> list:
+        with self._Session() as session:
+            users = (
+                session.query(UserRow)
+                .filter(
+                    UserRow.team_id.is_(None),
+                    UserRow.is_active == True,
+                    UserRow.role.in_(["petitioner", "worker", "office_worker"]),
+                )
+                .order_by(UserRow.full_name)
+                .all()
+            )
+            for u in users:
+                session.expunge(u)
+            return users
 
     def get_total_valid_sigs(self) -> int:
         with self._Session() as session:

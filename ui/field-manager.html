@@ -271,6 +271,15 @@
 
   <div class="content">
 
+    <!-- My Team -->
+    <div class="card" id="myTeamCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0" id="teamCardTitle">My Team</div>
+        <button id="teamActionBtn" onclick="teamAction()" style="padding:7px 14px;border:none;border-radius:10px;background:#0a84ff;color:#fff;font-size:.82rem;font-weight:600;font-family:inherit;cursor:pointer">+ Create</button>
+      </div>
+      <div id="teamMemberList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
+    </div>
+
     <!-- Quick actions -->
     <div class="action-row">
       <button class="action-btn btn-blue" id="sigBtn" onclick="openSigSheet()">
@@ -417,6 +426,36 @@
     </div>
   </div>
 
+  <!-- Create Team Modal -->
+  <div class="fm-modal-overlay" id="fmCreateTeamModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmCreateTeamModal')">✕</span>
+      <div class="fm-modal-title">Create Your Team</div>
+      <div class="fm-form-group">
+        <label>Team Name *</label>
+        <input type="text" id="fmTeamName" placeholder="e.g. Team East Bay">
+      </div>
+      <div class="fm-modal-err" id="fmTeamErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmCreateTeamModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" id="fmTeamSubmitBtn" onclick="submitCreateTeam()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Team Member Modal -->
+  <div class="fm-modal-overlay" id="fmAddMemberModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddMemberModal')">✕</span>
+      <div class="fm-modal-title">Add Member</div>
+      <div id="fmUnassignedList" style="max-height:280px;overflow-y:auto;margin-bottom:12px"><div class="empty">Loading…</div></div>
+      <div class="fm-modal-err" id="fmMemberErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddMemberModal')">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Worker Modal -->
   <div class="fm-modal-overlay" id="fmAddWorkerModal">
     <div class="fm-modal">
@@ -432,7 +471,6 @@
           <option value="petitioner">Petitioner</option>
           <option value="worker">Worker (general)</option>
           <option value="field_manager">Field Manager</option>
-          <option value="office_worker">Office Worker</option>
         </select>
       </div>
       <div class="fm-form-group">
@@ -1061,6 +1099,121 @@
       window.location.href = '/';
     }
 
+    // ── Team ─────────────────────────────────────────────────────────────────
+    let _myTeamId = null;
+
+    async function loadMyTeam() {
+      try {
+        const team = await api('/teams/mine');
+        const listEl = document.getElementById('teamMemberList');
+        const btn    = document.getElementById('teamActionBtn');
+        const title  = document.getElementById('teamCardTitle');
+
+        if (!team) {
+          title.textContent = 'My Team';
+          btn.textContent   = '+ Create';
+          listEl.innerHTML  = '<div class="empty" style="padding:12px 0">No team yet — create one to get started</div>';
+          return;
+        }
+        _myTeamId = team.id;
+        title.textContent = team.name;
+        btn.textContent   = '+ Add Member';
+
+        if (!team.members.length) {
+          listEl.innerHTML = '<div class="empty" style="padding:12px 0">No members yet — tap Add Member</div>';
+          return;
+        }
+        listEl.innerHTML = team.members.map(m => `
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:.5px solid #f2f2f7">
+            <div style="flex:1">
+              <div style="font-size:.88rem;font-weight:600">${m.full_name}</div>
+              <div style="font-size:.72rem;color:#8e8e93">${m.role}</div>
+            </div>
+            <div style="font-size:.88rem;font-weight:700;color:#0a84ff">${m.sig_count} sigs</div>
+            <button onclick="removeMember(${m.id})" style="border:none;background:none;color:#ff3b30;font-size:.8rem;font-weight:600;cursor:pointer;padding:4px 6px">✕</button>
+          </div>`).join('');
+      } catch(e) {
+        document.getElementById('teamMemberList').innerHTML = '<div class="empty">Could not load team</div>';
+      }
+    }
+
+    function teamAction() {
+      if (_myTeamId) openAddMember();
+      else openCreateTeam();
+    }
+
+    function openCreateTeam() {
+      document.getElementById('fmTeamName').value = '';
+      document.getElementById('fmTeamErr').style.display = 'none';
+      document.getElementById('fmTeamSubmitBtn').disabled = false;
+      document.getElementById('fmCreateTeamModal').classList.add('open');
+      setTimeout(() => document.getElementById('fmTeamName').focus(), 80);
+    }
+
+    async function submitCreateTeam() {
+      const name  = document.getElementById('fmTeamName').value.trim();
+      const errEl = document.getElementById('fmTeamErr');
+      const btn   = document.getElementById('fmTeamSubmitBtn');
+      errEl.style.display = 'none';
+      if (!name) { errEl.textContent = 'Team name required.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const res = await api('/teams', { method: 'POST', body: JSON.stringify({ name }) });
+        _myTeamId = res.id;
+        closeFMModal('fmCreateTeamModal');
+        loadMyTeam();
+      } catch(e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Create';
+      }
+    }
+
+    async function openAddMember() {
+      document.getElementById('fmMemberErr').style.display = 'none';
+      document.getElementById('fmAddMemberModal').classList.add('open');
+      const listEl = document.getElementById('fmUnassignedList');
+      listEl.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const workers = await api('/teams/unassigned');
+        if (!workers.length) {
+          listEl.innerHTML = '<div class="empty">No unassigned workers</div>';
+          return;
+        }
+        listEl.innerHTML = workers.map(w => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:.5px solid #f2f2f7">
+            <div style="flex:1">
+              <div style="font-size:.9rem;font-weight:600">${w.full_name}</div>
+              <div style="font-size:.72rem;color:#8e8e93">${w.role}</div>
+            </div>
+            <button onclick="addMember(${w.id},this)" style="padding:6px 14px;border:none;border-radius:8px;background:#0a84ff;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer">Add</button>
+          </div>`).join('');
+      } catch(e) {
+        listEl.innerHTML = '<div class="empty">Could not load workers</div>';
+      }
+    }
+
+    async function addMember(userId, btn) {
+      btn.disabled = true; btn.textContent = '✓';
+      try {
+        await api(`/teams/${_myTeamId}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+        btn.closest('div[style]').style.opacity = '.4';
+        loadMyTeam();
+      } catch(e) {
+        document.getElementById('fmMemberErr').textContent = e.message;
+        document.getElementById('fmMemberErr').style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Add';
+      }
+    }
+
+    async function removeMember(userId) {
+      if (!_myTeamId) return;
+      try {
+        await api(`/teams/${_myTeamId}/members/${userId}`, { method: 'DELETE' });
+        loadMyTeam();
+      } catch(e) { setMsg(e.message, 'error'); }
+    }
+
     // ── Workers ───────────────────────────────────────────────────────────────
     async function loadWorkers() {
       try {
@@ -1113,6 +1266,7 @@
     refresh();
     loadSchedule();
     loadWorkers();
+    loadMyTeam();
     setInterval(refresh, 30000);
   </script>
 </body>
