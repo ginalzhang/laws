@@ -31,30 +31,31 @@ from .tesseract import DPI, IMAGE_SUFFIXES
 
 
 _PROMPT = """\
-This is a California initiative petition signature sheet. The form has numbered \
-rows (1–8) where registered voters sign. Each row has columns for: \
-Signature | Print Name | Residence Address | City | Zip | Date.
+This is a California initiative petition signature sheet photographed with a phone camera.
 
-For each FILLED row (skip completely blank rows) extract these fields:
-  line            — the printed row number (integer 1–8)
-  name            — handwritten name in the "Print Name" column
-  address         — handwritten street address (number + street name only, no city/zip)
-  city            — handwritten city
+Layout of the page:
+• Large printed header at the top (ballot title, Official Top Funders box, Notice to Public) — IGNORE.
+• Numbered signer rows 1–7 in the middle. Each row spans TWO physical lines:
+    Top line:    [row#]  Print Name: ___________  Residence Address ONLY: ___________
+    Bottom line:          Signature: ___________  City: ___________  Zip: ___________
+• "Declaration of Circulator" section at the bottom — IGNORE.
+
+For each FILLED row (skip completely blank rows) extract:
+  line            — the printed row number (integer 1–7)
+  name            — handwritten text written after the "Print Name:" label
+  address         — handwritten street address after "Residence Address ONLY:" (number + street, no city/zip)
+  city            — handwritten text after "City:" label
   zip             — handwritten 5-digit zip code (digits only, e.g. "90001")
-  date            — handwritten date as written
-  has_signature   — true if there is handwritten ink in the Signature column, false if blank
-  same_handwriting_as — list of OTHER row numbers whose handwriting looks \
-identical to this row (strong fraud signal). Use [] if this row looks unique.
+  has_signature   — true if there is handwritten ink in the Signature area, false if blank
+  same_handwriting_as — list of OTHER row numbers whose handwriting looks identical (fraud signal). Use [].
 
 Rules:
-• Ignore ALL printed text at the top of the page (ballot title / petition text).
-• Ignore the "Declaration of Circulator" section at the bottom.
-• Only extract the numbered signer rows in the middle grid.
-• Use empty string "" for any field that is blank or unreadable.
+• Extract ONLY handwritten content — ignore all printed labels and instructions.
+• Use "" for any field that is blank or unreadable.
+• A colored sticker covering the county field is normal — ignore it.
 
 Return ONLY valid JSON — no markdown fences, no explanation:
-[{"line":1,"name":"Jane Smith","address":"123 Main St","city":"Los Angeles",\
-"zip":"90001","date":"1/15/25","has_signature":true,"same_handwriting_as":[]},...]
+[{"line":1,"name":"Jane Smith","address":"123 Main St","city":"Los Angeles","zip":"90001","has_signature":true,"same_handwriting_as":[]},...]
 
 If nothing is filled in, return: []"""
 
