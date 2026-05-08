@@ -2187,12 +2187,16 @@
         el.innerHTML = '<div class="empty">No projects yet</div>';
         return;
       }
-      // Get all worker project assignments
+      // Get all worker project assignments — fetch in parallel, was N sequential awaits
       const assignments = {};
-      for (const w of workers) {
-        const wps = await api(`/workers/${w.id}/projects`).catch(() => []);
-        wps.forEach(wp => assignments[wp.project_id] = w.full_name);
-      }
+      const wkrProjects = await Promise.all(
+        workers.map(w =>
+          api(`/workers/${w.id}/projects`).catch(() => []).then(wps => [w, wps])
+        )
+      );
+      wkrProjects.forEach(([w, wps]) => {
+        wps.forEach(wp => { assignments[wp.project_id] = w.full_name; });
+      });
       el.innerHTML = `<table><thead><tr><th>Project ID</th><th>County</th><th>Approved</th><th>Total Lines</th><th>Assigned To</th><th>Created</th></tr></thead><tbody>
         ${projects.map(p => `<tr>
           <td><strong>${p.id}</strong></td>
