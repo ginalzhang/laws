@@ -54,6 +54,14 @@ async def all_reflections(user=Depends(require_manager)):
     return result
 
 
+@router.delete("/{reflection_id}")
+async def delete_reflection(reflection_id: int, user=Depends(require_manager)):
+    deleted = db.delete_reflection(reflection_id)
+    if not deleted:
+        raise HTTPException(404, "Note not found")
+    return {"ok": True}
+
+
 def _fmt(r) -> dict:
     return {
         "id":            r.id,

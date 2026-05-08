@@ -1446,6 +1446,21 @@
     }
 
     // ── Worker Notes (end-of-shift reflections) ───────────────────────────────
+    async function deleteNote(id, btn) {
+      btn.disabled = true;
+      try {
+        await api(`/reflections/${id}`, { method: 'DELETE' });
+        btn.closest('div[style*="border-bottom"]').remove();
+        const el = document.getElementById('workerNotesList');
+        if (!el.querySelector('div[style*="border-bottom"]')) {
+          el.innerHTML = '<div class="empty">No notes yet</div>';
+        }
+      } catch(e) {
+        btn.disabled = false;
+        setMsg(e.message, 'error');
+      }
+    }
+
     async function loadWorkerNotes() {
       const el = document.getElementById('workerNotesList');
       el.innerHTML = '<div class="empty">Loading…</div>';
@@ -1464,6 +1479,7 @@
                 <span style="font-size:.9rem;font-weight:700">${n.worker_name}</span>
                 ${goalBadge}
                 <span style="font-size:.75rem;color:#8e8e93;margin-left:auto">${timeStr}</span>
+                <button onclick="deleteNote(${n.id},this)" style="border:none;background:none;color:#ff3b30;font-size:.8rem;font-weight:600;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>
               </div>
               <div style="font-size:.82rem;color:#3c3c43;display:flex;gap:14px;flex-wrap:wrap;margin-bottom:4px">
                 <span><strong>${n.sigs_reported}</strong> sigs</span>

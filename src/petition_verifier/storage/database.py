@@ -1471,6 +1471,15 @@ class Database:
                 result.append(r)
             return result
 
+    def delete_reflection(self, reflection_id: int) -> bool:
+        with self._Session() as session:
+            row = session.query(ShiftReflectionRow).filter_by(id=reflection_id).first()
+            if not row:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
     def get_all_today_shifts(self, today_start: datetime) -> dict:
         """Return today's shifts for ALL workers in 1 query.
         Returns {worker_id: [ShiftRow, ...]}
