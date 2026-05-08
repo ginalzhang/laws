@@ -96,6 +96,7 @@ async def live_stats(user: dict = Depends(get_current_user)):
         if not u:
             continue
         result[worker_id] = {
+            "worker_id": worker_id,
             "full_name": u.full_name,
             "sig_count": count,
             "lat": None,
@@ -109,6 +110,7 @@ async def live_stats(user: dict = Depends(get_current_user)):
             result[worker_id]["lng"] = loc.get("lng")
         elif loc.get("lat") is not None:
             result[worker_id] = {
+                "worker_id": worker_id,
                 "full_name": loc.get("full_name", ""),
                 "sig_count": db_counts.get(worker_id, 0),
                 "lat": loc.get("lat"),
