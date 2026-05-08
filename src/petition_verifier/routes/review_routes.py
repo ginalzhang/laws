@@ -195,7 +195,6 @@ def _process_packet(packet_id: int, raw_path: Path) -> None:
 
 def _do_process(packet_id: int, raw_path: Path) -> None:
     import re as _re
-    import anthropic
     from PIL import Image
 
     # ── Load image ────────────────────────────────────────────────────────────
@@ -218,77 +217,74 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     # ── Fetch previous rows for the same page fingerprint ────────────────────
     prev_rows = db.get_prev_rows_for_fingerprint(fp, exclude_packet_id=packet_id)
 
-    # ── Claude Vision extraction (single call, no coordinate math) ────────────
-    from ..ingestion.claude_extractor import _to_base64_jpeg, _PROMPT
+    # ── Google Vision extraction — single call, 4-level fallback ─────────────
+    from ..ingestion.vision import (
+        _vision_words, _find_grid_top,
+        _extract_by_header_columns, _is_vision_block_format, _extract_vision_block,
+        _extract_by_line_numbers, _extract_vision_columns,
+    )
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    claude_rows: list[dict] = []
-    if api_key:
-        claude_client = anthropic.Anthropic(api_key=api_key)
-        resp = claude_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": _to_base64_jpeg(preprocessed),
-                        },
-                    },
-                    {"type": "text", "text": _PROMPT},
-                ],
-            }],
+    extracted_sigs = []
+    try:
+        words = _vision_words(preprocessed)
+
+        # Clip to signature grid: skip ballot header, stop at Declaration
+        grid_top = _find_grid_top(words)
+        decl_top = next(
+            (w.top for w in words if _re.match(r"^declaration$", w.text, _re.I)),
+            None,
         )
-        raw_text = resp.content[0].text.strip()
-        raw_text = _re.sub(r"^```(?:json)?\s*", "", raw_text)
-        raw_text = _re.sub(r"\s*```$", "", raw_text)
-        if raw_text.startswith("["):
-            try:
-                claude_rows = json.loads(raw_text)
-            except Exception:
-                claude_rows = []
+        if grid_top is not None:
+            words = [w for w in words if w.top >= grid_top]
+        if decl_top is not None:
+            words = [w for w in words if w.top < decl_top]
 
-    # ── Convert Claude rows to internal page_rows format ─────────────────────
+        # 4-level cascade (mirrors VisionProcessor.extract)
+        sigs = _extract_by_header_columns(words, preprocessed, 1, 1)
+        if not sigs and _is_vision_block_format(words):
+            sigs = _extract_vision_block(words, preprocessed, 1, 1)
+        if not sigs:
+            sigs = _extract_by_line_numbers(words, preprocessed, 1, 1)
+        if not sigs:
+            sigs = _extract_vision_columns(words, preprocessed, 1, 1)
+        extracted_sigs = sigs
+    except Exception:
+        extracted_sigs = []
+
+    # ── Convert ExtractedSignature → page_rows ────────────────────────────────
+    _zip_re = _re.compile(r"^\d{5}$")
+
+    def _split_addr(full: str):
+        """Split 'street, city, zip' into (street, city, zip)."""
+        parts = [p.strip() for p in full.split(",") if p.strip()]
+        zip_  = parts.pop() if parts and _zip_re.match(parts[-1]) else ""
+        city  = parts.pop() if len(parts) >= 2 else ""
+        return ", ".join(parts), city, zip_
+
     page_rows: list[dict] = []
-    for row in claude_rows:
-        if not isinstance(row, dict):
-            continue
-        name    = str(row.get("name",    "")).strip()
-        address = str(row.get("address", "")).strip()
-        city    = str(row.get("city",    "")).strip()
-        zip_    = str(row.get("zip",     "")).strip()
-        date    = str(row.get("date",    "")).strip()
-        has_sig = bool(row.get("has_signature", False))
-        try:
-            line_no = int(row.get("line", 0))
-        except (TypeError, ValueError):
-            line_no = 0
-        if not (1 <= line_no <= 8):
-            line_no = len(page_rows) + 1
-
-        valid_zip = bool(_re.match(r"^\d{5}$", zip_))
-        status = "blank" if (not name and not address) else "new_signature"
+    for sig in extracted_sigs:
+        street, city, zip_ = _split_addr(sig.raw_address or "")
+        valid_zip = bool(_zip_re.match(zip_))
+        name      = sig.raw_name or ""
+        status    = "blank" if (not name and not street) else "new_signature"
+        line_no   = max(1, len(page_rows) + 1)
 
         page_rows.append({
             "row_number":     line_no,
-            "name":           {"raw": name,    "normalized": name.upper(),    "ocr_confidence": "high"},
-            "street_address": {"raw": address, "normalized": address.upper(), "ocr_confidence": "high"},
-            "city":           {"raw": city,    "normalized": city.upper(),    "ocr_confidence": "high"},
-            "zip":            {"raw": zip_,    "normalized": zip_,            "valid_format": valid_zip},
-            "date":           {"raw": date,    "normalized": date,            "ocr_confidence": "high"},
-            "signature_present": has_sig,
+            "name":           {"raw": name,   "normalized": name.upper(),   "ocr_confidence": "high"},
+            "street_address": {"raw": street, "normalized": street.upper(), "ocr_confidence": "high"},
+            "city":           {"raw": city,   "normalized": city.upper(),   "ocr_confidence": "high"},
+            "zip":            {"raw": zip_,   "normalized": zip_,           "valid_format": valid_zip},
+            "date":           {"raw": sig.raw_date or "", "normalized": sig.raw_date or "", "ocr_confidence": "high"},
+            "signature_present": bool(sig.signature_present),
             "flags":          [],
             "status":         status,
             "row_fingerprint": "",
         })
 
-    # Fill any missing rows 1–8 as blank
+    # Fill any missing rows 1–7 as blank
     filled = {r["row_number"] for r in page_rows}
-    for i in range(1, 9):
+    for i in range(1, 8):
         if i not in filled:
             page_rows.append(_blank_row(i))
     page_rows.sort(key=lambda r: r["row_number"])
