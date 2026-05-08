@@ -376,6 +376,7 @@ let currentFilter  = 'all';
 let currentPage    = 1;
 const PAGE_SIZE    = 50;
 let editingLine    = null;
+let _projectsCache = [];
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
@@ -384,6 +385,7 @@ async function init() {
 
 async function refreshProjects() {
   const projects = await apiFetch('/projects');
+  _projectsCache = projects;
   const sel = document.getElementById('projectSelect');
   const prevVal = sel.value;
   sel.innerHTML = '<option value="">— Select project —</option>';
@@ -412,8 +414,8 @@ async function loadProject(id) {
   currentProject = id;
   currentPage    = 1;
 
-  const projects = await apiFetch('/projects');
-  const p = projects.find(x => x.id === id);
+  // Reuse the list refreshProjects() just fetched instead of re-hitting /projects
+  const p = _projectsCache.find(x => x.id === id);
   if (p) updateBanner(p);
 
   await loadPage();
@@ -645,6 +647,7 @@ async function submitReview() {
   );
   closeModal();
   const projects = await apiFetch('/projects');
+  _projectsCache = projects;
   const p = projects.find(x => x.id === currentProject);
   if (p) updateBanner(p);
   loadPage();
