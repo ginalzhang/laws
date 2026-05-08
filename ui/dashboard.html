@@ -2866,9 +2866,9 @@
       const pct     = lines.length ? Math.round(actioned / lines.length * 100) : 0;
       panel.innerHTML = `
         <h4>Signature Count</h4>
-        <div class="rc-findings-row"><span>New signatures</span>${_rcStatusBadge('new_signature').replace('>', `>${newSigs}`)}</div>
-        <div class="rc-findings-row"><span>Already counted</span>${_rcStatusBadge('already_counted').replace('>', `>${already}`)}</div>
-        ${rev ? `<div class="rc-findings-row"><span>Needs review</span>${_rcStatusBadge('changed_needs_review').replace('>', `>${rev}`)}</div>` : ''}
+        <div class="rc-findings-row"><span>New signatures</span><span style="font-weight:600">${newSigs} ${_rcStatusBadge('new_signature')}</span></div>
+        <div class="rc-findings-row"><span>Already counted</span><span style="font-weight:600">${already} ${_rcStatusBadge('already_counted')}</span></div>
+        ${rev ? `<div class="rc-findings-row"><span>Needs review</span><span style="font-weight:600">${rev} ${_rcStatusBadge('changed_needs_review')}</span></div>` : ''}
         <div style="border-top:.5px solid #f2f2f7;margin:10px 0"></div>
         <h4>Review Progress</h4>
         <div style="font-size:.82rem;color:#3c3c43;margin-bottom:6px">${actioned} / ${lines.filter(l=>l.row_status!=='blank').length} actioned</div>

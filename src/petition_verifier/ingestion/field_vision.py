@@ -308,9 +308,9 @@ def detect_table_bbox(pil_img: Image.Image) -> tuple[int, int, int, int]:
         raw_ys = [y for y, v in enumerate(proj) if v > threshold]
         ys = _cluster_ints(raw_ys, gap=8)
 
-        # The signature table starts after the header; find the first cluster
-        # of horizontal lines in the bottom 65% of the page.
-        grid_ys = [y for y in ys if y > h * 0.30]
+        # CA initiative petitions have a large header (top funders, notice to public).
+        # Signature table reliably starts in the bottom 45% of the page.
+        grid_ys = [y for y in ys if y > h * 0.50]
         if len(grid_ys) >= 3:
             table_top    = grid_ys[0]
             table_bottom = grid_ys[-1]
@@ -319,10 +319,10 @@ def detect_table_bbox(pil_img: Image.Image) -> tuple[int, int, int, int]:
     except ImportError:
         pass
 
-    # Fallback: ignore top 35%
+    # Fallback: ignore top 55%
     h, w = pil_img.height, pil_img.width
-    table_top = int(h * 0.35)
-    return 0, table_top, w, int(h * 0.58)
+    table_top = int(h * 0.55)
+    return 0, table_top, w, int(h * 0.40)
 
 
 def detect_rows(pil_img: Image.Image, table_bbox: tuple[int, int, int, int]) -> list[tuple[int, int]]:
