@@ -308,21 +308,23 @@ def detect_table_bbox(pil_img: Image.Image) -> tuple[int, int, int, int]:
         raw_ys = [y for y, v in enumerate(proj) if v > threshold]
         ys = _cluster_ints(raw_ys, gap=8)
 
-        # CA initiative petitions have a large header (top funders, notice to public).
-        # Signature table reliably starts in the bottom 45% of the page.
-        grid_ys = [y for y in ys if y > h * 0.50]
+        # CA initiative petitions have a large header (top funders, notice to public)
+        # plus an "All signers..." sub-header row at the top of the table.
+        # Signer rows reliably start in the bottom 42% of the page.
+        grid_ys = [y for y in ys if y > h * 0.55]
         if len(grid_ys) >= 3:
             table_top    = grid_ys[0]
-            table_bottom = grid_ys[-1]
+            # Stop before Declaration of Circulator (bottom ~10%)
+            table_bottom = min(grid_ys[-1], int(h * 0.88))
             return 0, table_top, w, table_bottom - table_top
 
     except ImportError:
         pass
 
-    # Fallback: ignore top 55%
+    # Fallback: signer rows occupy roughly 57-88% of page height
     h, w = pil_img.height, pil_img.width
-    table_top = int(h * 0.55)
-    return 0, table_top, w, int(h * 0.40)
+    table_top = int(h * 0.57)
+    return 0, table_top, w, int(h * 0.31)
 
 
 def detect_rows(pil_img: Image.Image, table_bbox: tuple[int, int, int, int]) -> list[tuple[int, int]]:
@@ -407,13 +409,16 @@ def detect_columns(pil_img: Image.Image, table_bbox: tuple[int, int, int, int]) 
 
 
 def _proportional_cols(width: int) -> dict[str, tuple[int, int]]:
+    # CA initiative petition format:
+    #   [row#] | [Print Name / Signature] | [Residence Address] | [City] | [Zip]
+    # No date column. Proportions measured from standard CA petition scans.
     bands = {
-        "sig":    (0.03, 0.15),
-        "name":   (0.15, 0.37),
-        "street": (0.37, 0.59),
-        "city":   (0.59, 0.73),
-        "zip":    (0.73, 0.83),
-        "date":   (0.83, 0.97),
+        "sig":    (0.07, 0.43),   # left section: signature (bottom half of row block)
+        "name":   (0.07, 0.43),   # left section: print name (top half of row block)
+        "street": (0.43, 0.69),   # middle: residence address
+        "city":   (0.69, 0.86),   # right-middle: city
+        "zip":    (0.86, 0.97),   # far right: zip
+        "date":   (0.94, 0.97),   # no date column → tiny edge area returns empty
     }
     return {name: (int(lo * width), int(hi * width)) for name, (lo, hi) in bands.items()}
 
