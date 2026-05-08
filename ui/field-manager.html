@@ -260,58 +260,6 @@
     .wd-num.zero { color: var(--surf-3); }
 
     /* ── Quick entry sheet ───────────────────────────────────────────────────── */
-    .qe-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,.45); backdrop-filter: blur(5px);
-      align-items: flex-end; justify-content: center; z-index: 1200;
-    }
-    .qe-overlay.open { display: flex; }
-    .qe-sheet {
-      background: #fff; border-radius: 22px 22px 0 0;
-      width: 100%; max-width: 480px;
-      padding-bottom: env(safe-area-inset-bottom);
-    }
-    .qe-top {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 18px 20px 14px; border-bottom: .5px solid #e5e5ea;
-    }
-    .qe-title  { font-size: 1rem; font-weight: 700; }
-    .qe-cancel { font-size: .95rem; color: #0a84ff; background: none; border: none; cursor: pointer; font-family: inherit; }
-    .qe-body   { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-    .qe-field  { display: flex; flex-direction: column; gap: 5px; }
-    .qe-field label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8e8e93; }
-    .qe-field input, .qe-field select {
-      width: 100%; padding: 13px 14px; border: 1.5px solid #e5e5ea; border-radius: 12px;
-      font-size: 1rem; font-family: inherit; background: #f9f9fb; outline: none; color: #1c1c1e;
-      -webkit-appearance: none; appearance: none;
-    }
-    .qe-field input:focus, .qe-field select:focus { border-color: #0a84ff; background: #fff; }
-    .qe-row    { display: flex; gap: 10px; }
-    .qe-row .qe-field { flex: 1; }
-    .qe-submit {
-      width: 100%; padding: 16px; border: none; border-radius: 14px;
-      background: #0a84ff; color: #fff; font-size: 1rem; font-weight: 700;
-      cursor: pointer; font-family: inherit; margin-top: 4px;
-    }
-    .qe-submit:active { opacity: .85; }
-    .qe-submit:disabled { opacity: .5; cursor: not-allowed; }
-    .qe-err { font-size: .82rem; color: #c62828; display: none; }
-
-    /* Quick entry trigger button in page */
-    .qe-btn {
-      width: 100%; padding: 16px 20px;
-      background: #fff; border: 1.5px solid #e5e5ea; border-radius: 16px;
-      display: flex; align-items: center; gap: 14px;
-      cursor: pointer; font-family: inherit; text-align: left;
-      box-shadow: 0 1px 4px rgba(0,0,0,.06);
-      transition: border-color .15s;
-    }
-    .qe-btn:active { background: #f2f2f7; }
-    .qe-btn .icon  { font-size: 1.5rem; flex-shrink: 0; }
-    .qe-btn .label { flex: 1; }
-    .qe-btn .label .title { font-size: .95rem; font-weight: 700; color: #000; display: block; }
-    .qe-btn .label .sub   { font-size: .78rem; color: #8e8e93; display: block; margin-top: 2px; }
-    .qe-btn .arrow { font-size: .85rem; color: #c7c7cc; }
   </style>
 </head>
 <body>
@@ -326,14 +274,25 @@
   <div class="content">
 
     <!-- Quick Entry -->
-    <button class="qe-btn" onclick="openQE()">
-      <span class="icon">⚡</span>
-      <span class="label">
-        <span class="title">Quick Entry</span>
-        <span class="sub">Log a worker's sigs + hours in one tap</span>
-      </span>
-      <span class="arrow">›</span>
-    </button>
+    <div class="card">
+      <div class="card-title" style="padding-bottom:6px">⚡ Quick Entry</div>
+      <div style="padding:0 16px 16px">
+        <p style="font-size:.78rem;color:#8e8e93;margin-bottom:10px">Dump your notes — one worker per line. E.g. <em>"Maria 9am-5pm 47 sigs"</em> or <em>"Carlos 4 hours 33 sigs"</em></p>
+        <textarea id="qeInput" rows="4"
+          placeholder="Maria 9am-5pm 47 sigs&#10;Carlos 4 hours 33 sigs&#10;John Apr 23 10am-3pm 20 signatures"
+          style="width:100%;padding:11px 12px;border:1.5px solid #e5e5ea;border-radius:12px;font-size:.88rem;font-family:inherit;resize:vertical;outline:none;background:#f9f9fb;color:#1c1c1e"
+          oninput="parseQE()"></textarea>
+        <div id="qePreview" style="display:none;margin-top:12px">
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8e8e93;margin-bottom:8px">Parsed — confirm before submitting</div>
+          <div id="qeRows"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button onclick="submitQE()" style="flex:1;padding:12px;border:none;border-radius:12px;background:#0a84ff;color:#fff;font-size:.9rem;font-weight:700;font-family:inherit;cursor:pointer">Submit all</button>
+            <button onclick="clearQE()" style="padding:12px 18px;border:none;border-radius:12px;background:#f2f2f7;color:#000;font-size:.9rem;font-weight:600;font-family:inherit;cursor:pointer">Clear</button>
+          </div>
+        </div>
+        <div id="qeMsg" style="margin-top:8px;font-size:.82rem"></div>
+      </div>
+    </div>
 
     <!-- My Team -->
     <div class="card" id="myTeamCard">
@@ -422,6 +381,15 @@
         <button class="nav-btn" onclick="nextWeek()">Next →</button>
       </div>
       <div id="fmScheduleGrid" style="overflow-x:auto;padding-bottom:8px"></div>
+    </div>
+
+    <!-- Worker Notes / End-of-Shift Reflections -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0">Worker Notes</div>
+        <button onclick="loadWorkerNotes()" style="padding:6px 12px;border:none;border-radius:8px;background:#f2f2f7;color:#3c3c43;font-size:.78rem;font-weight:600;font-family:inherit;cursor:pointer">↻ Refresh</button>
+      </div>
+      <div id="workerNotesList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
     </div>
 
     <div class="logout-link" onclick="logout()">Sign out</div>
@@ -577,39 +545,6 @@
           </button>
           <button class="mode-btn back" onclick="goBackToInput()">← Edit number</button>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Quick Entry Sheet -->
-  <div class="qe-overlay" id="qeOverlay">
-    <div class="qe-sheet">
-      <div class="qe-top">
-        <span class="qe-title">Quick Entry</span>
-        <button class="qe-cancel" onclick="closeQE()">Cancel</button>
-      </div>
-      <div class="qe-body">
-        <div class="qe-field">
-          <label>Worker name</label>
-          <input type="text" id="qeWorkerName" list="qeWorkerList" placeholder="Type a name…" autocomplete="off">
-          <datalist id="qeWorkerList"></datalist>
-        </div>
-        <div class="qe-row">
-          <div class="qe-field">
-            <label>Signatures</label>
-            <input type="number" id="qeSigs" min="0" max="9999" placeholder="0" inputmode="numeric">
-          </div>
-          <div class="qe-field">
-            <label>Hours worked</label>
-            <input type="number" id="qeHours" min="0.1" max="24" step="0.5" placeholder="e.g. 4" inputmode="decimal">
-          </div>
-        </div>
-        <div class="qe-field">
-          <label>Notes (optional)</label>
-          <input type="text" id="qeNotes" placeholder="Any notes on this entry…">
-        </div>
-        <div class="qe-err" id="qeErr"></div>
-        <button class="qe-submit" id="qeSubmitBtn" onclick="submitQE()">Log entry</button>
       </div>
     </div>
   </div>
@@ -1178,73 +1113,154 @@
     function closeFMModal(id) { document.getElementById(id).classList.remove('open'); }
 
     // ── Quick entry ───────────────────────────────────────────────────────────
-    let _allWorkers = [];
+    let _qeWorkers = [];
 
-    async function openQE() {
-      try {
-        if (!_allWorkers.length) _allWorkers = await api('/workers');
-        const dl = document.getElementById('qeWorkerList');
-        dl.innerHTML = _allWorkers
-          .filter(w => !['boss','admin','field_manager','evan'].includes(w.role))
-          .sort((a, b) => a.full_name.localeCompare(b.full_name))
-          .map(w => `<option value="${w.full_name}">`)
-          .join('');
-      } catch(e) {}
-      document.getElementById('qeWorkerName').value = '';
-      document.getElementById('qeSigs').value  = '';
-      document.getElementById('qeHours').value = '';
-      document.getElementById('qeNotes').value = '';
-      document.getElementById('qeErr').style.display = 'none';
-      document.getElementById('qeOverlay').classList.add('open');
-      setTimeout(() => document.getElementById('qeWorkerName').focus(), 80);
+    async function _ensureQEWorkers() {
+      if (!_qeWorkers.length) _qeWorkers = await api('/workers').catch(() => []);
     }
 
-    function closeQE() {
-      document.getElementById('qeOverlay').classList.remove('open');
+    function _parseTime(str, dateStr) {
+      let h, m = 0;
+      const isPM = /pm/i.test(str), isAM = /am/i.test(str);
+      const clean = str.replace(/[apm\s]/gi, '');
+      if (clean.includes(':')) { [h, m] = clean.split(':').map(Number); }
+      else { h = parseInt(clean); }
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      if (!isPM && !isAM && h > 0 && h < 8) h += 12;
+      return `${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`;
+    }
+
+    const _MONTH_MAP = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+      january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+
+    function _parseDate(text) {
+      const now = new Date();
+      const curYear = now.getFullYear();
+      const named = text.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b/i);
+      if (named) {
+        const mon = _MONTH_MAP[named[1].toLowerCase().slice(0,3)];
+        const day = parseInt(named[2]);
+        const year = named[3] ? parseInt(named[3]) : curYear;
+        return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      }
+      const slash = text.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+      if (slash) {
+        const mon = parseInt(slash[1]), day = parseInt(slash[2]);
+        if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+          let year = slash[3] ? parseInt(slash[3]) : curYear;
+          if (year < 100) year += 2000;
+          return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        }
+      }
+      return null;
+    }
+
+    function _parseLine(text, workers) {
+      const now2 = new Date();
+      const today = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}-${String(now2.getDate()).padStart(2,'0')}`;
+      const sigDate = _parseDate(text) || today;
+
+      let workerId = null, workerName = null;
+      const sorted = [...workers].sort((a,b) => b.full_name.length - a.full_name.length);
+      for (const w of sorted) {
+        if (text.toLowerCase().includes(w.full_name.toLowerCase())) {
+          workerId = w.id; workerName = w.full_name; break;
+        }
+      }
+      if (!workerId) return null;
+
+      let clockIn = null, clockOut = null;
+      const tm = text.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|-|through)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+      if (tm) { clockIn = _parseTime(tm[1], sigDate); clockOut = _parseTime(tm[2], sigDate); }
+
+      // Also parse "N hours" with no time range
+      if (!clockIn) {
+        const hm = text.match(/(\d+(?:\.\d+)?)\s*h(?:ours?)?/i);
+        if (hm) {
+          const hrs = parseFloat(hm[1]);
+          const out = new Date(); const inp = new Date(out.getTime() - hrs * 3600000);
+          const fmt = d => d.toISOString().slice(0,19);
+          clockIn = fmt(inp); clockOut = fmt(out);
+        }
+      }
+
+      let sigCount = null;
+      const sm = text.match(/(\d+)\s*(?:sigs?|signatures?)/i);
+      if (sm) sigCount = parseInt(sm[1]);
+
+      if (!clockIn && sigCount === null) return null;
+      return { workerId, workerName, clockIn, clockOut, sigCount, sigDate };
+    }
+
+    let _qeParsed = [];
+
+    async function parseQE() {
+      await _ensureQEWorkers();
+      const raw = document.getElementById('qeInput').value;
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      _qeParsed = lines.map(l => _parseLine(l, _qeWorkers)).filter(Boolean);
+
+      const preview = document.getElementById('qePreview');
+      const rowsEl  = document.getElementById('qeRows');
+      if (!_qeParsed.length) { preview.style.display = 'none'; return; }
+
+      rowsEl.innerHTML = _qeParsed.map((p, i) => {
+        const timeStr = p.clockIn
+          ? `${p.clockIn.split('T')[1].slice(0,5)} → ${(p.clockOut||'').split('T')[1]?.slice(0,5)||'?'}`
+          : '— no time —';
+        const hoursStr = p.clockIn && p.clockOut
+          ? ((new Date(p.clockOut) - new Date(p.clockIn)) / 3600000).toFixed(1) + ' hrs'
+          : '';
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f9f9fb;border-radius:10px;margin-bottom:6px;font-size:.85rem;flex-wrap:wrap">
+            <span style="font-weight:600;min-width:100px">${p.workerName}</span>
+            <span style="color:#777;font-size:.76rem">${p.sigDate}</span>
+            <span style="color:#555">${timeStr}${hoursStr ? ' <span style="color:#999;font-size:.76rem">'+hoursStr+'</span>' : ''}</span>
+            <span style="color:#2e7d32;font-weight:700;margin-left:auto">${p.sigCount != null ? p.sigCount + ' sigs' : ''}</span>
+          </div>`;
+      }).join('');
+      preview.style.display = 'block';
     }
 
     async function submitQE() {
-      const nameVal = document.getElementById('qeWorkerName').value.trim();
-      const sigs    = parseInt(document.getElementById('qeSigs').value, 10);
-      const hours   = parseFloat(document.getElementById('qeHours').value);
-      const notes   = document.getElementById('qeNotes').value.trim();
-      const errEl   = document.getElementById('qeErr');
-      errEl.style.display = 'none';
+      if (!_qeParsed.length) return;
+      const msgEl = document.getElementById('qeMsg');
+      msgEl.style.color = '#555';
+      msgEl.textContent = 'Submitting…';
+      let ok = 0; const errs = [];
 
-      if (!nameVal) { errEl.textContent = 'Enter a worker name.'; errEl.style.display = 'block'; return; }
-      if (isNaN(sigs) || sigs < 0) { errEl.textContent = 'Enter a valid signature count.'; errEl.style.display = 'block'; return; }
-      if (isNaN(hours) || hours <= 0) { errEl.textContent = 'Enter valid hours worked.'; errEl.style.display = 'block'; return; }
+      for (const p of _qeParsed) {
+        try {
+          if (p.clockIn && p.clockOut) {
+            await api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: p.workerId, clock_in: p.clockIn, clock_out: p.clockOut }) });
+            ok++;
+          }
+          if (p.sigCount != null) {
+            await api(`/stats/sig-count/${p.workerId}`, { method: 'POST', body: JSON.stringify({ count: p.sigCount }) });
+            ok++;
+          }
+        } catch(e) { errs.push(`${p.workerName}: ${e.message}`); }
+      }
 
-      // Match typed name to a known worker (case-insensitive)
-      const worker = _allWorkers.find(w => w.full_name.toLowerCase() === nameVal.toLowerCase());
-      if (!worker) { errEl.textContent = `No worker found named "${nameVal}".`; errEl.style.display = 'block'; return; }
-
-      const btn = document.getElementById('qeSubmitBtn');
-      btn.disabled = true;
-
-      const clockOut = new Date();
-      const clockIn  = new Date(clockOut.getTime() - hours * 3600000);
-      const fmt = d => d.toISOString().slice(0, 19);
-
-      try {
-        await Promise.all([
-          api(`/stats/sig-count/${worker.id}`, { method: 'POST', body: JSON.stringify({ count: sigs }) }),
-          api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: worker.id, clock_in: fmt(clockIn), clock_out: fmt(clockOut) }) }),
-        ]);
-        closeQE();
-        setMsg(`${worker.full_name}: ${sigs} sigs, ${hours}h logged`, 'success');
+      if (errs.length) {
+        msgEl.style.color = '#c62828';
+        msgEl.textContent = 'Errors: ' + errs.join(' | ');
+      } else {
+        msgEl.style.color = '#2e7d32';
+        msgEl.textContent = `Done — ${ok} entr${ok === 1 ? 'y' : 'ies'} saved.`;
+        clearQE();
         loadLeaderboard();
         loadSchedule();
-      } catch(e) {
-        errEl.textContent = e.message;
-        errEl.style.display = 'block';
       }
-      btn.disabled = false;
     }
 
-    document.getElementById('qeOverlay').addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeQE();
-    });
+    function clearQE() {
+      document.getElementById('qeInput').value = '';
+      document.getElementById('qePreview').style.display = 'none';
+      document.getElementById('qeMsg').textContent = '';
+      _qeParsed = [];
+    }
 
     async function refresh() {
       try {
@@ -1429,10 +1445,44 @@
       }
     }
 
+    // ── Worker Notes (end-of-shift reflections) ───────────────────────────────
+    async function loadWorkerNotes() {
+      const el = document.getElementById('workerNotesList');
+      el.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const notes = await api('/reflections');
+        if (!notes.length) { el.innerHTML = '<div class="empty">No notes yet</div>'; return; }
+        el.innerHTML = notes.slice().reverse().map(n => {
+          const dt = n.created_at ? new Date(n.created_at + (n.created_at.endsWith('Z') ? '' : 'Z')) : null;
+          const timeStr = dt ? dt.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+          const goalBadge = n.hit_goal
+            ? '<span style="font-size:.7rem;font-weight:700;background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:99px">Goal hit</span>'
+            : '<span style="font-size:.7rem;font-weight:700;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:99px">Missed goal</span>';
+          return `
+            <div style="padding:12px 0;border-bottom:.5px solid #f2f2f7">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+                <span style="font-size:.9rem;font-weight:700">${n.worker_name}</span>
+                ${goalBadge}
+                <span style="font-size:.75rem;color:#8e8e93;margin-left:auto">${timeStr}</span>
+              </div>
+              <div style="font-size:.82rem;color:#3c3c43;display:flex;gap:14px;flex-wrap:wrap;margin-bottom:4px">
+                <span><strong>${n.sigs_reported}</strong> sigs</span>
+                <span><strong>${n.hours_worked}</strong> hrs</span>
+              </div>
+              ${n.reflection ? `<div style="font-size:.8rem;color:#555;margin-top:4px"><em>${n.reflection}</em></div>` : ''}
+              ${n.notes ? `<div style="font-size:.8rem;color:#555;margin-top:2px;background:#f9f9fb;border-radius:7px;padding:6px 8px">${n.notes}</div>` : ''}
+            </div>`;
+        }).join('');
+      } catch(e) {
+        el.innerHTML = `<div class="empty" style="color:#c62828">Could not load notes</div>`;
+      }
+    }
+
     refresh();
     loadSchedule();
     loadWorkers();
     loadMyTeam();
+    loadWorkerNotes();
     setInterval(refresh, 30000);
   </script>
 </body>
