@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_manager
 from ..storage import db
 
 router = APIRouter()
@@ -46,6 +46,17 @@ async def submit_sig_count(payload: SigCountPayload, user: dict = Depends(get_cu
     loc = _locations.setdefault(user["user_id"], {"full_name": _resolve_name(user), "lat": None, "lng": None})
     loc["updated_at"] = _now_iso()
     return {"ok": True, "sig_count": payload.count}
+
+
+@router.post("/sig-count/{worker_id}")
+async def set_worker_sig_count(worker_id: int, payload: SigCountPayload, user: dict = Depends(require_manager)):
+    if payload.count < 0:
+        raise HTTPException(400, "count must be non-negative")
+    target = db.get_user_by_id(worker_id)
+    if not target:
+        raise HTTPException(404, "Worker not found")
+    db.upsert_live_sig_count(worker_id, payload.count)
+    return {"ok": True, "worker_id": worker_id, "sig_count": payload.count}
 
 
 @router.post("/location")
