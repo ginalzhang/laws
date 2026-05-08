@@ -1157,10 +1157,27 @@ class Database:
                 original_name=original_name,
                 raw_path=raw_path,
                 status="processing",
-                shift_id=shift_id,
             )
+            try:
+                pkt.shift_id = shift_id
+            except Exception:
+                pass
             session.add(pkt)
-            session.commit()
+            try:
+                session.commit()
+            except Exception:
+                session.rollback()
+                # Fallback: insert without shift_id if column doesn't exist yet
+                pkt2 = PacketRow(
+                    worker_id=worker_id,
+                    original_name=original_name,
+                    raw_path=raw_path,
+                    status="processing",
+                )
+                session.add(pkt2)
+                session.commit()
+                session.refresh(pkt2)
+                return pkt2.id
             session.refresh(pkt)
             return pkt.id
 

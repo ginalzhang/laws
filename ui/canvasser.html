@@ -790,12 +790,12 @@
             body: fd,
           });
           const d = await res.json();
-          if (!res.ok) throw new Error(d.detail || 'Upload failed');
+          if (!res.ok) throw new Error(d.detail || `Server error ${res.status}`);
           const entry = _todayUploads.find(u => u.id === id);
           if (entry) { entry.status = 'done'; entry.packetId = d.packet_id; }
         } catch(e) {
           const entry = _todayUploads.find(u => u.id === id);
-          if (entry) entry.status = 'failed';
+          if (entry) { entry.status = 'failed'; entry.error = e.message; }
         }
         renderUploads();
       }
@@ -810,7 +810,7 @@
         <div class="upload-item">
           <span>${u.status === 'processing' ? '⏳' : u.status === 'done' ? '✅' : '❌'}</span>
           <span class="uname">${u.name}</span>
-          <span class="ustatus ${u.status}">${u.status}</span>
+          <span class="ustatus ${u.status}">${u.status === 'failed' && u.error ? u.error : u.status}</span>
         </div>`).join('');
     }
 
