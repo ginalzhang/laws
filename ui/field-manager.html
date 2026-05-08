@@ -332,6 +332,15 @@
       <div id="lbList"><div class="empty" style="padding:20px;text-align:center;color:#8e8e93;font-size:.85rem">Loading…</div></div>
     </div>
 
+    <!-- Workers -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0">Workers</div>
+        <button onclick="openAddWorker()" style="padding:7px 14px;border:none;border-radius:10px;background:#0a84ff;color:#fff;font-size:.82rem;font-weight:600;font-family:inherit;cursor:pointer">+ Add</button>
+      </div>
+      <div id="fmWorkerList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
+    </div>
+
     <!-- Weekly schedule -->
     <div class="card" style="overflow:visible">
       <div class="week-nav">
@@ -404,6 +413,36 @@
           <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmEditShiftModal')">Cancel</button>
           <button class="fm-btn fm-btn-primary" onclick="submitFMEditShift()">Save</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Worker Modal -->
+  <div class="fm-modal-overlay" id="fmAddWorkerModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddWorkerModal')">✕</span>
+      <div class="fm-modal-title">Add Worker</div>
+      <div class="fm-form-group">
+        <label>Full Name *</label>
+        <input type="text" id="fmWName" placeholder="Jane Smith">
+      </div>
+      <div class="fm-form-group">
+        <label>Role *</label>
+        <select id="fmWRole" style="width:100%;padding:10px 12px;border:1.5px solid #e5e5ea;border-radius:10px;font-size:.9rem;font-family:inherit;background:#f9f9fb;outline:none;color:#1c1c1e">
+          <option value="petitioner">Petitioner</option>
+          <option value="worker">Worker (general)</option>
+          <option value="field_manager">Field Manager</option>
+          <option value="office_worker">Office Worker</option>
+        </select>
+      </div>
+      <div class="fm-form-group">
+        <label>Phone</label>
+        <input type="tel" id="fmWPhone" placeholder="(555) 000-0000">
+      </div>
+      <div class="fm-modal-err" id="fmWError"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddWorkerModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" id="fmWSubmitBtn" onclick="submitAddWorker()">Create</button>
       </div>
     </div>
   </div>
@@ -1022,8 +1061,58 @@
       window.location.href = '/';
     }
 
+    // ── Workers ───────────────────────────────────────────────────────────────
+    async function loadWorkers() {
+      try {
+        const workers = await api('/workers');
+        const el = document.getElementById('fmWorkerList');
+        if (!workers.length) { el.innerHTML = '<div class="empty">No workers yet</div>'; return; }
+        el.innerHTML = workers.map(w => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #f2f2f7">
+            <div style="flex:1">
+              <div style="font-size:.88rem;font-weight:600">${w.full_name}</div>
+              <div style="font-size:.75rem;color:#8e8e93">${w.role_label || w.role}</div>
+            </div>
+            ${w.phone ? `<div style="font-size:.78rem;color:#8e8e93">${w.phone}</div>` : ''}
+          </div>`).join('');
+      } catch(e) {
+        document.getElementById('fmWorkerList').innerHTML = '<div class="empty">Could not load workers</div>';
+      }
+    }
+
+    function openAddWorker() {
+      document.getElementById('fmWName').value = '';
+      document.getElementById('fmWPhone').value = '';
+      document.getElementById('fmWRole').value = 'petitioner';
+      document.getElementById('fmWError').style.display = 'none';
+      document.getElementById('fmWSubmitBtn').disabled = false;
+      document.getElementById('fmAddWorkerModal').classList.add('open');
+      setTimeout(() => document.getElementById('fmWName').focus(), 80);
+    }
+
+    async function submitAddWorker() {
+      const name  = document.getElementById('fmWName').value.trim();
+      const role  = document.getElementById('fmWRole').value;
+      const phone = document.getElementById('fmWPhone').value.trim();
+      const errEl = document.getElementById('fmWError');
+      const btn   = document.getElementById('fmWSubmitBtn');
+      errEl.style.display = 'none';
+      if (!name) { errEl.textContent = 'Full name is required.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        await api('/workers', { method: 'POST', body: JSON.stringify({ full_name: name, role, phone, hourly_wage: 25 }) });
+        closeFMModal('fmAddWorkerModal');
+        loadWorkers();
+      } catch(e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Create';
+      }
+    }
+
     refresh();
     loadSchedule();
+    loadWorkers();
     setInterval(refresh, 30000);
   </script>
 </body>
