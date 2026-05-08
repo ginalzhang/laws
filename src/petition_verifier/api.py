@@ -44,6 +44,7 @@ from .routes.location_routes import router as location_router
 from .routes.stats_routes import router as stats_router
 from .routes.review_routes import router as review_router
 from .routes.team_routes import router as team_router
+from .routes.reflection_routes import router as reflection_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
@@ -87,6 +88,7 @@ app.include_router(location_router, prefix="/locations", tags=["locations"])
 app.include_router(stats_router, prefix="/stats", tags=["stats"])
 app.include_router(review_router, tags=["review"])
 app.include_router(team_router)
+app.include_router(reflection_router)
 
 
 @app.get("/health")

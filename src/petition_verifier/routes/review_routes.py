@@ -46,6 +46,7 @@ UPLOAD_DIR = Path("packet_uploads")
 async def upload_packet(
     bg: BackgroundTasks,
     file: UploadFile = File(...),
+    shift_id: int | None = None,
     current_user=Depends(get_current_user),
 ):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,6 +61,7 @@ async def upload_packet(
         worker_id=current_user["user_id"],
         original_name=file.filename or filename,
         raw_path=str(raw_path),
+        shift_id=shift_id,
     )
     bg.add_task(_process_packet, packet_id, raw_path)
     return {"packet_id": packet_id, "status": "processing"}

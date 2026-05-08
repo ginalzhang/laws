@@ -244,8 +244,22 @@ class PacketRow(Base):
     already_counted  = Column(Integer, default=0)          # count of already_counted rows
     needs_review     = Column(Integer, default=0)          # count of changed_needs_review rows
     result_json      = Column(Text, default="{}")          # full page_result JSON
+    shift_id         = Column(Integer, ForeignKey("shifts.id"), nullable=True)
     lines            = relationship("PacketLineRow", back_populates="packet",
                                     cascade="all, delete-orphan")
+
+
+class ShiftReflectionRow(Base):
+    __tablename__ = "shift_reflections"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id     = Column(Integer, ForeignKey("users.id"), nullable=False)
+    shift_id      = Column(Integer, ForeignKey("shifts.id"), nullable=True)
+    sigs_reported = Column(Integer, nullable=False, default=0)
+    hours_worked  = Column(Float, nullable=False, default=0.0)
+    hit_goal      = Column(Boolean, nullable=False, default=False)
+    reflection    = Column(Text, default="")   # why not / what they did well
+    notes         = Column(Text, default="")
+    created_at    = Column(DateTime, default=datetime.utcnow)
 
 
 class PacketLineRow(Base):
@@ -289,13 +303,16 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
         execution_options={"prepared_statement_cache_size": 0},
     ) if is_postgres else create_engine(url, echo=False)
     Base.metadata.create_all(engine)
-    # Migrate: add team_id to users if the column doesn't exist yet
     with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE users ADD COLUMN team_id INTEGER"))
-            conn.commit()
-        except Exception:
-            pass
+        for stmt in [
+            "ALTER TABLE users ADD COLUMN team_id INTEGER",
+            "ALTER TABLE review_packets ADD COLUMN shift_id INTEGER",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
     return sessionmaker(bind=engine)
 
 
@@ -1133,13 +1150,14 @@ class Database:
 
     # ── Review packet methods ─────────────────────────────────────────────────
 
-    def create_packet(self, worker_id: int, original_name: str, raw_path: str) -> int:
+    def create_packet(self, worker_id: int, original_name: str, raw_path: str, shift_id: int | None = None) -> int:
         with self._Session() as session:
             pkt = PacketRow(
                 worker_id=worker_id,
                 original_name=original_name,
                 raw_path=raw_path,
                 status="processing",
+                shift_id=shift_id,
             )
             session.add(pkt)
             session.commit()
@@ -1389,6 +1407,52 @@ class Database:
         with self._Session() as session:
             result = session.query(func.sum(ProjectRow.approved)).scalar()
             return int(result or 0)
+
+    # ── Shift reflections ─────────────────────────────────────────────────────
+
+    def save_shift_reflection(
+        self, worker_id: int, shift_id: int | None,
+        sigs_reported: int, hours_worked: float,
+        hit_goal: bool, reflection: str, notes: str,
+    ) -> int:
+        with self._Session() as session:
+            row = ShiftReflectionRow(
+                worker_id=worker_id, shift_id=shift_id,
+                sigs_reported=sigs_reported, hours_worked=hours_worked,
+                hit_goal=hit_goal, reflection=reflection, notes=notes,
+            )
+            session.add(row)
+            session.commit()
+            return row.id
+
+    def get_worker_reflections(self, worker_id: int, limit: int = 30) -> list:
+        with self._Session() as session:
+            rows = (
+                session.query(ShiftReflectionRow)
+                .filter_by(worker_id=worker_id)
+                .order_by(ShiftReflectionRow.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            result = []
+            for r in rows:
+                session.expunge(r)
+                result.append(r)
+            return result
+
+    def get_all_reflections(self, limit: int = 200) -> list:
+        with self._Session() as session:
+            rows = (
+                session.query(ShiftReflectionRow)
+                .order_by(ShiftReflectionRow.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            result = []
+            for r in rows:
+                session.expunge(r)
+                result.append(r)
+            return result
 
     def get_all_today_shifts(self, today_start: datetime) -> dict:
         """Return today's shifts for ALL workers in 1 query.

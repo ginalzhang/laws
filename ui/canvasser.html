@@ -93,6 +93,74 @@
 
     .logout-link { text-align: center; font-size: .8rem; color: #8e8e93; cursor: pointer; padding: 4px; }
 
+    /* ── Upload card ─────────────────────────────────────────────────────────── */
+    .upload-card { background: #fff; border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 .5px rgba(0,0,0,.04); overflow: hidden; }
+    .upload-inner { padding: 14px 16px; }
+    .upload-btn {
+      width: 100%; padding: 14px; border: 2px dashed #c7c7cc; border-radius: 14px;
+      background: #f9f9fb; color: #3a3a3c; font-size: .9rem; font-weight: 600;
+      font-family: inherit; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 10px;
+    }
+    .upload-btn:active { background: #f2f2f7; }
+    .upload-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .upload-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: #f2f2f7; border-radius: 10px; font-size: .82rem; }
+    .upload-item .uname { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .upload-item .ustatus { font-size: .72rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .ustatus.processing { background: #fff3cc; color: #a05c00; }
+    .ustatus.done       { background: #d1f7e0; color: #248a3d; }
+    .ustatus.failed     { background: #fee2e2; color: #991b1b; }
+
+    /* ── End of shift modal ──────────────────────────────────────────────────── */
+    .eos-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+      align-items: flex-end; justify-content: center; z-index: 200;
+    }
+    .eos-overlay.open { display: flex; }
+    .eos-sheet {
+      background: #fff; border-radius: 22px 22px 0 0;
+      width: 100%; max-width: 480px;
+      max-height: 92dvh; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .eos-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 20px 14px; border-bottom: .5px solid #e5e5ea;
+      position: sticky; top: 0; background: #fff; z-index: 1;
+    }
+    .eos-title  { font-size: 1rem; font-weight: 700; }
+    .eos-cancel { font-size: .95rem; color: #0a84ff; background: none; border: none; cursor: pointer; font-family: inherit; }
+    .eos-body   { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+    .eos-q      { display: flex; flex-direction: column; gap: 6px; }
+    .eos-label  { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8e8e93; }
+    .eos-input  {
+      width: 100%; padding: 13px 14px; border: 1.5px solid #e5e5ea; border-radius: 12px;
+      font-size: 1rem; font-family: inherit; background: #f9f9fb; outline: none; color: #1c1c1e;
+      -webkit-appearance: none;
+    }
+    .eos-input:focus { border-color: #0a84ff; background: #fff; }
+    .eos-textarea { min-height: 90px; resize: vertical; }
+    .eos-goal-row { display: flex; gap: 10px; }
+    .eos-goal-btn {
+      flex: 1; padding: 14px; border: 2px solid #e5e5ea; border-radius: 12px;
+      background: #fff; font-size: .9rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: all .15s;
+    }
+    .eos-goal-btn.yes.active { border-color: #30d158; background: #d1f7e0; color: #248a3d; }
+    .eos-goal-btn.no.active  { border-color: #ff3b30; background: #fee2e2; color: #991b1b; }
+    .eos-goal-btn:active { transform: scale(.97); }
+    .eos-conditional { display: none; }
+    .eos-conditional.show { display: flex; flex-direction: column; gap: 6px; }
+    .eos-submit {
+      width: 100%; padding: 16px; border: none; border-radius: 14px;
+      background: #1c1c1e; color: #fff; font-size: 1rem; font-weight: 700;
+      cursor: pointer; font-family: inherit; margin-bottom: env(safe-area-inset-bottom);
+    }
+    .eos-submit:active { opacity: .85; }
+    .eos-submit:disabled { opacity: .5; }
+    .eos-err { font-size: .82rem; color: #c62828; display: none; }
+
     /* ── Sig entry modal ─────────────────────────────────────────────────────── */
     .overlay {
       display: none; position: fixed; inset: 0;
@@ -233,6 +301,22 @@
       </div>
     </div>
 
+    <!-- Upload petition photos -->
+    <div class="upload-card">
+      <div class="card-header">
+        <div class="card-title">📷 Upload Petition Pages</div>
+        <div class="last-update" id="uploadCount"></div>
+      </div>
+      <div class="upload-inner">
+        <label class="upload-btn" for="photoInput">
+          <span>📸</span> Take / choose a photo
+        </label>
+        <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)">
+        <div class="upload-list" id="uploadList"></div>
+      </div>
+    </div>
+
+    <!-- Live leaderboard -->
     <div class="card">
       <div class="card-header">
         <div class="card-title"><span class="live-dot"></span>Live Today</div>
@@ -253,7 +337,57 @@
       </div>
     </div>
 
+    <!-- End of shift -->
+    <button class="big-btn" style="background:#1c1c1e;color:#fff" onclick="openEOS()">
+      <span class="icon">✅</span>
+      <span class="label">
+        <span class="title">End of Shift Check-In</span>
+        <span class="sub">Log your day before you go</span>
+      </span>
+    </button>
+
     <div class="logout-link" onclick="logout()">Sign out</div>
+  </div>
+
+  <!-- End of Shift modal -->
+  <div class="eos-overlay" id="eosOverlay">
+    <div class="eos-sheet">
+      <div class="eos-top">
+        <span class="eos-title">End of Shift Check-In</span>
+        <button class="eos-cancel" onclick="closeEOS()">Cancel</button>
+      </div>
+      <div class="eos-body">
+        <div class="eos-q">
+          <div class="eos-label">How many signatures did you get today?</div>
+          <input class="eos-input" type="number" id="eosSigs" min="0" placeholder="0" inputmode="numeric">
+        </div>
+        <div class="eos-q">
+          <div class="eos-label">How many hours did you work?</div>
+          <input class="eos-input" type="number" id="eosHours" min="0.1" step="0.5" placeholder="e.g. 4" inputmode="decimal">
+        </div>
+        <div class="eos-q">
+          <div class="eos-label">Did you hit your goal?</div>
+          <div class="eos-goal-row">
+            <button class="eos-goal-btn yes" id="eosYes" onclick="setGoal(true)">👍 Yes</button>
+            <button class="eos-goal-btn no"  id="eosNo"  onclick="setGoal(false)">👎 No</button>
+          </div>
+        </div>
+        <div class="eos-conditional" id="eosIfYes">
+          <div class="eos-label">What did you do well today?</div>
+          <textarea class="eos-input eos-textarea" id="eosWell" placeholder="What worked, what felt good…"></textarea>
+        </div>
+        <div class="eos-conditional" id="eosIfNo">
+          <div class="eos-label">Why not, and what could you do better next time?</div>
+          <textarea class="eos-input eos-textarea" id="eosWhy" placeholder="Be honest — it helps you improve…"></textarea>
+        </div>
+        <div class="eos-q">
+          <div class="eos-label">Any notes on today? (optional)</div>
+          <textarea class="eos-input eos-textarea" id="eosNotes" placeholder="Anything your manager should know, locations visited, etc."></textarea>
+        </div>
+        <div class="eos-err" id="eosErr"></div>
+        <button class="eos-submit" id="eosSubmitBtn" onclick="submitEOS()">Submit check-in</button>
+      </div>
+    </div>
   </div>
 
   <!-- Sig count modal -->
@@ -631,6 +765,127 @@
 
     function logout() { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; }
 
+    // ── Photo upload ──────────────────────────────────────────────────────────
+    let _activeShiftId = null;
+    let _todayUploads  = [];
+
+    async function handlePhotoUpload(event) {
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
+      event.target.value = '';  // allow re-selecting same file
+
+      for (const file of files) {
+        const id = Date.now() + Math.random();
+        _todayUploads.unshift({ id, name: file.name, status: 'processing' });
+        renderUploads();
+
+        const fd = new FormData();
+        fd.append('file', file);
+        if (_activeShiftId) fd.append('shift_id', _activeShiftId);
+
+        try {
+          const res = await fetch('/review/upload', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: fd,
+          });
+          const d = await res.json();
+          if (!res.ok) throw new Error(d.detail || 'Upload failed');
+          const entry = _todayUploads.find(u => u.id === id);
+          if (entry) { entry.status = 'done'; entry.packetId = d.packet_id; }
+        } catch(e) {
+          const entry = _todayUploads.find(u => u.id === id);
+          if (entry) entry.status = 'failed';
+        }
+        renderUploads();
+      }
+    }
+
+    function renderUploads() {
+      const el = document.getElementById('uploadList');
+      const cnt = document.getElementById('uploadCount');
+      if (!_todayUploads.length) { el.innerHTML = ''; cnt.textContent = ''; return; }
+      cnt.textContent = _todayUploads.length + ' uploaded today';
+      el.innerHTML = _todayUploads.slice(0, 5).map(u => `
+        <div class="upload-item">
+          <span>${u.status === 'processing' ? '⏳' : u.status === 'done' ? '✅' : '❌'}</span>
+          <span class="uname">${u.name}</span>
+          <span class="ustatus ${u.status}">${u.status}</span>
+        </div>`).join('');
+    }
+
+    // ── End of shift ──────────────────────────────────────────────────────────
+    let _eosGoal = null;
+
+    function openEOS() {
+      _eosGoal = null;
+      document.getElementById('eosSigs').value  = currentCount > 0 ? currentCount : '';
+      document.getElementById('eosHours').value = '';
+      document.getElementById('eosWell').value  = '';
+      document.getElementById('eosWhy').value   = '';
+      document.getElementById('eosNotes').value = '';
+      document.getElementById('eosYes').classList.remove('active');
+      document.getElementById('eosNo').classList.remove('active');
+      document.getElementById('eosIfYes').classList.remove('show');
+      document.getElementById('eosIfNo').classList.remove('show');
+      document.getElementById('eosErr').style.display = 'none';
+      document.getElementById('eosOverlay').classList.add('open');
+    }
+
+    function closeEOS() {
+      document.getElementById('eosOverlay').classList.remove('open');
+    }
+
+    function setGoal(hit) {
+      _eosGoal = hit;
+      document.getElementById('eosYes').classList.toggle('active', hit);
+      document.getElementById('eosNo').classList.toggle('active', !hit);
+      document.getElementById('eosIfYes').classList.toggle('show', hit);
+      document.getElementById('eosIfNo').classList.toggle('show', !hit);
+    }
+
+    async function submitEOS() {
+      const sigs  = parseInt(document.getElementById('eosSigs').value, 10);
+      const hours = parseFloat(document.getElementById('eosHours').value);
+      const errEl = document.getElementById('eosErr');
+      errEl.style.display = 'none';
+
+      if (isNaN(sigs) || sigs < 0)  { errEl.textContent = 'Enter your signature count.'; errEl.style.display = 'block'; return; }
+      if (isNaN(hours) || hours <= 0){ errEl.textContent = 'Enter hours worked.'; errEl.style.display = 'block'; return; }
+      if (_eosGoal === null)          { errEl.textContent = 'Did you hit your goal?'; errEl.style.display = 'block'; return; }
+
+      const reflection = _eosGoal
+        ? document.getElementById('eosWell').value.trim()
+        : document.getElementById('eosWhy').value.trim();
+      const notes = document.getElementById('eosNotes').value.trim();
+
+      const btn = document.getElementById('eosSubmitBtn');
+      btn.disabled = true;
+      try {
+        await api('/reflections', {
+          method: 'POST',
+          body: JSON.stringify({
+            shift_id: _activeShiftId || null,
+            sigs_reported: sigs,
+            hours_worked: hours,
+            hit_goal: _eosGoal,
+            reflection,
+            notes,
+          }),
+        });
+        closeEOS();
+        setMsg(_eosGoal ? '✅ Great work today! Check-in saved.' : '✅ Check-in saved — keep going!', 'success');
+      } catch(e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+      }
+      btn.disabled = false;
+    }
+
+    document.getElementById('eosOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeEOS();
+    });
+
     document.getElementById('sigOverlay').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) closeSheet();
     });
@@ -651,6 +906,7 @@
       try {
         const data = await api(`/shifts/active/${userId}`);
         if (data.active && data.shift) {
+          _activeShiftId = data.shift.id ?? null;
           const rawIn = data.shift.clock_in;
           shiftStartTime = new Date(rawIn.includes('Z') ? rawIn : rawIn + 'Z');
           if (data.shift.clock_out) {
@@ -666,7 +922,7 @@
     initMyShift();
     loadLeaderboard();
     loadTeamLeaderboard();
-    setInterval(loadLeaderboard, 30000);
+    setInterval(loadLeaderboard, 15000);
     setInterval(loadTeamLeaderboard, 60000);
     setInterval(updatePaceDisplay, 60000);
   </script>
