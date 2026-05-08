@@ -45,7 +45,7 @@ async def my_reflections(user=Depends(get_current_user)):
 @router.get("")
 async def all_reflections(user=Depends(require_manager)):
     rows = db.get_all_reflections()
-    workers = {u.id: u.full_name for u in db.get_workers()}
+    workers = {u.id: u.full_name for u in db.list_users()}
     result = []
     for r in rows:
         d = _fmt(r)
