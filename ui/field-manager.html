@@ -590,10 +590,9 @@
       </div>
       <div class="qe-body">
         <div class="qe-field">
-          <label>Worker</label>
-          <select id="qeWorkerSelect">
-            <option value="">Select worker…</option>
-          </select>
+          <label>Worker name</label>
+          <input type="text" id="qeWorkerName" list="qeWorkerList" placeholder="Type a name…" autocomplete="off">
+          <datalist id="qeWorkerList"></datalist>
         </div>
         <div class="qe-row">
           <div class="qe-field">
@@ -604,6 +603,10 @@
             <label>Hours worked</label>
             <input type="number" id="qeHours" min="0.1" max="24" step="0.5" placeholder="e.g. 4" inputmode="decimal">
           </div>
+        </div>
+        <div class="qe-field">
+          <label>Notes (optional)</label>
+          <input type="text" id="qeNotes" placeholder="Any notes on this entry…">
         </div>
         <div class="qe-err" id="qeErr"></div>
         <button class="qe-submit" id="qeSubmitBtn" onclick="submitQE()">Log entry</button>
@@ -1178,26 +1181,22 @@
     let _allWorkers = [];
 
     async function openQE() {
-      // Populate worker dropdown
-      const sel = document.getElementById('qeWorkerSelect');
-      sel.innerHTML = '<option value="">Select worker…</option>';
       try {
         if (!_allWorkers.length) _allWorkers = await api('/workers');
-        _allWorkers
+        const dl = document.getElementById('qeWorkerList');
+        dl.innerHTML = _allWorkers
           .filter(w => !['boss','admin','field_manager','evan'].includes(w.role))
           .sort((a, b) => a.full_name.localeCompare(b.full_name))
-          .forEach(w => {
-            const opt = document.createElement('option');
-            opt.value = w.id;
-            opt.textContent = w.full_name;
-            sel.appendChild(opt);
-          });
+          .map(w => `<option value="${w.full_name}">`)
+          .join('');
       } catch(e) {}
+      document.getElementById('qeWorkerName').value = '';
       document.getElementById('qeSigs').value  = '';
       document.getElementById('qeHours').value = '';
+      document.getElementById('qeNotes').value = '';
       document.getElementById('qeErr').style.display = 'none';
       document.getElementById('qeOverlay').classList.add('open');
-      setTimeout(() => sel.focus(), 80);
+      setTimeout(() => document.getElementById('qeWorkerName').focus(), 80);
     }
 
     function closeQE() {
@@ -1205,32 +1204,35 @@
     }
 
     async function submitQE() {
-      const workerId = parseInt(document.getElementById('qeWorkerSelect').value);
-      const sigs     = parseInt(document.getElementById('qeSigs').value, 10);
-      const hours    = parseFloat(document.getElementById('qeHours').value);
-      const errEl    = document.getElementById('qeErr');
+      const nameVal = document.getElementById('qeWorkerName').value.trim();
+      const sigs    = parseInt(document.getElementById('qeSigs').value, 10);
+      const hours   = parseFloat(document.getElementById('qeHours').value);
+      const notes   = document.getElementById('qeNotes').value.trim();
+      const errEl   = document.getElementById('qeErr');
       errEl.style.display = 'none';
 
-      if (!workerId)         { errEl.textContent = 'Select a worker.'; errEl.style.display = 'block'; return; }
+      if (!nameVal) { errEl.textContent = 'Enter a worker name.'; errEl.style.display = 'block'; return; }
       if (isNaN(sigs) || sigs < 0) { errEl.textContent = 'Enter a valid signature count.'; errEl.style.display = 'block'; return; }
       if (isNaN(hours) || hours <= 0) { errEl.textContent = 'Enter valid hours worked.'; errEl.style.display = 'block'; return; }
+
+      // Match typed name to a known worker (case-insensitive)
+      const worker = _allWorkers.find(w => w.full_name.toLowerCase() === nameVal.toLowerCase());
+      if (!worker) { errEl.textContent = `No worker found named "${nameVal}".`; errEl.style.display = 'block'; return; }
 
       const btn = document.getElementById('qeSubmitBtn');
       btn.disabled = true;
 
-      // Compute shift times: clock_out = now, clock_in = now - hours
       const clockOut = new Date();
       const clockIn  = new Date(clockOut.getTime() - hours * 3600000);
-      const fmt = d => d.toISOString().slice(0, 19); // "YYYY-MM-DDTHH:MM:SS"
+      const fmt = d => d.toISOString().slice(0, 19);
 
       try {
         await Promise.all([
-          api(`/stats/sig-count/${workerId}`, { method: 'POST', body: JSON.stringify({ count: sigs }) }),
-          api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_in: fmt(clockIn), clock_out: fmt(clockOut) }) }),
+          api(`/stats/sig-count/${worker.id}`, { method: 'POST', body: JSON.stringify({ count: sigs }) }),
+          api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: worker.id, clock_in: fmt(clockIn), clock_out: fmt(clockOut) }) }),
         ]);
-        const worker = _allWorkers.find(w => w.id === workerId);
         closeQE();
-        setMsg(`${worker?.full_name || 'Worker'}: ${sigs} sigs, ${hours}h logged`, 'success');
+        setMsg(`${worker.full_name}: ${sigs} sigs, ${hours}h logged`, 'success');
         loadLeaderboard();
         loadSchedule();
       } catch(e) {
