@@ -273,36 +273,45 @@
     }
     .qe-top {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 18px 20px 12px;
-      border-bottom: .5px solid #e5e5ea;
+      padding: 18px 20px 14px; border-bottom: .5px solid #e5e5ea;
     }
-    .qe-worker { font-size: 1rem; font-weight: 700; }
+    .qe-title  { font-size: 1rem; font-weight: 700; }
     .qe-cancel { font-size: .95rem; color: #0a84ff; background: none; border: none; cursor: pointer; font-family: inherit; }
-    .qe-display-wrap { padding: 14px 20px 10px; border-bottom: .5px solid #e5e5ea; }
-    .qe-label { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #8e8e93; margin-bottom: 4px; }
-    .qe-display { font-size: 3.5rem; font-weight: 700; color: #000; font-variant-numeric: tabular-nums; letter-spacing: -.02em; min-height: 1.1em; }
-    .qe-display.empty { color: #c7c7cc; }
-    .qe-current { font-size: .82rem; color: #8e8e93; margin-top: 2px; }
-    .qe-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #e5e5ea; }
-    .qe-kp {
-      background: #fff; border: none;
-      padding: 13px 10px; min-height: 54px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      cursor: pointer; -webkit-user-select: none; user-select: none;
+    .qe-body   { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .qe-field  { display: flex; flex-direction: column; gap: 5px; }
+    .qe-field label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8e8e93; }
+    .qe-field input, .qe-field select {
+      width: 100%; padding: 13px 14px; border: 1.5px solid #e5e5ea; border-radius: 12px;
+      font-size: 1rem; font-family: inherit; background: #f9f9fb; outline: none; color: #1c1c1e;
+      -webkit-appearance: none; appearance: none;
     }
-    .qe-kp:active { background: #d1d1d6; }
-    .qe-kp .num { font-size: 1.4rem; font-weight: 400; color: #000; line-height: 1.1; }
-    .qe-kp .letters { font-size: .52rem; letter-spacing: .1em; color: #8e8e93; margin-top: 1px; }
-    .qe-kp .back { font-size: 1.2rem; color: #3a3a3c; }
-    .qe-submit-wrap { padding: 14px 20px 16px; }
+    .qe-field input:focus, .qe-field select:focus { border-color: #0a84ff; background: #fff; }
+    .qe-row    { display: flex; gap: 10px; }
+    .qe-row .qe-field { flex: 1; }
     .qe-submit {
       width: 100%; padding: 16px; border: none; border-radius: 14px;
       background: #0a84ff; color: #fff; font-size: 1rem; font-weight: 700;
-      cursor: pointer; font-family: inherit;
+      cursor: pointer; font-family: inherit; margin-top: 4px;
     }
     .qe-submit:active { opacity: .85; }
     .qe-submit:disabled { opacity: .5; cursor: not-allowed; }
-    .qe-count-tap { cursor: pointer; border-bottom: 1.5px dashed #0a84ff; padding-bottom: 1px; }
+    .qe-err { font-size: .82rem; color: #c62828; display: none; }
+
+    /* Quick entry trigger button in page */
+    .qe-btn {
+      width: 100%; padding: 16px 20px;
+      background: #fff; border: 1.5px solid #e5e5ea; border-radius: 16px;
+      display: flex; align-items: center; gap: 14px;
+      cursor: pointer; font-family: inherit; text-align: left;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+      transition: border-color .15s;
+    }
+    .qe-btn:active { background: #f2f2f7; }
+    .qe-btn .icon  { font-size: 1.5rem; flex-shrink: 0; }
+    .qe-btn .label { flex: 1; }
+    .qe-btn .label .title { font-size: .95rem; font-weight: 700; color: #000; display: block; }
+    .qe-btn .label .sub   { font-size: .78rem; color: #8e8e93; display: block; margin-top: 2px; }
+    .qe-btn .arrow { font-size: .85rem; color: #c7c7cc; }
   </style>
 </head>
 <body>
@@ -315,6 +324,16 @@
   </div>
 
   <div class="content">
+
+    <!-- Quick Entry -->
+    <button class="qe-btn" onclick="openQE()">
+      <span class="icon">⚡</span>
+      <span class="label">
+        <span class="title">Quick Entry</span>
+        <span class="sub">Log a worker's sigs + hours in one tap</span>
+      </span>
+      <span class="arrow">›</span>
+    </button>
 
     <!-- My Team -->
     <div class="card" id="myTeamCard">
@@ -566,30 +585,28 @@
   <div class="qe-overlay" id="qeOverlay">
     <div class="qe-sheet">
       <div class="qe-top">
-        <span class="qe-worker" id="qeWorkerName">Worker</span>
+        <span class="qe-title">Quick Entry</span>
         <button class="qe-cancel" onclick="closeQE()">Cancel</button>
       </div>
-      <div class="qe-display-wrap">
-        <div class="qe-label">Set signature count</div>
-        <div class="qe-display empty" id="qeDisplay">0</div>
-        <div class="qe-current" id="qeCurrent"></div>
-      </div>
-      <div class="qe-keypad">
-        <button class="qe-kp" onclick="qeKp('1')"><span class="num">1</span></button>
-        <button class="qe-kp" onclick="qeKp('2')"><span class="num">2</span><span class="letters">ABC</span></button>
-        <button class="qe-kp" onclick="qeKp('3')"><span class="num">3</span><span class="letters">DEF</span></button>
-        <button class="qe-kp" onclick="qeKp('4')"><span class="num">4</span><span class="letters">GHI</span></button>
-        <button class="qe-kp" onclick="qeKp('5')"><span class="num">5</span><span class="letters">JKL</span></button>
-        <button class="qe-kp" onclick="qeKp('6')"><span class="num">6</span><span class="letters">MNO</span></button>
-        <button class="qe-kp" onclick="qeKp('7')"><span class="num">7</span><span class="letters">PQRS</span></button>
-        <button class="qe-kp" onclick="qeKp('8')"><span class="num">8</span><span class="letters">TUV</span></button>
-        <button class="qe-kp" onclick="qeKp('9')"><span class="num">9</span><span class="letters">WXYZ</span></button>
-        <button class="qe-kp" onclick="qeKp('00')"><span class="num" style="font-size:1rem">00</span></button>
-        <button class="qe-kp" onclick="qeKp('0')"><span class="num">0</span></button>
-        <button class="qe-kp" onclick="qeKp('back')"><span class="back">⌫</span></button>
-      </div>
-      <div class="qe-submit-wrap">
-        <button class="qe-submit" id="qeSubmitBtn" onclick="submitQE()">Set total</button>
+      <div class="qe-body">
+        <div class="qe-field">
+          <label>Worker</label>
+          <select id="qeWorkerSelect">
+            <option value="">Select worker…</option>
+          </select>
+        </div>
+        <div class="qe-row">
+          <div class="qe-field">
+            <label>Signatures</label>
+            <input type="number" id="qeSigs" min="0" max="9999" placeholder="0" inputmode="numeric">
+          </div>
+          <div class="qe-field">
+            <label>Hours worked</label>
+            <input type="number" id="qeHours" min="0.1" max="24" step="0.5" placeholder="e.g. 4" inputmode="decimal">
+          </div>
+        </div>
+        <div class="qe-err" id="qeErr"></div>
+        <button class="qe-submit" id="qeSubmitBtn" onclick="submitQE()">Log entry</button>
       </div>
     </div>
   </div>
@@ -864,13 +881,11 @@
 
           const row = document.createElement('div');
           row.className = 'worker-row';
-          const workerId   = e.worker_id;
-          const workerName = e.full_name;
           row.innerHTML = `
             <div class="wr-top">
-              <div class="wr-avatar" style="background:${avatarBg};color:${avatarColor}">${_initials(workerName)}</div>
-              <div class="wr-name">${workerName}</div>
-              <div class="wr-count qe-count-tap" title="Tap to set count" onclick="event.stopPropagation();openQE(${workerId},${JSON.stringify(workerName)},${sigs})">${sigs}</div>
+              <div class="wr-avatar" style="background:${avatarBg};color:${avatarColor}">${_initials(e.full_name)}</div>
+              <div class="wr-name">${e.full_name}</div>
+              <div class="wr-count">${sigs}</div>
               <span class="pace-pill ${pace}">${_paceLabel[pace]}</span>
             </div>
             <div class="wr-bar-wrap">
@@ -882,7 +897,6 @@
             </div>
             <div class="wr-detail" id="lbd-${idx}">
               <div style="padding:4px 0;font-size:.75rem;color:var(--ink-3)">${shiftDetail}</div>
-              <button onclick="event.stopPropagation();openQE(${workerId},${JSON.stringify(workerName)},${sigs})" style="margin-top:6px;width:100%;padding:9px;border:none;border-radius:10px;background:#0a84ff;color:#fff;font-size:.85rem;font-weight:600;font-family:inherit;cursor:pointer">✏️ Enter sig count</button>
             </div>`;
           row.addEventListener('click', () => {
             const det = document.getElementById('lbd-' + idx);
@@ -1161,64 +1175,67 @@
     function closeFMModal(id) { document.getElementById(id).classList.remove('open'); }
 
     // ── Quick entry ───────────────────────────────────────────────────────────
-    let _qeWorkerId   = null;
-    let _qeWorkerName = '';
-    let _qeCurrentCount = 0;
-    let _qeStr = '';
+    let _allWorkers = [];
 
-    function openQE(workerId, workerName, currentCount) {
-      _qeWorkerId    = workerId;
-      _qeWorkerName  = workerName;
-      _qeCurrentCount = currentCount;
-      _qeStr = '';
-      document.getElementById('qeWorkerName').textContent = workerName;
-      document.getElementById('qeCurrent').textContent =
-        currentCount > 0 ? `Current: ${currentCount} sig${currentCount !== 1 ? 's' : ''}` : '';
-      _qeRefreshDisplay();
+    async function openQE() {
+      // Populate worker dropdown
+      const sel = document.getElementById('qeWorkerSelect');
+      sel.innerHTML = '<option value="">Select worker…</option>';
+      try {
+        if (!_allWorkers.length) _allWorkers = await api('/workers');
+        _allWorkers
+          .filter(w => !['boss','admin','field_manager','evan'].includes(w.role))
+          .sort((a, b) => a.full_name.localeCompare(b.full_name))
+          .forEach(w => {
+            const opt = document.createElement('option');
+            opt.value = w.id;
+            opt.textContent = w.full_name;
+            sel.appendChild(opt);
+          });
+      } catch(e) {}
+      document.getElementById('qeSigs').value  = '';
+      document.getElementById('qeHours').value = '';
+      document.getElementById('qeErr').style.display = 'none';
       document.getElementById('qeOverlay').classList.add('open');
+      setTimeout(() => sel.focus(), 80);
     }
 
     function closeQE() {
       document.getElementById('qeOverlay').classList.remove('open');
     }
 
-    function qeKp(char) {
-      if (char === 'back') {
-        _qeStr = _qeStr.slice(0, -1);
-      } else if (char === '00') {
-        if (_qeStr.length && _qeStr.length < 3) _qeStr += '00';
-        else if (_qeStr.length >= 3) return;
-        else _qeStr = '0';
-      } else {
-        if (_qeStr.length >= 4) return;
-        _qeStr += char;
-      }
-      _qeRefreshDisplay();
-    }
-
-    function _qeRefreshDisplay() {
-      const el  = document.getElementById('qeDisplay');
-      const val = _qeStr ? parseInt(_qeStr, 10).toLocaleString() : '0';
-      el.textContent = val;
-      el.classList.toggle('empty', !_qeStr);
-    }
-
     async function submitQE() {
-      const val = parseInt(_qeStr || '0', 10);
-      if (val < 0) return;
+      const workerId = parseInt(document.getElementById('qeWorkerSelect').value);
+      const sigs     = parseInt(document.getElementById('qeSigs').value, 10);
+      const hours    = parseFloat(document.getElementById('qeHours').value);
+      const errEl    = document.getElementById('qeErr');
+      errEl.style.display = 'none';
+
+      if (!workerId)         { errEl.textContent = 'Select a worker.'; errEl.style.display = 'block'; return; }
+      if (isNaN(sigs) || sigs < 0) { errEl.textContent = 'Enter a valid signature count.'; errEl.style.display = 'block'; return; }
+      if (isNaN(hours) || hours <= 0) { errEl.textContent = 'Enter valid hours worked.'; errEl.style.display = 'block'; return; }
+
       const btn = document.getElementById('qeSubmitBtn');
       btn.disabled = true;
+
+      // Compute shift times: clock_out = now, clock_in = now - hours
+      const clockOut = new Date();
+      const clockIn  = new Date(clockOut.getTime() - hours * 3600000);
+      const fmt = d => d.toISOString().slice(0, 19); // "YYYY-MM-DDTHH:MM:SS"
+
       try {
-        await api(`/stats/sig-count/${_qeWorkerId}`, {
-          method: 'POST',
-          body: JSON.stringify({ count: val }),
-        });
+        await Promise.all([
+          api(`/stats/sig-count/${workerId}`, { method: 'POST', body: JSON.stringify({ count: sigs }) }),
+          api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_in: fmt(clockIn), clock_out: fmt(clockOut) }) }),
+        ]);
+        const worker = _allWorkers.find(w => w.id === workerId);
         closeQE();
-        setMsg(`${_qeWorkerName}: ${val} sigs set`, 'success');
+        setMsg(`${worker?.full_name || 'Worker'}: ${sigs} sigs, ${hours}h logged`, 'success');
         loadLeaderboard();
+        loadSchedule();
       } catch(e) {
-        setMsg(e.message, 'error');
-        closeQE();
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
       }
       btn.disabled = false;
     }
