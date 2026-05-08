@@ -194,6 +194,8 @@ def _process_packet(packet_id: int, raw_path: Path) -> None:
 
 
 def _do_process(packet_id: int, raw_path: Path) -> None:
+    import re as _re
+    import anthropic
     from PIL import Image
 
     # ── Load image ────────────────────────────────────────────────────────────
@@ -204,10 +206,7 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     # ── Preprocess + save cleaned copy ────────────────────────────────────────
     from ..ingestion.field_vision import (
         preprocess_image, page_fingerprint,
-        detect_table_bbox, detect_rows, detect_columns,
-        _extract_row, _row_is_occupied, row_fingerprint,
         _apply_versioning, claude_resolve_ambiguous,
-        pages_likely_same,
     )
 
     preprocessed = preprocess_image(pil_img)
@@ -219,53 +218,90 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     # ── Fetch previous rows for the same page fingerprint ────────────────────
     prev_rows = db.get_prev_rows_for_fingerprint(fp, exclude_packet_id=packet_id)
 
-    # ── Build Vision client ───────────────────────────────────────────────────
-    api_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
-    vision_available = bool(api_key) or api_key.strip().startswith("{")
-    client = None
-    if vision_available:
-        try:
-            from ..ingestion.vision import _make_vision_client
-            client = _make_vision_client()
-        except Exception:
-            client = None
+    # ── Claude Vision extraction (single call, no coordinate math) ────────────
+    from ..ingestion.claude_extractor import _to_base64_jpeg, _PROMPT
 
-    # ── Grid detection ────────────────────────────────────────────────────────
-    bbox   = detect_table_bbox(preprocessed)
-    row_ys = detect_rows(preprocessed, bbox)
-    col_xs = detect_columns(preprocessed, bbox)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    claude_rows: list[dict] = []
+    if api_key:
+        claude_client = anthropic.Anthropic(api_key=api_key)
+        resp = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": _to_base64_jpeg(preprocessed),
+                        },
+                    },
+                    {"type": "text", "text": _PROMPT},
+                ],
+            }],
+        )
+        raw_text = resp.content[0].text.strip()
+        raw_text = _re.sub(r"^```(?:json)?\s*", "", raw_text)
+        raw_text = _re.sub(r"\s*```$", "", raw_text)
+        if raw_text.startswith("["):
+            try:
+                claude_rows = json.loads(raw_text)
+            except Exception:
+                claude_rows = []
 
-    # ── Extract rows ──────────────────────────────────────────────────────────
+    # ── Convert Claude rows to internal page_rows format ─────────────────────
     page_rows: list[dict] = []
-    for i, (y_top, y_bot) in enumerate(row_ys, start=1):
-        if client:
-            row, row_crop = _extract_row(preprocessed, y_top, y_bot, col_xs, i, client)
-        else:
-            # No Vision credentials — blank row with image-only data
-            row = _blank_row(i)
-            from ..ingestion.field_vision import _crop_cell
-            row_crop = _crop_cell(preprocessed, y_top, y_bot, 0, preprocessed.width)
+    for row in claude_rows:
+        if not isinstance(row, dict):
+            continue
+        name    = str(row.get("name",    "")).strip()
+        address = str(row.get("address", "")).strip()
+        city    = str(row.get("city",    "")).strip()
+        zip_    = str(row.get("zip",     "")).strip()
+        date    = str(row.get("date",    "")).strip()
+        has_sig = bool(row.get("has_signature", False))
+        try:
+            line_no = int(row.get("line", 0))
+        except (TypeError, ValueError):
+            line_no = 0
+        if not (1 <= line_no <= 8):
+            line_no = len(page_rows) + 1
 
-        norm_name = row["name"]["normalized"]
-        norm_addr = row["street_address"]["normalized"]
-        row["row_fingerprint"] = row_fingerprint(row_crop, norm_name, norm_addr)
+        valid_zip = bool(_re.match(r"^\d{5}$", zip_))
+        status = "blank" if (not name and not address) else "new_signature"
 
-        if not _row_is_occupied(row):
-            row["status"] = "blank"
-        else:
-            row["status"] = "new_signature"
-        page_rows.append(row)
+        page_rows.append({
+            "row_number":     line_no,
+            "name":           {"raw": name,    "normalized": name.upper(),    "ocr_confidence": "high"},
+            "street_address": {"raw": address, "normalized": address.upper(), "ocr_confidence": "high"},
+            "city":           {"raw": city,    "normalized": city.upper(),    "ocr_confidence": "high"},
+            "zip":            {"raw": zip_,    "normalized": zip_,            "valid_format": valid_zip},
+            "date":           {"raw": date,    "normalized": date,            "ocr_confidence": "high"},
+            "signature_present": has_sig,
+            "flags":          [],
+            "status":         status,
+            "row_fingerprint": "",
+        })
+
+    # Fill any missing rows 1–8 as blank
+    filled = {r["row_number"] for r in page_rows}
+    for i in range(1, 9):
+        if i not in filled:
+            page_rows.append(_blank_row(i))
+    page_rows.sort(key=lambda r: r["row_number"])
 
     # ── Versioning ────────────────────────────────────────────────────────────
     if prev_rows:
         _apply_versioning(page_rows, prev_rows)
-        # Claude resolves ambiguous rows only
         page_rows = claude_resolve_ambiguous(page_rows, prev_rows)
 
     # ── Summary counts ────────────────────────────────────────────────────────
-    new_sigs       = sum(1 for r in page_rows if r["status"] == "new_signature")
-    already_cnt    = sum(1 for r in page_rows if r["status"] == "already_counted")
-    needs_rev      = sum(1 for r in page_rows if r["status"] == "changed_needs_review")
+    new_sigs    = sum(1 for r in page_rows if r["status"] == "new_signature")
+    already_cnt = sum(1 for r in page_rows if r["status"] == "already_counted")
+    needs_rev   = sum(1 for r in page_rows if r["status"] == "changed_needs_review")
 
     summary = {
         "total_rows_detected": len(page_rows),

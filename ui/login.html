@@ -263,13 +263,19 @@
     };
 
     async function loadNames() {
+      const el = document.getElementById('nameList');
+      // Show "waking up" message if server takes > 3s (Render free tier cold start)
+      const wakeTimer = setTimeout(() => {
+        el.innerHTML = '<div class="empty-state">Server is waking up, please wait…</div>';
+      }, 3000);
       try {
         const res = await fetch('/auth/active-users');
+        clearTimeout(wakeTimer);
         allUsers = await res.json();
         renderNames(allUsers);
       } catch(e) {
-        document.getElementById('nameList').innerHTML =
-          '<div class="empty-state">Could not load names — try refreshing</div>';
+        clearTimeout(wakeTimer);
+        el.innerHTML = '<div class="empty-state">Could not load names — try refreshing</div>';
       }
     }
 
