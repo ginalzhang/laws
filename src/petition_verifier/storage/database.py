@@ -1184,9 +1184,13 @@ class Database:
             session.add(pkt)
             try:
                 session.commit()
-            except Exception:
+                session.refresh(pkt)
+                return pkt.id
+            except Exception as first_err:
                 session.rollback()
-                # Fallback: insert without shift_id if column doesn't exist yet
+
+            # Fallback: retry without shift_id (in case that column is missing)
+            try:
                 pkt2 = PacketRow(
                     worker_id=worker_id,
                     original_name=original_name,
@@ -1197,8 +1201,13 @@ class Database:
                 session.commit()
                 session.refresh(pkt2)
                 return pkt2.id
-            session.refresh(pkt)
-            return pkt.id
+            except Exception as second_err:
+                session.rollback()
+                raise RuntimeError(
+                    f"create_packet failed on both attempts. "
+                    f"First: {type(first_err).__name__}: {first_err}. "
+                    f"Second: {type(second_err).__name__}: {second_err}"
+                ) from second_err
 
     def list_packets(self) -> list:
         with self._Session() as session:

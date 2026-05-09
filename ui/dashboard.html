@@ -3257,6 +3257,7 @@
     const fd = new FormData();
     fd.append('file', input.files[0]);
     document.getElementById('rcUploadProgress').style.display = '';
+    msg.style.color = '#1a56db';
     msg.textContent = '';
     try {
       const r = await fetch('/review/upload', {
@@ -3273,11 +3274,36 @@
       closeModal('rcUploadModal');
       await loadReviewCenter();
       setTimeout(() => rcSelectPacket(data.packet_id), 300);
+      // Poll for background processing errors (packet may fail after 200 response)
+      _rcPollProcessing(data.packet_id);
     } catch(e) {
       msg.style.color = '#c62828';
       msg.textContent = e.message;
     } finally {
       document.getElementById('rcUploadProgress').style.display = 'none';
+    }
+  }
+
+  async function _rcPollProcessing(packetId) {
+    let attempts = 0;
+    while (attempts < 20) {
+      await new Promise(r => setTimeout(r, 2000));
+      attempts++;
+      try {
+        const r = await fetch(`/review/packets/${packetId}`, {
+          headers: { 'Authorization': 'Bearer ' + _token }
+        });
+        if (!r.ok) break;
+        const pkt = await r.json();
+        if (pkt.status === 'done') break;
+        if (pkt.status === 'failed') {
+          const shortErr = (pkt.error_msg || 'Processing failed').split('\n')[0];
+          showToast(`Processing error: ${shortErr}`, '#c62828');
+          // Reload to show failed state in packet list
+          await loadReviewCenter();
+          break;
+        }
+      } catch(_) { break; }
     }
   }
 

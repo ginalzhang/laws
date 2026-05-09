@@ -55,6 +55,8 @@ async def upload_packet(
     shift_id: int | None = None,
     current_user=Depends(get_current_user),
 ):
+    import traceback as _tb
+
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         suffix   = Path(file.filename or "packet.jpg").suffix.lower() or ".jpg"
@@ -62,6 +64,8 @@ async def upload_packet(
         raw_path = UPLOAD_DIR / filename
 
         data = await file.read()
+        if not data:
+            raise HTTPException(400, "Uploaded file is empty")
         raw_path.write_bytes(data)
 
         packet_id = db.create_packet(
@@ -75,10 +79,8 @@ async def upload_packet(
     except HTTPException:
         raise
     except Exception as exc:
-        # Surface the real failure to the client + Render logs so the cause is
-        # visible. Generic 500s with HTML bodies hide what's actually wrong.
-        import traceback
-        print("upload_packet failed:", traceback.format_exc(), flush=True)
+        # Print full traceback to server logs (visible in Render/deployment logs)
+        print("upload_packet failed:", _tb.format_exc(), flush=True)
         raise HTTPException(
             status_code=500,
             detail=f"{type(exc).__name__}: {exc}",
@@ -634,10 +636,12 @@ def _detect_fraud_patterns(lines: list, county: str | None = None) -> list[dict]
 # ── Background processing ─────────────────────────────────────────────────────
 
 def _process_packet(packet_id: int, raw_path: Path) -> None:
+    import traceback
     try:
         _do_process(packet_id, raw_path)
     except Exception as exc:
-        db.fail_packet(packet_id, str(exc))
+        tb = traceback.format_exc()
+        db.fail_packet(packet_id, f"{type(exc).__name__}: {exc}\n\n{tb}")
 
 
 def _do_process(packet_id: int, raw_path: Path) -> None:
