@@ -258,6 +258,14 @@ async def field_manager_page():
     return HTMLResponse("<h1>Field manager page not found</h1>", status_code=404)
 
 
+@app.get("/evann", response_class=HTMLResponse)
+async def evann_page():
+    page = _UI_DIR / "evann.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Page not found</h1>", status_code=404)
+
+
 @app.get("/projects")
 async def list_projects():
     rows = db.list_projects()

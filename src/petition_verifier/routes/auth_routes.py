@@ -92,7 +92,7 @@ async def list_active_users():
     seen: set[str] = set()
     result = []
     for u in sorted(users, key=lambda u: (0 if u.is_active else 1, u.id)):
-        if not u.is_active or u.role in ("boss", "admin", "field_manager", "evan"):
+        if not u.is_active or u.role in ("boss", "admin", "field_manager", "evan", "evann"):
             continue
         key = u.full_name.strip().lower()
         if key not in seen:
@@ -116,7 +116,7 @@ async def fm_users(payload: FMPasswordRequest):
     seen: set[str] = set()
     deduped = []
     for u in sorted(users, key=lambda u: (0 if u.is_active else 1, u.id)):
-        if not u.is_active or u.role not in ("field_manager", "evan"):
+        if not u.is_active or u.role not in ("field_manager",):
             continue
         key = u.full_name.strip().lower()
         if key not in seen:

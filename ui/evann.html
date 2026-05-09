@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#f2f2f7">
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --ink: #0f0f0f; --ink-2: #4a4a4a; --ink-3: #8a8a8a;
+      --surf: #ffffff; --surf-2: #f5f5f3; --surf-3: #e8e8e6;
+      --accent: #1a56db; --accent-light: #e8efff;
+      --green: #16a34a; --green-bg: #dcfce7; --green-text: #15803d;
+      --amber: #d97706; --amber-bg: #fef3c7; --amber-text: #92400e;
+      --red: #dc2626; --red-bg: #fee2e2; --red-text: #991b1b;
+      --border: rgba(0,0,0,0.09); --border-2: rgba(0,0,0,0.15);
+      --font: 'DM Sans', -apple-system, system-ui, sans-serif;
+      --mono: 'DM Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: #f2f2f7; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+    .header {
+      background: #1c1c1e; padding: 20px 20px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .header-title { font-size: 1.2rem; font-weight: 700; color: #fff; }
+    .header-sub   { font-size: .78rem; color: rgba(255,255,255,.45); margin-top: 2px; }
+    .refresh-btn {
+      padding: 8px 16px; border: 1.5px solid rgba(255,255,255,.2); border-radius: 10px;
+      background: rgba(255,255,255,.1); font-size: .85rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; color: #fff;
+    }
+    .refresh-btn:active { background: rgba(255,255,255,.2); }
+    .content { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .action-row { display: flex; gap: 10px; }
+    .action-btn {
+      flex: 1; padding: 14px 10px; border: none; border-radius: 14px;
+      font-size: .9rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px;
+      transition: opacity .15s, transform .1s; -webkit-appearance: none;
+    }
+    .action-btn:active  { transform: scale(.96); opacity: .85; }
+    .action-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    .action-btn .icon   { font-size: 1.4rem; }
+    .action-btn .label  { font-size: .78rem; font-weight: 600; }
+    .action-btn .sub    { font-size: .68rem; font-weight: 400; opacity: .75; }
+    .btn-blue  { background: #0a84ff; color: #fff; }
+    .btn-green { background: #30d158; color: #fff; }
+    .btn-red   { background: #ff3b30; color: #fff; }
+    .msg { font-size: .82rem; text-align: center; min-height: 16px; color: #8e8e93; }
+    .msg.success { color: #2e7d32; }
+    .msg.error   { color: #c62828; }
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0.5px rgba(0,0,0,.04); overflow: hidden;
+    }
+    .card-title { font-size: .9rem; font-weight: 700; color: #000; padding: 14px 16px 0; }
+    #mapContainer { height: 320px; }
+    .pins-list { padding: 0 16px 8px; }
+    .pin-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid #f2f2f7; }
+    .pin-row:last-child { border-bottom: none; }
+    .pin-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .pin-name { font-weight: 600; font-size: .875rem; }
+    .pin-time { color: #8e8e93; font-size: .75rem; margin-left: 6px; }
+    .pin-coords { font-size: .72rem; color: #8e8e93; text-align: right; flex-shrink: 0; }
+    .empty { padding: 20px; text-align: center; color: #8e8e93; font-size: .85rem; }
+    .week-nav { display: flex; align-items: center; gap: 10px; padding: 12px 16px 8px; }
+    .week-label { flex: 1; font-size: .85rem; font-weight: 700; text-align: center; }
+    .nav-btn {
+      padding: 6px 12px; border: 1.5px solid #e5e5ea; border-radius: 8px;
+      background: #fff; font-size: .82rem; font-weight: 600; color: #0a84ff;
+      cursor: pointer; font-family: inherit;
+    }
+    .nav-btn:active { background: #f2f2f7; }
+    .week-grid { display: grid; }
+    .wg-header { background: #f2f2f7; padding: 7px 8px; font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #8e8e93; text-align: center; }
+    .wg-worker { background: #fafafa; padding: 8px 10px; font-size: .82rem; font-weight: 600; color: #1c1c1e; }
+    .wg-cell { background: #fff; padding: 5px; min-height: 44px; }
+    .wg-shift { background: rgba(48,209,88,.15); color: #248a3d; border-radius: 6px; padding: 3px 6px; font-size: .68rem; font-weight: 600; cursor: pointer; display: block; margin-bottom: 2px; }
+    .fm-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 1100; }
+    .fm-modal-overlay.open { display: flex; }
+    .fm-modal { background: #fff; border-radius: 20px; padding: 24px 22px; width: 92%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+    .fm-modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
+    .fm-modal-close { float: right; cursor: pointer; color: #8e8e93; font-size: 1rem; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f2f2f7; margin-top: -2px; }
+    .fm-form-group { margin-bottom: 14px; }
+    .fm-form-group label { display: block; font-size: .75rem; font-weight: 600; color: #6e6e73; margin-bottom: 4px; }
+    .fm-form-group input, .fm-form-group select {
+      width: 100%; padding: 10px 12px; border: 1.5px solid #e5e5ea; border-radius: 10px;
+      font-size: .9rem; font-family: inherit; background: #f9f9fb; outline: none; color: #1c1c1e;
+      -webkit-appearance: none; appearance: none;
+    }
+    .fm-form-group input:focus, .fm-form-group select:focus { border-color: #0a84ff; background: #fff; }
+    .fm-modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .fm-btn { padding: 9px 18px; border: none; border-radius: 10px; cursor: pointer; font-size: .875rem; font-weight: 600; font-family: inherit; }
+    .fm-btn-outline { background: rgba(10,132,255,.1); color: #0a84ff; }
+    .fm-btn-primary { background: #0a84ff; color: #fff; }
+    .fm-btn-danger  { background: #ff3b30; color: #fff; }
+    .fm-modal-err { color: #c62828; font-size: .8rem; margin-bottom: 8px; display: none; }
+    .logout-link { text-align: center; padding: 8px; font-size: .8rem; color: #8e8e93; cursor: pointer; }
+    .logout-link:hover { color: #ff3b30; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); backdrop-filter: blur(4px); align-items: flex-end; justify-content: center; z-index: 1000; }
+    .overlay.open { display: flex; }
+    .sheet { background: #fff; border-radius: 22px 22px 0 0; padding: 28px 24px calc(28px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; }
+    .sheet h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .sheet .current-label { font-size: .85rem; color: #8e8e93; margin-bottom: 16px; }
+    .sheet input[type=number] { width: 100%; padding: 16px; border: 1.5px solid #e5e5ea; border-radius: 14px; font-size: 2rem; font-weight: 700; font-family: inherit; text-align: center; outline: none; background: #f9f9fb; -webkit-appearance: none; appearance: none; }
+    .sheet input[type=number]:focus { border-color: #0a84ff; background: #fff; }
+    .sheet-btns { display: flex; gap: 12px; margin-top: 16px; }
+    .sheet-btns button { flex: 1; padding: 14px; border: none; border-radius: 14px; font-size: 1rem; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .btn-cancel { background: #f2f2f7; color: #000; }
+    .btn-submit { background: #0a84ff; color: #fff; }
+    .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+    .mode-step { display: none; } .mode-step.active { display: block; } .input-step.hidden { display: none; }
+    .mode-info { background: #f2f2f7; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: .9rem; color: #3a3a3c; line-height: 1.5; }
+    .mode-info strong { color: #000; }
+    .mode-btns { display: flex; flex-direction: column; gap: 10px; }
+    .mode-btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 1rem; font-weight: 600; font-family: inherit; cursor: pointer; text-align: left; transition: opacity .15s, transform .1s; }
+    .mode-btn:active { transform: scale(.98); opacity: .88; }
+    .mode-btn .sub { font-size: .8rem; font-weight: 400; opacity: .7; display: block; margin-top: 2px; }
+    .mode-btn.add     { background: #30d158; color: #fff; }
+    .mode-btn.replace { background: #f2f2f7; color: #000; }
+    .mode-btn.back    { background: none; color: #0a84ff; font-size: .9rem; text-align: center; padding: 10px; }
+    .section-label { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin-bottom: 8px; }
+    .hour-clock-card { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 12px 14px; margin-bottom: 10px; }
+    .hc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .hc-title { font-size: .82rem; font-weight: 500; color: var(--ink); }
+    .hc-time  { font-size: .75rem; color: var(--ink-3); font-family: var(--mono); }
+    .hc-bar-track { height: 6px; background: var(--surf-3); border-radius: 99px; overflow: hidden; }
+    .hc-bar-fill  { height: 100%; border-radius: 99px; background: var(--accent); transition: width .5s; }
+    .hc-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: .68rem; color: var(--ink-3); }
+    .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
+    .sum-card { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 12px 14px; }
+    .sum-label { font-size: .7rem; color: var(--ink-3); margin-bottom: 4px; }
+    .sum-val { font-size: 1.4rem; font-weight: 500; font-family: var(--mono); color: var(--ink); letter-spacing: -.5px; }
+    .sum-sub { font-size: .7rem; color: var(--ink-3); margin-top: 2px; }
+    .sum-bar { height: 4px; background: var(--surf-3); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+    .sum-bar-fill { height: 100%; border-radius: 99px; transition: width .5s; }
+    .worker-row { background: var(--surf); border-radius: 12px; border: .5px solid var(--border); padding: 11px 14px; cursor: pointer; margin-bottom: 6px; transition: border-color .12s; }
+    .worker-row.expanded { border-color: var(--accent); }
+    .wr-top { display: flex; align-items: center; gap: 10px; }
+    .wr-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 600; flex-shrink: 0; }
+    .wr-name { font-size: .88rem; font-weight: 500; color: var(--ink); flex: 1; }
+    .wr-count { font-size: .95rem; font-weight: 500; font-family: var(--mono); color: var(--ink-2); }
+    .pace-pill { font-size: .65rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 4px; white-space: nowrap; }
+    .pace-pill.great { background: var(--green-bg); color: var(--green-text); }
+    .pace-pill.good  { background: var(--accent-light); color: var(--accent); }
+    .pace-pill.warn  { background: var(--amber-bg); color: var(--amber-text); }
+    .pace-pill.low   { background: var(--red-bg); color: var(--red-text); }
+    .wr-bar-wrap { margin-top: 8px; }
+    .wr-bar-track { height: 5px; background: var(--surf-3); border-radius: 99px; overflow: hidden; }
+    .wr-bar-fill  { height: 100%; border-radius: 99px; transition: width .3s; }
+    .wr-bar-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: .65rem; color: var(--ink-3); }
+    .wr-detail { margin-top: 10px; padding-top: 10px; border-top: .5px solid var(--border); display: none; }
+    .wr-detail.open { display: block; }
+
+    /* Payroll table */
+    .payroll-wrap { overflow-x: auto; padding: 0 16px 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { background: #f2f2f7; padding: 8px 10px; font-size: .72rem; font-weight: 700; text-align: left; color: #6e6e73; white-space: nowrap; }
+    td { padding: 9px 10px; border-bottom: .5px solid #f2f2f7; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    td.money { font-family: var(--mono); font-size: .82rem; }
+    td.money.gross { font-weight: 700; color: #15803d; }
+    td.money.net   { font-weight: 700; }
+    td.money.tax   { color: #c62828; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="header-title" id="managerName">Dashboard</div>
+      <div class="header-sub" id="lastRefresh">Loading…</div>
+    </div>
+    <button class="refresh-btn" onclick="refresh()">↻ Refresh</button>
+  </div>
+
+  <div class="content">
+
+    <!-- Payroll -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 12px">
+        <div class="card-title" style="padding:0">💰 Payroll</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="openNewPeriodModal()" style="padding:7px 12px;border:none;border-radius:9px;background:#f2f2f7;color:#3c3c43;font-size:.78rem;font-weight:600;font-family:inherit;cursor:pointer">+ New Period</button>
+          <button onclick="runPayroll()" style="padding:7px 12px;border:none;border-radius:9px;background:#0a84ff;color:#fff;font-size:.78rem;font-weight:600;font-family:inherit;cursor:pointer">Run Payroll</button>
+        </div>
+      </div>
+      <div style="padding:0 16px 12px;display:flex;align-items:center;gap:10px">
+        <label style="font-size:.78rem;font-weight:600;color:#6e6e73;flex-shrink:0">Pay period:</label>
+        <select id="payPeriodSelect" onchange="loadPayroll()" style="flex:1;padding:8px 10px;border:1.5px solid #e5e5ea;border-radius:9px;font-size:.84rem;font-family:inherit;background:#f9f9fb;outline:none;color:#1c1c1e">
+          <option value="">Loading…</option>
+        </select>
+        <button onclick="exportPayrollCSV()" style="padding:7px 12px;border:1.5px solid #e5e5ea;border-radius:9px;background:#fff;font-size:.78rem;font-weight:600;font-family:inherit;cursor:pointer;flex-shrink:0;color:#3c3c43">CSV</button>
+      </div>
+      <div class="payroll-wrap">
+        <table>
+          <thead><tr>
+            <th>Worker</th><th>Hours</th><th>Sigs</th><th>Valid</th>
+            <th>Valid%</th><th>Wage</th><th>Base</th><th>Bonus</th>
+            <th>Gross</th><th>Tax</th><th>Net</th><th>Lunch</th>
+          </tr></thead>
+          <tbody id="payrollBody"><tr><td colspan="12" class="empty">Select a pay period</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quick Entry -->
+    <div class="card">
+      <div class="card-title" style="padding-bottom:6px">⚡ Quick Entry</div>
+      <div style="padding:0 16px 16px">
+        <p style="font-size:.78rem;color:#8e8e93;margin-bottom:10px">Dump your notes — one worker per line. E.g. <em>"Maria 9am-5pm 47 sigs"</em> or <em>"Carlos 4 hours 33 sigs"</em></p>
+        <textarea id="qeInput" rows="4"
+          placeholder="Maria 9am-5pm 47 sigs&#10;Carlos 4 hours 33 sigs&#10;John Apr 23 10am-3pm 20 signatures"
+          style="width:100%;padding:11px 12px;border:1.5px solid #e5e5ea;border-radius:12px;font-size:.88rem;font-family:inherit;resize:vertical;outline:none;background:#f9f9fb;color:#1c1c1e"
+          oninput="parseQE()"></textarea>
+        <div id="qePreview" style="display:none;margin-top:12px">
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8e8e93;margin-bottom:8px">Parsed — confirm before submitting</div>
+          <div id="qeRows"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button onclick="submitQE()" style="flex:1;padding:12px;border:none;border-radius:12px;background:#0a84ff;color:#fff;font-size:.9rem;font-weight:700;font-family:inherit;cursor:pointer">Submit all</button>
+            <button onclick="clearQE()" style="padding:12px 18px;border:none;border-radius:12px;background:#f2f2f7;color:#000;font-size:.9rem;font-weight:600;font-family:inherit;cursor:pointer">Clear</button>
+          </div>
+        </div>
+        <div id="qeMsg" style="margin-top:8px;font-size:.82rem"></div>
+      </div>
+    </div>
+
+    <!-- My Team -->
+    <div class="card" id="myTeamCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0" id="teamCardTitle">My Team</div>
+        <button id="teamActionBtn" onclick="teamAction()" style="padding:7px 14px;border:none;border-radius:10px;background:#0a84ff;color:#fff;font-size:.82rem;font-weight:600;font-family:inherit;cursor:pointer">+ Create</button>
+      </div>
+      <div id="teamMemberList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="action-row">
+      <button class="action-btn btn-blue" id="sigBtn" onclick="openSigSheet()">
+        <span class="icon">✍️</span>
+        <span class="label">Submit Sigs</span>
+        <span class="sub" id="mySigCount">Tap to update</span>
+      </button>
+      <button class="action-btn btn-green" id="locBtn" onclick="shareLocation()">
+        <span class="icon">📍</span>
+        <span class="label">Drop Pin</span>
+        <span class="sub">Share my location</span>
+      </button>
+      <button class="action-btn btn-red" id="clearPinBtn" onclick="clearPin()">
+        <span class="icon">🗑️</span>
+        <span class="label">Remove Pin</span>
+        <span class="sub">Delete my location</span>
+      </button>
+    </div>
+    <div class="msg" id="statusMsg"></div>
+
+    <!-- Map -->
+    <div class="card">
+      <div class="card-title" style="padding-bottom:10px">Live Map</div>
+      <div id="mapContainer"></div>
+    </div>
+
+    <!-- Recent pins list -->
+    <div class="card">
+      <div class="card-title">Recent Location Pins</div>
+      <div class="pins-list" id="pinsList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Hourly goal -->
+    <div>
+      <div class="section-label">This hour · goal 10 per person</div>
+      <div class="hour-clock-card">
+        <div class="hc-top">
+          <span class="hc-title">⏱ Hour progress</span>
+          <span class="hc-time" id="hcTime">—</span>
+        </div>
+        <div class="hc-bar-track"><div class="hc-bar-fill" id="hcBar" style="width:0%"></div></div>
+        <div class="hc-meta"><span id="hcElapsed">0m elapsed</span><span id="hcRemain">60m left</span></div>
+      </div>
+      <div class="summary-grid">
+        <div class="sum-card">
+          <div class="sum-label">Team total</div>
+          <div class="sum-val" id="teamTotal">—</div>
+          <div class="sum-sub">of <span id="teamGoalEl">—</span> goal</div>
+          <div class="sum-bar"><div class="sum-bar-fill" id="teamBar" style="width:0%;background:var(--accent)"></div></div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">On track</div>
+          <div class="sum-val" id="onTrackCount">—</div>
+          <div class="sum-sub">workers on pace</div>
+          <div class="sum-bar"><div class="sum-bar-fill" id="onTrackBar" style="width:0%;background:var(--green)"></div></div>
+        </div>
+      </div>
+      <div class="section-label">Team · tap to expand</div>
+      <div id="lbList"><div class="empty" style="padding:20px;text-align:center;color:#8e8e93;font-size:.85rem">Loading…</div></div>
+    </div>
+
+    <!-- Workers -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0">Workers</div>
+        <button onclick="openAddWorker()" style="padding:7px 14px;border:none;border-radius:10px;background:#0a84ff;color:#fff;font-size:.82rem;font-weight:600;font-family:inherit;cursor:pointer">+ Add</button>
+      </div>
+      <div id="fmWorkerList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Weekly schedule -->
+    <div class="card" style="overflow:visible">
+      <div class="week-nav">
+        <button class="nav-btn" onclick="prevWeek()">← Prev</button>
+        <div class="week-label" id="fmWeekLabel"></div>
+        <button class="nav-btn" onclick="nextWeek()">Next →</button>
+      </div>
+      <div id="fmScheduleGrid" style="overflow-x:auto;padding-bottom:8px"></div>
+    </div>
+
+    <!-- Worker Notes -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px">
+        <div class="card-title" style="padding:0">Worker Notes</div>
+        <button onclick="loadWorkerNotes()" style="padding:6px 12px;border:none;border-radius:8px;background:#f2f2f7;color:#3c3c43;font-size:.78rem;font-weight:600;font-family:inherit;cursor:pointer">↻ Refresh</button>
+      </div>
+      <div id="workerNotesList" style="padding:0 16px 12px"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="logout-link" onclick="logout()">Sign out</div>
+  </div>
+
+  <!-- New Pay Period Modal -->
+  <div class="fm-modal-overlay" id="newPeriodModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('newPeriodModal')">✕</span>
+      <div class="fm-modal-title">New Pay Period</div>
+      <div class="fm-form-group">
+        <label>Start Date</label>
+        <input type="date" id="periodStart">
+      </div>
+      <div class="fm-form-group">
+        <label>End Date</label>
+        <input type="date" id="periodEnd">
+      </div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('newPeriodModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" onclick="createPayPeriod()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clock In Modal -->
+  <div class="fm-modal-overlay" id="fmAddShiftModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddShiftModal')">✕</span>
+      <div class="fm-modal-title" id="fmAddShiftTitle">Clock In</div>
+      <input type="hidden" id="fmAddShiftWorkerId">
+      <input type="hidden" id="fmAddShiftDate">
+      <div class="fm-form-group">
+        <label>Start Time</label>
+        <input type="time" id="fmAddShiftStart">
+      </div>
+      <p style="font-size:.78rem;color:#8e8e93;margin:0 0 12px">Clock out when they leave.</p>
+      <div class="fm-modal-err" id="fmAddShiftErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddShiftModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" onclick="submitFMAddShift()">Clock In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clock Out Modal -->
+  <div class="fm-modal-overlay" id="fmClockOutModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmClockOutModal')">✕</span>
+      <div class="fm-modal-title" id="fmClockOutTitle">Clock Out</div>
+      <input type="hidden" id="fmClockOutWorkerId">
+      <div class="fm-form-group">
+        <label>End Time</label>
+        <input type="time" id="fmClockOutTime">
+      </div>
+      <div class="fm-modal-err" id="fmClockOutErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmClockOutModal')">Cancel</button>
+        <button class="fm-btn fm-btn-danger" onclick="submitClockOut()">Clock Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Shift Modal -->
+  <div class="fm-modal-overlay" id="fmEditShiftModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmEditShiftModal')">✕</span>
+      <div class="fm-modal-title" id="fmEditShiftTitle">Edit Shift</div>
+      <input type="hidden" id="fmEditShiftId">
+      <div class="fm-form-group">
+        <label>Start Time</label>
+        <input type="time" id="fmEditShiftStart">
+      </div>
+      <div class="fm-form-group">
+        <label>End Time <span style="font-weight:400;color:#8e8e93">(leave blank if still active)</span></label>
+        <input type="time" id="fmEditShiftEnd">
+      </div>
+      <div class="fm-modal-err" id="fmEditShiftErr"></div>
+      <div class="fm-modal-footer" style="justify-content:space-between">
+        <button class="fm-btn fm-btn-danger" onclick="removeFMShift()">Remove</button>
+        <div style="display:flex;gap:8px">
+          <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmEditShiftModal')">Cancel</button>
+          <button class="fm-btn fm-btn-primary" onclick="submitFMEditShift()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Team Modal -->
+  <div class="fm-modal-overlay" id="fmCreateTeamModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmCreateTeamModal')">✕</span>
+      <div class="fm-modal-title">Create Your Team</div>
+      <div class="fm-form-group">
+        <label>Team Name *</label>
+        <input type="text" id="fmTeamName" placeholder="e.g. Team East Bay">
+      </div>
+      <div class="fm-modal-err" id="fmTeamErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmCreateTeamModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" id="fmTeamSubmitBtn" onclick="submitCreateTeam()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Team Member Modal -->
+  <div class="fm-modal-overlay" id="fmAddMemberModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddMemberModal')">✕</span>
+      <div class="fm-modal-title">Add Member</div>
+      <div id="fmUnassignedList" style="max-height:280px;overflow-y:auto;margin-bottom:12px"><div class="empty">Loading…</div></div>
+      <div class="fm-modal-err" id="fmMemberErr"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddMemberModal')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Worker Modal -->
+  <div class="fm-modal-overlay" id="fmAddWorkerModal">
+    <div class="fm-modal">
+      <span class="fm-modal-close" onclick="closeFMModal('fmAddWorkerModal')">✕</span>
+      <div class="fm-modal-title">Add Worker</div>
+      <div class="fm-form-group">
+        <label>Full Name *</label>
+        <input type="text" id="fmWName" placeholder="Jane Smith">
+      </div>
+      <div class="fm-form-group">
+        <label>Role *</label>
+        <select id="fmWRole" style="width:100%;padding:10px 12px;border:1.5px solid #e5e5ea;border-radius:10px;font-size:.9rem;font-family:inherit;background:#f9f9fb;outline:none;color:#1c1c1e">
+          <option value="petitioner">Petitioner</option>
+          <option value="worker">Worker (general)</option>
+          <option value="field_manager">Field Manager</option>
+        </select>
+      </div>
+      <div class="fm-form-group">
+        <label>Phone</label>
+        <input type="tel" id="fmWPhone" placeholder="(555) 000-0000">
+      </div>
+      <div class="fm-modal-err" id="fmWError"></div>
+      <div class="fm-modal-footer">
+        <button class="fm-btn fm-btn-outline" onclick="closeFMModal('fmAddWorkerModal')">Cancel</button>
+        <button class="fm-btn fm-btn-primary" id="fmWSubmitBtn" onclick="submitAddWorker()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sig count sheet -->
+  <div class="overlay" id="sigOverlay">
+    <div class="sheet">
+      <div class="input-step" id="inputStep">
+        <h2 id="sheetTitle">How many signatures?</h2>
+        <div class="current-label" id="currentLabel"></div>
+        <input type="number" id="sigInput" min="0" max="9999" placeholder="0">
+        <div class="sheet-btns">
+          <button class="btn-cancel" onclick="closeSheet()">Cancel</button>
+          <button class="btn-submit" id="sigSubmitBtn" onclick="goToModeStep()">Next</button>
+        </div>
+      </div>
+      <div class="mode-step" id="modeStep">
+        <h2>What do you want to do?</h2>
+        <div class="mode-info" id="modeInfo"></div>
+        <div class="mode-btns">
+          <button class="mode-btn add" onclick="submitSigCount('add')">
+            Add to my total
+            <span class="sub" id="addSub"></span>
+          </button>
+          <button class="mode-btn replace" onclick="submitSigCount('replace')">
+            Replace — I typed the wrong number
+            <span class="sub" id="replaceSub"></span>
+          </button>
+          <button class="mode-btn back" onclick="goBackToInput()">← Edit number</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const HOURLY_GOAL = 10;
+    const token    = localStorage.getItem('pv_token');
+    const userRole = localStorage.getItem('pv_role');
+    const userName = localStorage.getItem('pv_full_name');
+    if (!token || userRole !== 'evann') { window.location.href = '/'; }
+    document.getElementById('managerName').textContent = userName || 'Dashboard';
+
+    let currentCount = 0;
+    const storedCount = sessionStorage.getItem('pv_sig_count');
+    if (storedCount) { currentCount = parseInt(storedCount,10)||0; document.getElementById('mySigCount').textContent = storedCount + ' sigs today'; }
+
+    async function initMyCount() {
+      try {
+        const data = await fetch('/stats/my-count', {
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        }).then(r => r.json());
+        if (data.sig_count > 0) {
+          currentCount = data.sig_count;
+          sessionStorage.setItem('pv_sig_count', data.sig_count);
+          document.getElementById('mySigCount').textContent = data.sig_count + ' sigs today';
+        }
+      } catch(e) {}
+    }
+    initMyCount();
+
+    function api(path, opts = {}) {
+      return fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...(opts.headers || {}) },
+      }).then(async r => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'Request failed');
+        return d;
+      });
+    }
+
+    function setMsg(text, type = '') {
+      const el = document.getElementById('statusMsg');
+      el.textContent = text;
+      el.className = 'msg' + (type ? ' ' + type : '');
+      if (type) setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 3000);
+    }
+
+    // ── Payroll ───────────────────────────────────────────────────────────────
+    let _payPeriodsCache = [];
+    let _payrollDataCache = [];
+    let _payrollWorkerMap = {};  // id → full_name
+
+    const _fmtMoney = c => '$' + (c / 100).toFixed(2);
+    const _fmtPct   = v => (v * 100).toFixed(1) + '%';
+
+    async function loadPayPeriods() {
+      try {
+        _payPeriodsCache = await api('/payroll/periods');
+        const sel = document.getElementById('payPeriodSelect');
+        if (!_payPeriodsCache.length) {
+          sel.innerHTML = '<option value="">No pay periods — create one</option>';
+          return;
+        }
+        sel.innerHTML = _payPeriodsCache.map(p =>
+          `<option value="${p.id}">${p.start_date} — ${p.end_date} [${p.status}]</option>`
+        ).join('');
+        loadPayroll();
+      } catch(e) {
+        document.getElementById('payrollBody').innerHTML = `<tr><td colspan="12" class="empty">Could not load: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function loadPayroll() {
+      const periodId = document.getElementById('payPeriodSelect').value;
+      if (!periodId) return;
+      const tbody = document.getElementById('payrollBody');
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
+      try {
+        if (!Object.keys(_payrollWorkerMap).length) {
+          const workers = await api('/workers');
+          workers.forEach(w => { _payrollWorkerMap[w.id] = w.full_name; });
+        }
+        const records = await api(`/payroll/records?pay_period_id=${periodId}`);
+        _payrollDataCache = records;
+        if (!records.length) {
+          tbody.innerHTML = '<tr><td colspan="12" class="empty">No records — run payroll to calculate.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = records.map(r => `<tr>
+          <td><strong>${_payrollWorkerMap[r.worker_id] || r.worker_name || ('Worker ' + r.worker_id)}</strong></td>
+          <td>${r.total_hours.toFixed(1)}</td>
+          <td>${r.total_signatures}</td>
+          <td>${r.valid_signatures}</td>
+          <td>${_fmtPct(r.validity_rate)}</td>
+          <td class="money">$${r.hourly_wage_used.toFixed(2)}</td>
+          <td class="money">${_fmtMoney(r.base_pay_cents)}</td>
+          <td class="money">${_fmtMoney(r.bonus_cents)}</td>
+          <td class="money gross">${_fmtMoney(r.gross_cents)}</td>
+          <td class="money tax">${_fmtMoney(r.tax_cents)}</td>
+          <td class="money net">${_fmtMoney(r.net_cents)}</td>
+          <td>${r.earns_lunch ? '🥪' : '—'}</td>
+        </tr>`).join('');
+      } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="12" class="empty">Error: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function runPayroll() {
+      const periodId = document.getElementById('payPeriodSelect').value;
+      if (!periodId) { alert('Select a pay period first'); return; }
+      if (!confirm('Run payroll for all workers in this period?')) return;
+      try {
+        const result = await api(`/payroll/run/${periodId}`, { method: 'POST' });
+        alert(`Done! ${result.workers_processed} workers · Gross: ${_fmtMoney(result.total_gross_cents)}`);
+        loadPayroll();
+        loadPayPeriods();
+      } catch(e) { alert('Error: ' + e.message); }
+    }
+
+    function exportPayrollCSV() {
+      if (!_payrollDataCache.length) { alert('No data to export'); return; }
+      const headers = ['worker_name','worker_id','total_hours','total_signatures','valid_signatures','validity_rate','hourly_wage_used','base_pay_cents','bonus_cents','gross_cents','tax_cents','net_cents','earns_lunch'];
+      const rows = _payrollDataCache.map(r => headers.map(h => h === 'worker_name' ? (_payrollWorkerMap[r.worker_id] || '') : r[h]).join(','));
+      const csv  = [headers.join(','), ...rows].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+      a.download = 'payroll.csv';
+      a.click();
+    }
+
+    function _weekBounds() {
+      const now = new Date();
+      const day = now.getDay();
+      const daysToMon = day === 0 ? -6 : 1 - day;
+      const mon = new Date(now); mon.setDate(now.getDate() + daysToMon);
+      const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+      const fmt = d => d.toISOString().split('T')[0];
+      return { start: fmt(mon), end: fmt(fri) };
+    }
+
+    function openNewPeriodModal() {
+      const { start, end } = _weekBounds();
+      document.getElementById('periodStart').value = start;
+      document.getElementById('periodEnd').value   = end;
+      document.getElementById('newPeriodModal').classList.add('open');
+    }
+
+    async function createPayPeriod() {
+      const start = document.getElementById('periodStart').value;
+      const end   = document.getElementById('periodEnd').value;
+      if (!start || !end) { alert('Please enter both dates'); return; }
+      try {
+        await api('/payroll/periods', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
+        closeFMModal('newPeriodModal');
+        loadPayPeriods();
+      } catch(e) { alert('Error: ' + e.message); }
+    }
+
+    // ── Sig count ─────────────────────────────────────────────────────────────
+    function openSigSheet() {
+      document.getElementById('inputStep').classList.remove('hidden');
+      document.getElementById('modeStep').classList.remove('active');
+      document.getElementById('sheetTitle').textContent = currentCount > 0 ? 'Update sig count' : 'How many signatures?';
+      document.getElementById('currentLabel').textContent = currentCount > 0 ? `Your current count: ${currentCount}` : '';
+      document.getElementById('sigInput').value = '';
+      document.getElementById('sigOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('sigInput').focus(), 80);
+    }
+    function closeSheet() { document.getElementById('sigOverlay').classList.remove('open'); }
+    function goToModeStep() {
+      const val = parseInt(document.getElementById('sigInput').value, 10);
+      if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); return; }
+      if (currentCount <= 0) { submitSigCount('replace'); return; }
+      const newTotal = currentCount + val;
+      document.getElementById('modeInfo').innerHTML = `You entered <strong>${val}</strong>. Your current total is <strong>${currentCount}</strong>.`;
+      document.getElementById('addSub').textContent = `${currentCount} + ${val} = ${newTotal} total`;
+      document.getElementById('replaceSub').textContent = `New total: ${val}`;
+      document.getElementById('inputStep').classList.add('hidden');
+      document.getElementById('modeStep').classList.add('active');
+    }
+    function goBackToInput() {
+      document.getElementById('modeStep').classList.remove('active');
+      document.getElementById('inputStep').classList.remove('hidden');
+      setTimeout(() => document.getElementById('sigInput').focus(), 80);
+    }
+    async function submitSigCount(mode) {
+      const val = parseInt(document.getElementById('sigInput').value, 10);
+      if (isNaN(val) || val < 0) { setMsg('Enter a valid number', 'error'); closeSheet(); return; }
+      const finalCount = mode === 'add' ? currentCount + val : val;
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
+      document.getElementById('sigSubmitBtn').disabled = true;
+      try {
+        await api('/stats/sig-count', { method: 'POST', body: JSON.stringify({ count: finalCount }) });
+        currentCount = finalCount;
+        sessionStorage.setItem('pv_sig_count', finalCount);
+        document.getElementById('mySigCount').textContent = finalCount + ' sigs today';
+        closeSheet(); setMsg('Sig count updated!', 'success'); loadLeaderboard();
+      } catch(e) { setMsg(e.message, 'error'); closeSheet(); }
+      document.querySelectorAll('.mode-btn').forEach(b => b.disabled = false);
+      document.getElementById('sigSubmitBtn').disabled = false;
+    }
+    document.getElementById('sigOverlay').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeSheet(); });
+
+    // ── Location ──────────────────────────────────────────────────────────────
+    async function clearPin() {
+      const btn = document.getElementById('clearPinBtn'); btn.disabled = true;
+      try { await api('/stats/location', { method: 'DELETE' }); setMsg('Pin removed!', 'success'); refresh(); }
+      catch(e) { setMsg(e.message, 'error'); }
+      btn.disabled = false;
+    }
+    async function shareLocation() {
+      if (!navigator.geolocation) { setMsg('Geolocation not supported', 'error'); return; }
+      const btn = document.getElementById('locBtn'); btn.disabled = true; setMsg('Getting location…');
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            await api('/stats/location', { method: 'POST', body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }) });
+            setMsg('Pin dropped!', 'success');
+            const [pins] = await Promise.all([api('/locations/pins'), loadLeaderboard()]);
+            await loadMap(pins);
+          } catch(e) { setMsg(e.message, 'error'); }
+          btn.disabled = false;
+        },
+        (err) => { setMsg(err.code === 1 ? 'Location access denied' : 'Could not get location', 'error'); btn.disabled = false; },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    // ── Map ───────────────────────────────────────────────────────────────────
+    let _leafletMap = null;
+    const _workerColors = ['#0a84ff','#30d158','#ff9f0a','#bf5af2','#ff375f','#64d2ff','#ffd60a','#ff6961'];
+    const _colorFor = (() => { const m = {}; let i = 0; return id => (m[id] = m[id] ?? _workerColors[i++ % _workerColors.length]); })();
+
+    async function loadMap(pins) {
+      const listEl = document.getElementById('pinsList');
+      listEl.innerHTML = !pins.length ? '<div class="empty">No pins yet</div>'
+        : pins.slice(0, 30).map(p => {
+            const t = new Date(p.pinned_at + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            const d = new Date(p.pinned_at + 'Z').toLocaleDateString([], {month:'short', day:'numeric'});
+            const col = _colorFor(p.worker_id);
+            return `<div class="pin-row">
+              <div class="pin-dot" style="background:${col}"></div>
+              <div style="flex:1"><span class="pin-name">${p.worker_name}</span><span class="pin-time">${d} ${t}</span></div>
+              <div class="pin-coords">${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</div>
+            </div>`;
+          }).join('');
+      if (!_leafletMap) {
+        _leafletMap = L.map('mapContainer').setView([37.7749, -122.4194], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(_leafletMap);
+      } else {
+        _leafletMap.eachLayer(l => { if (l instanceof L.Marker) _leafletMap.removeLayer(l); });
+      }
+      if (pins.length) {
+        const latlngs = [];
+        pins.forEach(p => {
+          const col  = _colorFor(p.worker_id);
+          const icon = L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:${col};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`, className: '', iconSize: [14,14], iconAnchor: [7,7] });
+          L.marker([p.lat, p.lng], { icon }).addTo(_leafletMap).bindPopup(`<strong>${p.worker_name}</strong><br>${new Date(p.pinned_at+'Z').toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}`);
+          latlngs.push([p.lat, p.lng]);
+        });
+        _leafletMap.fitBounds(L.latLngBounds(latlngs), { padding: [30,30], maxZoom: 15 });
+      }
+    }
+
+    // ── Live sig counts ───────────────────────────────────────────────────────
+    const AVATAR_COLORS = [
+      ['#e8efff','#0c447c'],['#dcfce7','#15803d'],['#fef3c7','#92400e'],
+      ['#fee2e2','#991b1b'],['#f3e8ff','#6b21a8'],['#e0f2fe','#0c4a6e'],['#fce7f3','#9d174d'],
+      ['#fef9c3','#713f12'],['#e0fdf4','#065f46'],
+    ];
+    function _initials(name) { return name.trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2); }
+    function _getPace(sigs, elapsedMins) {
+      const expected = (elapsedMins / 60) * HOURLY_GOAL;
+      if (sigs >= HOURLY_GOAL) return 'great';
+      if (sigs >= expected)    return 'good';
+      if (sigs >= expected * 0.6) return 'warn';
+      return 'low';
+    }
+    const _paceLabel = { great: 'Goal met', good: 'On track', warn: 'Behind', low: 'Way behind' };
+    const _paceColor = { great: '#16a34a', good: '#1a56db', warn: '#d97706', low: '#dc2626' };
+
+    function updateHourClock() {
+      const now = new Date();
+      const elapsedMins = now.getMinutes() + now.getSeconds() / 60;
+      const remainMins  = 60 - elapsedMins;
+      document.getElementById('hcTime').textContent    = now.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      document.getElementById('hcBar').style.width     = Math.round((elapsedMins / 60) * 100) + '%';
+      document.getElementById('hcElapsed').textContent = Math.round(elapsedMins) + 'm elapsed';
+      document.getElementById('hcRemain').textContent  = Math.round(remainMins) + 'm left';
+    }
+
+    async function loadLeaderboard() {
+      updateHourClock();
+      try {
+        const [live, active] = await Promise.all([api('/stats/live'), api('/shifts/active')]);
+        const shiftMap = {}; for (const s of active) shiftMap[s.worker_id] = s;
+        const allActive = active.map(s => s.worker_id);
+        const sorted = [...live].filter(e => e.sig_count > 0 || allActive.includes(e.worker_id)).sort((a,b) => b.sig_count - a.sig_count);
+        const el = document.getElementById('lbList');
+        if (!sorted.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#8e8e93;font-size:.85rem">No counts yet</div>'; return; }
+        const now = new Date(); const elapsedMins = now.getMinutes() + now.getSeconds() / 60;
+        let totalSigs = 0, onTrackCount = 0;
+        el.innerHTML = '';
+        sorted.forEach((e, idx) => {
+          const sigs = e.sig_count || 0; totalSigs += sigs;
+          const pace = _getPace(sigs, elapsedMins);
+          if (pace !== 'low' && sigs > 0) onTrackCount++;
+          const pct    = Math.min(Math.round((sigs / HOURLY_GOAL) * 100), 100);
+          const needed = Math.max(0, HOURLY_GOAL - sigs);
+          const [avatarBg, avatarColor] = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+          let shiftDetail = '';
+          const shift = shiftMap[e.worker_id];
+          if (shift) {
+            const raw = shift.clock_in; const start = new Date(raw.includes('Z') ? raw : raw + 'Z');
+            const hrs = (Date.now() - start.getTime()) / 3600000;
+            if (hrs >= 0.05) shiftDetail = `<span style="font-size:.65rem;color:var(--ink-3)">${(sigs/hrs).toFixed(1)}/hr avg · ${hrs.toFixed(1)}h shift</span>`;
+          }
+          const row = document.createElement('div');
+          row.className = 'worker-row';
+          row.innerHTML = `
+            <div class="wr-top">
+              <div class="wr-avatar" style="background:${avatarBg};color:${avatarColor}">${_initials(e.full_name)}</div>
+              <div class="wr-name">${e.full_name}</div>
+              <div class="wr-count">${sigs}</div>
+              <span class="pace-pill ${pace}">${_paceLabel[pace]}</span>
+            </div>
+            <div class="wr-bar-wrap">
+              <div class="wr-bar-track"><div class="wr-bar-fill" style="width:${pct}%;background:${_paceColor[pace]}"></div></div>
+              <div class="wr-bar-meta"><span>${sigs} / ${HOURLY_GOAL} this hour</span><span>${needed > 0 ? needed + ' more needed' : 'Goal reached!'}</span></div>
+            </div>
+            <div class="wr-detail" id="lbd-${idx}"><div style="padding:4px 0;font-size:.75rem;color:var(--ink-3)">${shiftDetail}</div></div>`;
+          row.addEventListener('click', () => {
+            const det = document.getElementById('lbd-' + idx);
+            const open = det.classList.toggle('open'); row.classList.toggle('expanded', open);
+          });
+          el.appendChild(row);
+        });
+        const teamGoal = sorted.length * HOURLY_GOAL;
+        document.getElementById('teamTotal').textContent    = totalSigs;
+        document.getElementById('teamGoalEl').textContent   = teamGoal;
+        document.getElementById('teamBar').style.width      = Math.min(Math.round((totalSigs/teamGoal)*100),100) + '%';
+        document.getElementById('onTrackCount').textContent = onTrackCount + ' / ' + sorted.length;
+        document.getElementById('onTrackBar').style.width   = Math.round((onTrackCount/sorted.length)*100) + '%';
+      } catch(e) {
+        document.getElementById('lbList').innerHTML = '<div style="padding:20px;text-align:center;color:#c62828;font-size:.85rem">Could not load</div>';
+      }
+    }
+
+    // ── Schedule grid ─────────────────────────────────────────────────────────
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    let _weekOffset = 0, _schedWorkers = [], _schedShifts = [], _schedMonday = null, _mobileDayIdx = 0;
+
+    function getMonday(offset) {
+      const d = new Date(); const day = d.getDay() || 7;
+      d.setDate(d.getDate() - day + 1 + offset * 7); d.setHours(0,0,0,0); return d;
+    }
+    function fmtDate(d) { return d.toISOString().slice(0,10); }
+    function fmtWeekLabel(mon) {
+      const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+      const opts = {month:'short', day:'numeric'};
+      return mon.toLocaleDateString([],opts) + ' — ' + sun.toLocaleDateString([],opts);
+    }
+
+    async function loadSchedule() {
+      const monday = getMonday(_weekOffset); _schedMonday = monday;
+      document.getElementById('fmWeekLabel').textContent = fmtWeekLabel(monday);
+      try {
+        const [allWorkers, shifts] = await Promise.all([api('/workers'), api('/shifts?date_from=' + fmtDate(monday))]);
+        _schedWorkers = allWorkers.filter(w => ['petitioner','worker','office_worker'].includes(w.role));
+        _schedShifts  = shifts; _mobileDayIdx = 0;
+        try { const live = await api('/stats/live'); window._sigCountMap = {}; for (const e of live) window._sigCountMap[e.worker_id] = e.sig_count; }
+        catch(e) { window._sigCountMap = {}; }
+        renderSchedule();
+      } catch(e) { document.getElementById('fmScheduleGrid').innerHTML = '<div class="empty">Could not load schedule</div>'; }
+    }
+
+    function renderSchedule() {
+      const el = document.getElementById('fmScheduleGrid');
+      if (!_schedWorkers.length) { el.innerHTML = '<div class="empty">No workers</div>'; return; }
+      const monday = _schedMonday; const isMobile = window.innerWidth <= 600;
+      if (isMobile) {
+        let pills = '<div style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;-webkit-overflow-scrolling:touch">';
+        DAYS.forEach((d, i) => {
+          const date = new Date(monday); date.setDate(monday.getDate()+i);
+          const ds = fmtDate(date); const active = i === _mobileDayIdx;
+          const has = _schedShifts.some(s => s.clock_in.startsWith(ds));
+          pills += `<button onclick="selectDay(${i})" style="flex-shrink:0;padding:7px 12px;border-radius:18px;border:1.5px solid ${active?'#0a84ff':'#e5e5ea'};background:${active?'#0a84ff':'#fff'};color:${active?'#fff':'#3c3c43'};font-size:.78rem;font-weight:${active?'700':'400'};cursor:pointer;position:relative">
+            ${d} <span style="opacity:.7">${date.getMonth()+1}/${date.getDate()}</span>
+            ${has?'<span style="position:absolute;top:3px;right:3px;width:5px;height:5px;background:#30d158;border-radius:50%"></span>':''}
+          </button>`;
+        });
+        pills += '</div>';
+        const selDate = new Date(monday); selDate.setDate(monday.getDate()+_mobileDayIdx);
+        const selStr = fmtDate(selDate);
+        let rows = '<div style="padding:0 16px 8px">';
+        _schedWorkers.forEach(w => {
+          const dayShifts = _schedShifts.filter(s => s.worker_id===w.id && s.clock_in.startsWith(selStr));
+          let shiftHtml = dayShifts.map(s => {
+            const inT = s.clock_in.split('T')[1]?.slice(0,5)||'';
+            const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+            if (!outT) {
+              const clockInDate = new Date(`${selStr}T${inT}`);
+              const hrsNow = (Date.now() - clockInDate.getTime()) / 3600000;
+              const sigEntry = typeof _sigCountMap !== 'undefined' && _sigCountMap[w.id] != null ? _sigCountMap[w.id] : null;
+              let paceBadge = '';
+              if (hrsNow >= 0.05 && sigEntry !== null) {
+                const p = sigEntry / hrsNow;
+                const c = p >= HOURLY_GOAL ? '#30d158' : p >= HOURLY_GOAL * 0.7 ? '#ff9f0a' : '#ff3b30';
+                paceBadge = `<span style="font-size:.68rem;font-weight:600;color:${c}">${p.toFixed(1)}/hr</span>`;
+              }
+              return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                <span style="font-size:.75rem;color:#248a3d;font-weight:600">⏱ ${inT}</span>
+                ${paceBadge}
+                <button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:6px;padding:3px 8px;font-size:.72rem;font-weight:600;cursor:pointer">Clock out</button>
+              </div>`;
+            }
+            return `<span class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</span>`;
+          }).join('');
+          if (!shiftHtml) shiftHtml = `<button onclick="openFMAdd(${w.id},'','${selStr}')" style="border:1.5px dashed #ccc;background:none;color:#aaa;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">+ Clock in</button>`;
+          rows += `<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:0.5px solid #f2f2f7">
+            <span style="flex:1;font-size:.88rem;font-weight:600">${w.full_name}</span>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">${shiftHtml}</div>
+          </div>`;
+        });
+        rows += '</div>'; el.innerHTML = pills + rows;
+      } else {
+        let html = `<div class="week-grid" style="grid-template-columns:140px repeat(7,1fr);padding:0 16px 8px">`;
+        html += '<div class="wg-header">Worker</div>';
+        DAYS.forEach((d,i) => {
+          const date = new Date(monday); date.setDate(monday.getDate()+i);
+          html += `<div class="wg-header">${d}<br><span style="font-weight:400">${date.getMonth()+1}/${date.getDate()}</span></div>`;
+        });
+        _schedWorkers.forEach(w => {
+          html += `<div class="wg-worker">${w.full_name}</div>`;
+          for (let i=0;i<7;i++) {
+            const date = new Date(monday); date.setDate(monday.getDate()+i);
+            const ds = fmtDate(date);
+            const dayShifts = _schedShifts.filter(s => s.worker_id===w.id && s.clock_in.startsWith(ds));
+            if (dayShifts.length) {
+              html += '<div class="wg-cell">';
+              dayShifts.forEach(s => {
+                const inT = s.clock_in.split('T')[1]?.slice(0,5)||''; const outT = s.clock_out ? s.clock_out.split('T')[1]?.slice(0,5) : '';
+                if (!outT) {
+                  const hrsNow = (Date.now() - new Date(`${ds}T${inT}`).getTime()) / 3600000;
+                  const sigEntry = typeof _sigCountMap !== 'undefined' && _sigCountMap[w.id] != null ? _sigCountMap[w.id] : null;
+                  let paceBadge = '';
+                  if (hrsNow >= 0.05 && sigEntry !== null) { const p = sigEntry/hrsNow; const c = p>=HOURLY_GOAL?'#30d158':p>=HOURLY_GOAL*0.7?'#ff9f0a':'#ff3b30'; paceBadge=`<div style="font-size:.66rem;font-weight:600;color:${c}">${p.toFixed(1)}/hr</div>`; }
+                  html += `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="font-size:.7rem;color:#248a3d;font-weight:600">⏱ ${inT}</span><button onclick="openClockOut(${w.id})" style="border:none;background:#ff3b30;color:#fff;border-radius:5px;padding:2px 6px;font-size:.66rem;font-weight:600;cursor:pointer">Out</button>${paceBadge}</div>`;
+                } else { html += `<div class="wg-shift" onclick="openFMEdit(${s.id},'${s.clock_in}','${s.clock_out||''}')">${inT}–${outT}</div>`; }
+              });
+              html += '</div>';
+            } else { html += `<div class="wg-cell" style="cursor:pointer;background:#fafff9" onclick="openFMAdd(${w.id},'','${ds}')"><div style="color:#ccc;font-size:1rem;text-align:center;line-height:34px">+ In</div></div>`; }
+          }
+        });
+        html += '</div>'; el.innerHTML = html;
+      }
+    }
+
+    function selectDay(i) { _mobileDayIdx = i; renderSchedule(); }
+    function prevWeek() { _weekOffset--; loadSchedule(); }
+    function nextWeek() { _weekOffset++; loadSchedule(); }
+
+    function openFMAdd(workerId, _ignored, dateStr) {
+      const workerName = (_schedWorkers.find(w => w.id === workerId) || {}).full_name || 'Worker';
+      document.getElementById('fmAddShiftWorkerId').value = workerId;
+      document.getElementById('fmAddShiftDate').value = dateStr;
+      document.getElementById('fmAddShiftTitle').textContent = `Clock In — ${workerName}`;
+      document.getElementById('fmAddShiftErr').style.display = 'none';
+      const now = new Date();
+      document.getElementById('fmAddShiftStart').value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      document.getElementById('fmAddShiftModal').classList.add('open');
+    }
+    function openClockOut(workerId, workerName) {
+      const name = workerName || (_schedWorkers.find(w => w.id === workerId) || {}).full_name || 'Worker';
+      document.getElementById('fmClockOutWorkerId').value = workerId;
+      document.getElementById('fmClockOutTitle').textContent = `Clock Out — ${name}`;
+      document.getElementById('fmClockOutErr').style.display = 'none';
+      const now = new Date();
+      document.getElementById('fmClockOutTime').value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      document.getElementById('fmClockOutModal').classList.add('open');
+    }
+    async function submitClockOut() {
+      const workerId = parseInt(document.getElementById('fmClockOutWorkerId').value);
+      const timeVal  = document.getElementById('fmClockOutTime').value;
+      const dateStr  = fmtDate(new Date()); const errEl = document.getElementById('fmClockOutErr'); errEl.style.display = 'none';
+      if (!timeVal) { errEl.textContent = 'Enter a time.'; errEl.style.display = 'block'; return; }
+      try { await api('/shifts/clock-out-at', { method: 'POST', body: JSON.stringify({ worker_id: workerId, clock_out: `${dateStr}T${timeVal}:00` }) }); closeFMModal('fmClockOutModal'); loadSchedule(); loadLeaderboard(); }
+      catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+    }
+    async function submitFMAddShift() {
+      const workerId = document.getElementById('fmAddShiftWorkerId').value;
+      const date = document.getElementById('fmAddShiftDate').value; const start = document.getElementById('fmAddShiftStart').value;
+      const errEl = document.getElementById('fmAddShiftErr'); errEl.style.display = 'none';
+      if (!start) { errEl.textContent = 'Enter a start time.'; errEl.style.display='block'; return; }
+      try { await api('/shifts/clock-in-at', { method:'POST', body: JSON.stringify({ worker_id: parseInt(workerId), clock_in: `${date}T${start}:00` }) }); closeFMModal('fmAddShiftModal'); loadSchedule(); }
+      catch(e) { errEl.textContent = e.message; errEl.style.display='block'; }
+    }
+    function openFMEdit(shiftId, clockIn, clockOut) {
+      document.getElementById('fmEditShiftId').value    = shiftId;
+      document.getElementById('fmEditShiftStart').value = clockIn.split('T')[1]?.slice(0,5)||'';
+      document.getElementById('fmEditShiftEnd').value   = clockOut ? clockOut.split('T')[1]?.slice(0,5) : '';
+      document.getElementById('fmEditShiftTitle').textContent = `Edit Shift — ${clockIn.split('T')[0]}`;
+      document.getElementById('fmEditShiftErr').style.display = 'none';
+      document.getElementById('fmEditShiftModal').classList.add('open');
+    }
+    async function submitFMEditShift() {
+      const id = document.getElementById('fmEditShiftId').value; const startV = document.getElementById('fmEditShiftStart').value; const endV = document.getElementById('fmEditShiftEnd').value;
+      const errEl = document.getElementById('fmEditShiftErr'); const dateStr = document.getElementById('fmEditShiftTitle').textContent.split('— ')[1]||''; errEl.style.display = 'none';
+      if (!startV) { errEl.textContent='Start time required.'; errEl.style.display='block'; return; }
+      try { await api(`/shifts/${id}/times`, { method:'PATCH', body: JSON.stringify({ clock_in:`${dateStr}T${startV}:00`, clock_out: endV?`${dateStr}T${endV}:00`:null }) }); closeFMModal('fmEditShiftModal'); loadSchedule(); }
+      catch(e) { errEl.textContent=e.message; errEl.style.display='block'; }
+    }
+    async function removeFMShift() {
+      const id = document.getElementById('fmEditShiftId').value;
+      if (!confirm('Remove this shift?')) return;
+      try { await api(`/shifts/${id}`, { method:'DELETE' }); closeFMModal('fmEditShiftModal'); loadSchedule(); }
+      catch(e) { alert(e.message); }
+    }
+    function closeFMModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    // ── Quick entry ───────────────────────────────────────────────────────────
+    let _qeWorkers = [];
+    async function _ensureQEWorkers() { if (!_qeWorkers.length) _qeWorkers = await api('/workers').catch(() => []); }
+    function _parseTime(str, dateStr) {
+      let h, m = 0; const isPM = /pm/i.test(str), isAM = /am/i.test(str);
+      const clean = str.replace(/[apm\s]/gi, '');
+      if (clean.includes(':')) { [h, m] = clean.split(':').map(Number); } else { h = parseInt(clean); }
+      if (isPM && h < 12) h += 12; if (isAM && h === 12) h = 0;
+      if (!isPM && !isAM && h > 0 && h < 8) h += 12;
+      return `${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'00')}:00`;
+    }
+    const _MONTH_MAP = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+    function _parseDate(text) {
+      const now = new Date(); const curYear = now.getFullYear();
+      const named = text.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b/i);
+      if (named) { const mon = _MONTH_MAP[named[1].toLowerCase().slice(0,3)]; const day = parseInt(named[2]); const year = named[3] ? parseInt(named[3]) : curYear; return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`; }
+      const slash = text.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+      if (slash) { const mon = parseInt(slash[1]), day = parseInt(slash[2]); if (mon>=1&&mon<=12&&day>=1&&day<=31) { let year=slash[3]?parseInt(slash[3]):curYear; if(year<100)year+=2000; return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`; } }
+      return null;
+    }
+    function _parseLine(text, workers) {
+      const now2 = new Date(); const today = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}-${String(now2.getDate()).padStart(2,'0')}`;
+      const sigDate = _parseDate(text) || today;
+      let workerId = null, workerName = null;
+      const sorted = [...workers].sort((a,b) => b.full_name.length - a.full_name.length);
+      for (const w of sorted) { if (text.toLowerCase().includes(w.full_name.toLowerCase())) { workerId = w.id; workerName = w.full_name; break; } }
+      if (!workerId) return null;
+      let clockIn = null, clockOut = null;
+      const tm = text.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|-|through)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+      if (tm) { clockIn = _parseTime(tm[1], sigDate); clockOut = _parseTime(tm[2], sigDate); }
+      if (!clockIn) { const hm = text.match(/(\d+(?:\.\d+)?)\s*h(?:ours?)?/i); if (hm) { const hrs=parseFloat(hm[1]); const out=new Date(); const inp=new Date(out.getTime()-hrs*3600000); const fmt=d=>d.toISOString().slice(0,19); clockIn=fmt(inp); clockOut=fmt(out); } }
+      let sigCount = null; const sm = text.match(/(\d+)\s*(?:sigs?|signatures?)/i); if (sm) sigCount = parseInt(sm[1]);
+      if (!clockIn && sigCount === null) return null;
+      return { workerId, workerName, clockIn, clockOut, sigCount, sigDate };
+    }
+    let _qeParsed = [];
+    async function parseQE() {
+      await _ensureQEWorkers();
+      const raw = document.getElementById('qeInput').value;
+      _qeParsed = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => _parseLine(l, _qeWorkers)).filter(Boolean);
+      const preview = document.getElementById('qePreview'); const rowsEl = document.getElementById('qeRows');
+      if (!_qeParsed.length) { preview.style.display = 'none'; return; }
+      rowsEl.innerHTML = _qeParsed.map((p) => {
+        const timeStr = p.clockIn ? `${p.clockIn.split('T')[1].slice(0,5)} → ${(p.clockOut||'').split('T')[1]?.slice(0,5)||'?'}` : '— no time —';
+        const hoursStr = p.clockIn && p.clockOut ? ((new Date(p.clockOut) - new Date(p.clockIn)) / 3600000).toFixed(1) + ' hrs' : '';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f9f9fb;border-radius:10px;margin-bottom:6px;font-size:.85rem;flex-wrap:wrap">
+          <span style="font-weight:600;min-width:100px">${p.workerName}</span>
+          <span style="color:#777;font-size:.76rem">${p.sigDate}</span>
+          <span style="color:#555">${timeStr}${hoursStr ? ' <span style="color:#999;font-size:.76rem">'+hoursStr+'</span>' : ''}</span>
+          <span style="color:#2e7d32;font-weight:700;margin-left:auto">${p.sigCount != null ? p.sigCount + ' sigs' : ''}</span>
+        </div>`;
+      }).join('');
+      preview.style.display = 'block';
+    }
+    async function submitQE() {
+      if (!_qeParsed.length) return;
+      const msgEl = document.getElementById('qeMsg'); msgEl.style.color = '#555'; msgEl.textContent = 'Submitting…';
+      let ok = 0; const errs = [];
+      for (const p of _qeParsed) {
+        try {
+          if (p.clockIn && p.clockOut) { await api('/shifts/manual', { method: 'POST', body: JSON.stringify({ worker_id: p.workerId, clock_in: p.clockIn, clock_out: p.clockOut }) }); ok++; }
+          if (p.sigCount != null) { await api(`/stats/sig-count/${p.workerId}`, { method: 'POST', body: JSON.stringify({ count: p.sigCount }) }); ok++; }
+        } catch(e) { errs.push(`${p.workerName}: ${e.message}`); }
+      }
+      if (errs.length) { msgEl.style.color = '#c62828'; msgEl.textContent = 'Errors: ' + errs.join(' | '); }
+      else { msgEl.style.color = '#2e7d32'; msgEl.textContent = `Done — ${ok} entries saved.`; clearQE(); loadLeaderboard(); loadSchedule(); }
+    }
+    function clearQE() { document.getElementById('qeInput').value=''; document.getElementById('qePreview').style.display='none'; document.getElementById('qeMsg').textContent=''; _qeParsed=[]; }
+
+    // ── Team ─────────────────────────────────────────────────────────────────
+    let _myTeamId = null;
+    async function loadMyTeam() {
+      try {
+        const team = await api('/teams/mine');
+        const listEl = document.getElementById('teamMemberList'); const btn = document.getElementById('teamActionBtn'); const title = document.getElementById('teamCardTitle');
+        if (!team) { title.textContent = 'My Team'; btn.textContent = '+ Create'; listEl.innerHTML = '<div class="empty" style="padding:12px 0">No team yet</div>'; return; }
+        _myTeamId = team.id; title.textContent = team.name; btn.textContent = '+ Add Member';
+        if (!team.members.length) { listEl.innerHTML = '<div class="empty" style="padding:12px 0">No members yet</div>'; return; }
+        listEl.innerHTML = team.members.map(m => `
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:.5px solid #f2f2f7">
+            <div style="flex:1"><div style="font-size:.88rem;font-weight:600">${m.full_name}</div><div style="font-size:.72rem;color:#8e8e93">${m.role}</div></div>
+            <div style="font-size:.88rem;font-weight:700;color:#0a84ff">${m.sig_count} sigs</div>
+            <button onclick="removeMember(${m.id})" style="border:none;background:none;color:#ff3b30;font-size:.8rem;font-weight:600;cursor:pointer;padding:4px 6px">✕</button>
+          </div>`).join('');
+      } catch(e) { document.getElementById('teamMemberList').innerHTML = '<div class="empty">Could not load team</div>'; }
+    }
+    function teamAction() { if (_myTeamId) openAddMember(); else openCreateTeam(); }
+    function openCreateTeam() {
+      document.getElementById('fmTeamName').value = ''; document.getElementById('fmTeamErr').style.display = 'none'; document.getElementById('fmTeamSubmitBtn').disabled = false;
+      document.getElementById('fmCreateTeamModal').classList.add('open'); setTimeout(() => document.getElementById('fmTeamName').focus(), 80);
+    }
+    async function submitCreateTeam() {
+      const name = document.getElementById('fmTeamName').value.trim(); const errEl = document.getElementById('fmTeamErr'); const btn = document.getElementById('fmTeamSubmitBtn');
+      errEl.style.display = 'none'; if (!name) { errEl.textContent = 'Team name required.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try { const res = await api('/teams', { method: 'POST', body: JSON.stringify({ name }) }); _myTeamId = res.id; closeFMModal('fmCreateTeamModal'); loadMyTeam(); }
+      catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create'; }
+    }
+    async function openAddMember() {
+      document.getElementById('fmMemberErr').style.display = 'none'; document.getElementById('fmAddMemberModal').classList.add('open');
+      const listEl = document.getElementById('fmUnassignedList'); listEl.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const workers = await api('/teams/unassigned');
+        if (!workers.length) { listEl.innerHTML = '<div class="empty">No unassigned workers</div>'; return; }
+        listEl.innerHTML = workers.map(w => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:.5px solid #f2f2f7">
+            <div style="flex:1"><div style="font-size:.9rem;font-weight:600">${w.full_name}</div><div style="font-size:.72rem;color:#8e8e93">${w.role}</div></div>
+            <button onclick="addMember(${w.id},this)" style="padding:6px 14px;border:none;border-radius:8px;background:#0a84ff;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer">Add</button>
+          </div>`).join('');
+      } catch(e) { listEl.innerHTML = '<div class="empty">Could not load workers</div>'; }
+    }
+    async function addMember(userId, btn) {
+      btn.disabled = true; btn.textContent = '✓';
+      try { await api(`/teams/${_myTeamId}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId }) }); btn.closest('div[style]').style.opacity = '.4'; loadMyTeam(); }
+      catch(e) { document.getElementById('fmMemberErr').textContent = e.message; document.getElementById('fmMemberErr').style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; }
+    }
+    async function removeMember(userId) {
+      if (!_myTeamId) return;
+      try { await api(`/teams/${_myTeamId}/members/${userId}`, { method: 'DELETE' }); loadMyTeam(); }
+      catch(e) { setMsg(e.message, 'error'); }
+    }
+
+    // ── Workers ───────────────────────────────────────────────────────────────
+    async function loadWorkers() {
+      try {
+        const workers = await api('/workers'); const el = document.getElementById('fmWorkerList');
+        if (!workers.length) { el.innerHTML = '<div class="empty">No workers yet</div>'; return; }
+        el.innerHTML = workers.map(w => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #f2f2f7">
+            <div style="flex:1"><div style="font-size:.88rem;font-weight:600">${w.full_name}</div><div style="font-size:.75rem;color:#8e8e93">${w.role_label || w.role}</div></div>
+            ${w.phone ? `<div style="font-size:.78rem;color:#8e8e93">${w.phone}</div>` : ''}
+          </div>`).join('');
+      } catch(e) { document.getElementById('fmWorkerList').innerHTML = '<div class="empty">Could not load workers</div>'; }
+    }
+    function openAddWorker() {
+      document.getElementById('fmWName').value = ''; document.getElementById('fmWPhone').value = ''; document.getElementById('fmWRole').value = 'petitioner';
+      document.getElementById('fmWError').style.display = 'none'; document.getElementById('fmWSubmitBtn').disabled = false;
+      document.getElementById('fmAddWorkerModal').classList.add('open'); setTimeout(() => document.getElementById('fmWName').focus(), 80);
+    }
+    async function submitAddWorker() {
+      const name = document.getElementById('fmWName').value.trim(); const role = document.getElementById('fmWRole').value; const phone = document.getElementById('fmWPhone').value.trim();
+      const errEl = document.getElementById('fmWError'); const btn = document.getElementById('fmWSubmitBtn'); errEl.style.display = 'none';
+      if (!name) { errEl.textContent = 'Full name is required.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try { await api('/workers', { method: 'POST', body: JSON.stringify({ full_name: name, role, phone, hourly_wage: 25 }) }); closeFMModal('fmAddWorkerModal'); loadWorkers(); }
+      catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create'; }
+    }
+
+    // ── Worker Notes ──────────────────────────────────────────────────────────
+    async function deleteNote(id, btn) {
+      btn.disabled = true;
+      try {
+        await api(`/reflections/${id}`, { method: 'DELETE' });
+        btn.closest('div[style*="border-bottom"]').remove();
+        const el = document.getElementById('workerNotesList');
+        if (!el.querySelector('div[style*="border-bottom"]')) el.innerHTML = '<div class="empty">No notes yet</div>';
+      } catch(e) { btn.disabled = false; setMsg(e.message, 'error'); }
+    }
+    async function loadWorkerNotes() {
+      const el = document.getElementById('workerNotesList'); el.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const notes = await api('/reflections');
+        if (!notes.length) { el.innerHTML = '<div class="empty">No notes yet</div>'; return; }
+        el.innerHTML = notes.slice().reverse().map(n => {
+          const dt = n.created_at ? new Date(n.created_at + (n.created_at.endsWith('Z') ? '' : 'Z')) : null;
+          const timeStr = dt ? dt.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+          const goalBadge = n.hit_goal
+            ? '<span style="font-size:.7rem;font-weight:700;background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:99px">Goal hit</span>'
+            : '<span style="font-size:.7rem;font-weight:700;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:99px">Missed goal</span>';
+          return `<div style="padding:12px 0;border-bottom:.5px solid #f2f2f7">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+              <span style="font-size:.9rem;font-weight:700">${n.worker_name}</span>
+              ${goalBadge}
+              <span style="font-size:.75rem;color:#8e8e93;margin-left:auto">${timeStr}</span>
+              <button onclick="deleteNote(${n.id},this)" style="border:none;background:none;color:#ff3b30;font-size:.8rem;font-weight:600;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>
+            </div>
+            <div style="font-size:.82rem;color:#3c3c43;display:flex;gap:14px;flex-wrap:wrap;margin-bottom:4px">
+              <span><strong>${n.sigs_reported}</strong> sigs</span>
+              <span><strong>${n.hours_worked}</strong> hrs</span>
+            </div>
+            ${n.reflection ? `<div style="font-size:.8rem;color:#555;margin-top:4px"><em>${n.reflection}</em></div>` : ''}
+            ${n.notes ? `<div style="font-size:.8rem;color:#555;margin-top:2px;background:#f9f9fb;border-radius:7px;padding:6px 8px">${n.notes}</div>` : ''}
+          </div>`;
+        }).join('');
+      } catch(e) { el.innerHTML = '<div class="empty" style="color:#c62828">Could not load notes</div>'; }
+    }
+
+    async function refresh() {
+      try {
+        const [pins] = await Promise.all([api('/locations/pins'), loadLeaderboard()]);
+        await loadMap(pins);
+        document.getElementById('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      } catch(e) { console.error('refresh error', e); }
+    }
+
+    function logout() { localStorage.clear(); window.location.href = '/'; }
+
+    refresh();
+    loadSchedule();
+    loadWorkers();
+    loadMyTeam();
+    loadWorkerNotes();
+    loadPayPeriods();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

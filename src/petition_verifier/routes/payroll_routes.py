@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_boss, require_worker
+from ..auth import get_current_user, require_admin, require_boss, require_worker, require_payroll
 from ..storage import db
 from ..storage.database import PayrollRecordRow
 from ..payroll.calculator import calculate_pay_for_period
@@ -143,7 +143,7 @@ class CreatePayPeriodRequest(BaseModel):
 @router.post("/periods")
 async def create_pay_period(
     payload: CreatePayPeriodRequest,
-    user: dict = Depends(require_boss),
+    user: dict = Depends(require_payroll),
 ):
     pp = db.create_pay_period(payload.start_date, payload.end_date)
     return _period_to_dict(pp)
@@ -156,7 +156,7 @@ async def list_pay_periods(user: dict = Depends(require_worker)):
 
 
 @router.post("/run/{pay_period_id}")
-async def run_payroll(pay_period_id: int, user: dict = Depends(require_boss)):
+async def run_payroll(pay_period_id: int, user: dict = Depends(require_payroll)):
     """Calculate payroll for all workers in a pay period."""
     pay_period = db.get_pay_period(pay_period_id)
     if not pay_period:

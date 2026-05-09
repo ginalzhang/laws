@@ -68,7 +68,8 @@ def require_role(*roles: str):
     return dep
 
 
-require_worker  = require_role("boss", "admin", "worker", "field_manager", "evan", "petitioner", "office_worker")
-require_manager = require_role("boss", "admin", "field_manager", "evan")  # can manage workers/shifts/schedule
-require_admin   = require_role("boss", "admin")
-require_boss    = require_role("boss")
+require_worker   = require_role("boss", "admin", "worker", "field_manager", "evan", "evann", "petitioner", "office_worker")
+require_manager  = require_role("boss", "admin", "field_manager", "evan", "evann")
+require_admin    = require_role("boss", "admin")
+require_boss     = require_role("boss")
+require_payroll  = require_role("boss", "admin", "evann")  # payroll access: boss, admin, evann only
