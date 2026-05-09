@@ -124,10 +124,12 @@ class ClaudeProcessor(BasePDFProcessor):
             }],
         )
         text = response.content[0].text.strip()
-        # Strip markdown code fences if present
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Claude returned non-JSON: {text[:200]}") from exc
 
     def _rows_to_sigs(
         self,

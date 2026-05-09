@@ -705,6 +705,7 @@ async function runFraudScan() {
   const allLines = [];
   let totalSuspicious = 0, totalFilled = 0, totalBlank = 0;
   let lineOffset = 0;
+  let errCount = 0;
 
   results.forEach((r, idx) => {
     if (r.status === 'fulfilled') {
@@ -713,15 +714,31 @@ async function runFraudScan() {
       totalSuspicious += s.suspicious_lines ?? 0;
       totalFilled     += s.filled_lines     ?? 0;
       totalBlank      += s.blank_lines      ?? 0;
-      // Offset line numbers so they don't collide across files
       d.lines.forEach(l => allLines.push({ ...l, line_number: l.line_number + lineOffset, _file: files[idx].name }));
       lineOffset += d.lines.length;
       setFItem(idx, 'done', '✓',
         `${s.suspicious_lines ?? 0} suspicious / ${s.filled_lines ?? 0} filled`);
     } else {
-      setFItem(idx, 'error', '✗', r.reason?.message || 'Error');
+      errCount++;
+      const msg = r.reason?.message || 'Scan failed';
+      setFItem(idx, 'error', '✗', msg);
+      // For single-file uploads the batch element is hidden — show error in status instead
+      if (files.length === 1) {
+        status.className   = 'upload-status error';
+        status.textContent = `Scan failed: ${msg}`;
+        return;
+      }
     }
   });
+
+  if (errCount === files.length) {
+    // All files failed — nothing to render
+    if (files.length > 1) {
+      status.className   = 'upload-status error';
+      status.textContent = `All ${files.length} scans failed.`;
+    }
+    return;
+  }
 
   const combinedData = {
     summary: {
@@ -734,15 +751,16 @@ async function runFraudScan() {
     },
     lines: allLines,
   };
-  // Tally flag counts across all files
   allLines.forEach(l => l.flags.forEach(f => {
     combinedData.summary.flag_counts[f.code] = (combinedData.summary.flag_counts[f.code] || 0) + 1;
   }));
-  // Remove blank_line from flag_counts (handled separately)
   delete combinedData.summary.flag_counts['blank_line'];
 
-  status.className   = 'upload-status success';
-  status.textContent = `${totalSuspicious} suspicious of ${totalFilled} filled lines across ${files.length} file${files.length > 1 ? 's' : ''}.`;
+  const successCount = files.length - errCount;
+  status.className   = errCount ? 'upload-status error' : 'upload-status success';
+  status.textContent = errCount
+    ? `${successCount} of ${files.length} scanned — ${errCount} failed. ${totalSuspicious} suspicious of ${totalFilled} filled lines.`
+    : `${totalSuspicious} suspicious of ${totalFilled} filled lines across ${files.length} file${files.length > 1 ? 's' : ''}.`;
   renderFraudResults(combinedData);
 }
 
