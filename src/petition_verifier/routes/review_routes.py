@@ -55,22 +55,34 @@ async def upload_packet(
     shift_id: int | None = None,
     current_user=Depends(get_current_user),
 ):
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    suffix   = Path(file.filename or "packet.jpg").suffix.lower() or ".jpg"
-    filename = uuid.uuid4().hex + suffix
-    raw_path = UPLOAD_DIR / filename
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        suffix   = Path(file.filename or "packet.jpg").suffix.lower() or ".jpg"
+        filename = uuid.uuid4().hex + suffix
+        raw_path = UPLOAD_DIR / filename
 
-    data = await file.read()
-    raw_path.write_bytes(data)
+        data = await file.read()
+        raw_path.write_bytes(data)
 
-    packet_id = db.create_packet(
-        worker_id=current_user["user_id"],
-        original_name=file.filename or filename,
-        raw_path=str(raw_path),
-        shift_id=shift_id,
-    )
-    bg.add_task(_process_packet, packet_id, raw_path)
-    return {"packet_id": packet_id, "status": "processing"}
+        packet_id = db.create_packet(
+            worker_id=current_user["user_id"],
+            original_name=file.filename or filename,
+            raw_path=str(raw_path),
+            shift_id=shift_id,
+        )
+        bg.add_task(_process_packet, packet_id, raw_path)
+        return {"packet_id": packet_id, "status": "processing"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Surface the real failure to the client + Render logs so the cause is
+        # visible. Generic 500s with HTML bodies hide what's actually wrong.
+        import traceback
+        print("upload_packet failed:", traceback.format_exc(), flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
