@@ -3244,7 +3244,7 @@
   }
 
   function rcOpenUpload() {
-    document.getElementById('rcFileInput').value = '';
+    try { document.getElementById('rcFileInput').value = ''; } catch(_) {}
     document.getElementById('rcUploadMsg').textContent = '';
     document.getElementById('rcUploadProgress').style.display = 'none';
     openModal('rcUploadModal');
