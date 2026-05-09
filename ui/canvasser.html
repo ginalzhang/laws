@@ -789,8 +789,11 @@
             headers: { 'Authorization': 'Bearer ' + token },
             body: fd,
           });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Server error ${res.status}`);
+          }
           const d = await res.json();
-          if (!res.ok) throw new Error(d.detail || `Server error ${res.status}`);
           const entry = _todayUploads.find(u => u.id === id);
           if (entry) { entry.status = 'done'; entry.packetId = d.packet_id; }
         } catch(e) {
