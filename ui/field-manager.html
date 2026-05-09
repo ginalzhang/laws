@@ -286,7 +286,7 @@
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8e8e93;margin-bottom:8px">Parsed — confirm before submitting</div>
           <div id="qeRows"></div>
           <div style="display:flex;gap:8px;margin-top:12px">
-            <button onclick="submitQE()" style="flex:1;padding:12px;border:none;border-radius:12px;background:#0a84ff;color:#fff;font-size:.9rem;font-weight:700;font-family:inherit;cursor:pointer">Submit all</button>
+            <button id="qeSubmitBtn" onclick="submitQE()" style="flex:1;padding:12px;border:none;border-radius:12px;background:#0a84ff;color:#fff;font-size:.9rem;font-weight:700;font-family:inherit;cursor:pointer">Submit all</button>
             <button onclick="clearQE()" style="padding:12px 18px;border:none;border-radius:12px;background:#f2f2f7;color:#000;font-size:.9rem;font-weight:600;font-family:inherit;cursor:pointer">Clear</button>
           </div>
         </div>
@@ -1180,8 +1180,8 @@
         if (hm) {
           const hrs = parseFloat(hm[1]);
           const out = new Date(); const inp = new Date(out.getTime() - hrs * 3600000);
-          const fmt = d => d.toISOString().slice(0,19);
-          clockIn = fmt(inp); clockOut = fmt(out);
+          const fmtLocal = d => { const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`; };
+          clockIn = fmtLocal(inp); clockOut = fmtLocal(out);
         }
       }
 
@@ -1225,6 +1225,8 @@
 
     async function submitQE() {
       if (!_qeParsed.length) return;
+      const submitBtn = document.getElementById('qeSubmitBtn');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
       const msgEl = document.getElementById('qeMsg');
       msgEl.style.color = '#555';
       msgEl.textContent = 'Submitting…';
@@ -1243,6 +1245,7 @@
         } catch(e) { errs.push(`${p.workerName}: ${e.message}`); }
       }
 
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit all'; }
       if (errs.length) {
         msgEl.style.color = '#c62828';
         msgEl.textContent = 'Errors: ' + errs.join(' | ');
