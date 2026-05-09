@@ -499,9 +499,11 @@
         ...opts,
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...(opts.headers || {}) },
       }).then(async r => {
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || 'Request failed');
-        return d;
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || `Request failed (HTTP ${r.status})`);
+        }
+        return r.json();
       });
     }
 
