@@ -426,6 +426,26 @@
     .rc-act.done-approved  { background:#15803d;color:#fff;cursor:default }
     .rc-act.done-rejected  { background:#991b1b;color:#fff;cursor:default }
     .rc-act.done-escalated { background:#92400e;color:#fff;cursor:default }
+    /* Voter / fraud validation */
+    .vs-valid    { color:#15803d;font-weight:600;font-size:.75rem }
+    .vs-invalid  { color:#991b1b;font-weight:600;font-size:.75rem }
+    .vs-uncertain{ color:#92400e;font-weight:600;font-size:.75rem }
+    .fraud-chip  { font-size:.68rem;padding:2px 6px;border-radius:20px;background:#fee2e2;color:#991b1b;display:inline-block;margin:1px;white-space:nowrap }
+    .fraud-row   { background:#fff8f8 !important }
+    .rc-validity-bar { display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 }
+    .rc-validity-stat { background:#f9f9fb;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;flex:1 }
+    .rc-validity-stat .v-num { font-size:1.25rem;font-weight:700 }
+    .rc-validity-stat .v-lbl { font-size:.68rem;color:#8e8e93;margin-top:1px }
+    .rc-voter-section { background:#fff;border:1px solid #e5e5ea;border-radius:12px;padding:14px;margin-bottom:12px }
+    .rc-voter-section h4 { font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8e8e93;margin-bottom:8px }
+    .rc-voter-section textarea { width:100%;height:90px;padding:8px;border:1px solid #e5e5ea;border-radius:8px;font-size:.78rem;font-family:monospace;resize:vertical;outline:none;box-sizing:border-box }
+    .rc-analysis-btns { display:flex;gap:8px;flex-wrap:wrap;margin-top:8px }
+    .rc-export-bar { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px }
+    .rc-queue-row td { background:#fff5f5 }
+    .rc-decision-btn { font-size:.72rem;padding:3px 8px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-weight:500;margin-right:2px }
+    .rc-decision-btn.fraud-btn { background:#fee2e2;color:#991b1b }
+    .rc-decision-btn.clear-btn { background:#dcfce7;color:#15803d }
+    .rc-decision-btn.decided  { opacity:.5;cursor:default }
   </style>
 </head>
 <body>
@@ -775,22 +795,55 @@
                 <img id="rcImage" src="" alt="Packet image" style="display:none">
                 <div id="rcImgPlaceholder" style="color:#c7c7cc;font-size:.85rem;padding:40px">No image</div>
               </div>
-              <div class="rc-findings-panel" id="rcFindingsPanel">
+              <div id="rcFindingsPanel" class="rc-findings-panel">
                 <h4>AI Summary</h4>
                 <div style="color:#c7c7cc;font-size:.83rem">Select a packet</div>
               </div>
             </div>
+
+            <!-- Voter roll + fraud tools -->
+            <div class="rc-voter-section" id="rcVoterSection" style="display:none">
+              <h4>Voter Roll &amp; Fraud Analysis</h4>
+              <div id="rcValidityBar" class="rc-validity-bar" style="display:none"></div>
+              <div style="font-size:.78rem;color:#6e6e73;margin-bottom:6px">Paste tab-delimited voter roll (First Name, Last Name, Address, City, Zip — or any common format):</div>
+              <textarea id="rcVoterRollInput" placeholder="John&#9;Smith&#9;123 Main St&#9;Los Angeles&#9;90001&#10;Jane&#9;Doe&#9;456 Oak Ave&#9;Pasadena&#9;91101"></textarea>
+              <div class="rc-analysis-btns">
+                <button class="btn btn-primary btn-sm" id="rcSaveVoterBtn" onclick="rcSaveVoterRoll()">Save Voter Roll</button>
+                <button class="btn btn-outline btn-sm" id="rcMatchBtn" onclick="rcRunVoterMatch()" style="display:none">⚡ Match Voters</button>
+                <button class="btn btn-outline btn-sm" id="rcFraudBtn" onclick="rcRunFraudAnalysis()" style="display:none">🔍 Analyze Fraud</button>
+              </div>
+              <div id="rcVoterMsg" style="margin-top:6px;font-size:.78rem;min-height:14px"></div>
+              <div class="rc-export-bar" id="rcExportBar" style="display:none">
+                <button class="btn btn-outline btn-sm" onclick="rcExport('all')">⬇ Export All</button>
+                <button class="btn btn-outline btn-sm" onclick="rcExport('valid')">⬇ Valid Signatures</button>
+                <button class="btn btn-outline btn-sm" onclick="rcExport('flagged')">⬇ Flagged for Fraud</button>
+              </div>
+            </div>
+
+            <!-- Human review queue -->
+            <div id="rcReviewQueue" style="display:none;margin-bottom:12px">
+              <div style="font-size:.85rem;font-weight:600;color:#1c1c1e;margin-bottom:8px">Human Review Queue <span id="rcQueueCount" style="font-size:.75rem;color:#8e8e93"></span></div>
+              <div class="card" style="margin-top:0;padding:0;overflow:hidden">
+                <div style="overflow-x:auto">
+                  <table class="rc-table">
+                    <thead><tr><th>#</th><th>Name</th><th>Address</th><th>Fraud Flags</th><th>Score</th><th>Decision</th></tr></thead>
+                    <tbody id="rcQueueBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
             <div class="card" style="margin-top:0;padding:0;overflow:hidden">
               <div style="overflow-x:auto">
                 <table class="rc-table">
                   <thead>
                     <tr>
                       <th>#</th><th>Status</th><th>Name</th><th>Address</th><th>ZIP</th><th>Date</th>
-                      <th style="text-align:center">Sig</th><th>Flags</th><th>Action</th>
+                      <th style="text-align:center">Sig</th><th>Voter</th><th>Fraud</th><th>Flags</th><th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="rcTableBody">
-                    <tr><td colspan="9" style="text-align:center;color:#8e8e93;padding:20px">Select a packet</td></tr>
+                    <tr><td colspan="11" style="text-align:center;color:#8e8e93;padding:20px">Select a packet</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -2878,6 +2931,24 @@
         <div style="margin-top:14px;font-size:.72rem;color:#8e8e93;font-style:italic">AI-assisted pre-review workflow.<br>All decisions made by staff.</div>`;
     }
 
+    // Voter roll section (shown once packet is done)
+    const voterSection = document.getElementById('rcVoterSection');
+    if (p.status === 'done') {
+      voterSection.style.display = '';
+      document.getElementById('rcMatchBtn').style.display = '';
+      document.getElementById('rcFraudBtn').style.display = '';
+      if (p.voter_roll_text) {
+        document.getElementById('rcVoterRollInput').value = p.voter_roll_text;
+        document.getElementById('rcExportBar').style.display = '';
+      }
+      _rcRenderValidityBar(p.lines || []);
+    } else {
+      voterSection.style.display = 'none';
+    }
+
+    // Human review queue (fraud-flagged rows)
+    _rcRenderQueue(p);
+
     // Row table
     const tbody = document.getElementById('rcTableBody');
     const lines = p.lines || [];
@@ -2885,15 +2956,23 @@
       const msg = (p.status === 'processing' || p.status === 'pending') ? 'Processing…'
                 : p.status === 'failed' ? 'Processing failed'
                 : 'No rows found';
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#8e8e93;padding:20px">${msg}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#8e8e93;padding:20px">${msg}</td></tr>`;
       return;
     }
     tbody.innerHTML = lines.map(l => {
       const rowMeta = _RC_STATUS[l.row_status] || _RC_STATUS.blank;
-      const rowBg = rowMeta.rowBg ? `style="background:${rowMeta.rowBg}"` : '';
+      const hasFraud = l.fraud_score > 0 || (l.fraud_flags && l.fraud_flags.length);
+      const rowBg = hasFraud ? 'class="fraud-row"' : (rowMeta.rowBg ? `style="background:${rowMeta.rowBg}"` : '');
       const flags = (l.flags || []).map(f => `<span class="flag-chip">${f.replace(/_/g,' ')}</span>`).join('');
-      const nameCell  = _escHtml(l.norm_name  || l.raw_name)  || '<span style="color:#c7c7cc">—</span>';
-      const addrCell  = _escHtml(l.norm_address || l.raw_address) || '<span style="color:#c7c7cc">—</span>';
+      const fraudChips = (l.fraud_flags || []).map(f => `<span class="fraud-chip">${f.replace(/_/g,' ')}</span>`).join('');
+      const nameCell = _escHtml(l.norm_name || l.raw_name) || '<span style="color:#c7c7cc">—</span>';
+      const addrCell = _escHtml(l.norm_address || l.raw_address) || '<span style="color:#c7c7cc">—</span>';
+      const voterCell = l.voter_status
+        ? `<span class="vs-${l.voter_status}" title="${_escHtml(l.voter_reason || '')}">${l.voter_status} ${l.voter_confidence != null ? '(' + l.voter_confidence + '%)' : ''}</span>`
+        : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';
+      const fraudCell = l.fraud_score > 0
+        ? `<span style="font-size:.75rem;font-weight:600;color:${l.fraud_score > 60 ? '#991b1b' : l.fraud_score > 30 ? '#92400e' : '#3c3c43'}">${l.fraud_score}</span>`
+        : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';
       const showAction = l.row_status !== 'blank' && l.row_status !== 'already_counted';
       const actionHtml = l.action
         ? `<span class="rc-act done-${l.action}">${l.action}</span>`
@@ -2906,14 +2985,63 @@
         <td>${l.line_no}</td>
         <td>${_rcStatusBadge(l.row_status)}</td>
         <td>${nameCell}</td>
-        <td style="max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_escHtml(l.norm_address || l.raw_address)}">${addrCell}</td>
+        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_escHtml(l.norm_address || l.raw_address)}">${addrCell}</td>
         <td>${_escHtml(l.raw_zip) || '<span style="color:#c7c7cc">—</span>'}</td>
         <td>${_escHtml(l.raw_date) || '<span style="color:#c7c7cc">—</span>'}</td>
         <td style="text-align:center">${l.has_signature ? '✓' : '<span style="color:#c7c7cc">—</span>'}</td>
-        <td>${flags || '<span style="color:#c7c7cc;font-size:.72rem">—</span>'}</td>
+        <td>${voterCell}</td>
+        <td>${fraudCell}</td>
+        <td>${fraudChips || flags || '<span style="color:#c7c7cc;font-size:.72rem">—</span>'}</td>
         <td style="white-space:nowrap">${actionHtml}</td>
       </tr>`;
     }).join('');
+  }
+
+  function _rcRenderValidityBar(lines) {
+    const active = lines.filter(l => l.row_status !== 'blank' && l.raw_name);
+    const bar = document.getElementById('rcValidityBar');
+    if (!active.length) { bar.style.display = 'none'; return; }
+    const hasVoter = active.some(l => l.voter_status);
+    const hasFraud = active.some(l => l.fraud_score > 0);
+    if (!hasVoter && !hasFraud) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    const valid    = active.filter(l => l.voter_status === 'valid' && l.review_decision !== 'confirmed_fraud').length;
+    const invalid  = active.filter(l => l.voter_status === 'invalid').length;
+    const uncert   = active.filter(l => l.voter_status === 'uncertain').length;
+    const fraud    = active.filter(l => l.fraud_score > 30 || l.review_decision === 'confirmed_fraud').length;
+    const pct      = active.length ? Math.round(valid / active.length * 100) : 0;
+    bar.innerHTML = `
+      <div class="rc-validity-stat"><div class="v-num">${active.length}</div><div class="v-lbl">Total</div></div>
+      <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${pct}%</div><div class="v-lbl">Valid est.</div></div>
+      <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${valid}</div><div class="v-lbl">Valid</div></div>
+      <div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${invalid}</div><div class="v-lbl">Invalid</div></div>
+      <div class="rc-validity-stat" style="background:#fffbeb"><div class="v-num" style="color:#92400e">${uncert}</div><div class="v-lbl">Uncertain</div></div>
+      ${hasFraud ? `<div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${fraud}</div><div class="v-lbl">Fraud Risk</div></div>` : ''}`;
+  }
+
+  function _rcRenderQueue(p) {
+    const queueWrap = document.getElementById('rcReviewQueue');
+    const lines = (p.lines || []).filter(l => l.fraud_score > 30 || l.review_decision === 'confirmed_fraud');
+    if (!lines.length) { queueWrap.style.display = 'none'; return; }
+    queueWrap.style.display = '';
+    document.getElementById('rcQueueCount').textContent = `(${lines.length} flagged)`;
+    document.getElementById('rcQueueBody').innerHTML = lines.map(l => {
+      const name = _escHtml(l.norm_name || l.raw_name || '—');
+      const addr = _escHtml(l.raw_address || '—');
+      const chips = (l.fraud_flags || []).map(f => `<span class="fraud-chip">${f.replace(/_/g,' ')}</span>`).join('');
+      const decided = l.review_decision;
+      const fraudBtn = `<button class="rc-decision-btn fraud-btn${decided === 'confirmed_fraud' ? ' decided' : ''}" onclick="rcDecide(${p.id},${l.line_no},'confirmed_fraud')" ${decided ? 'disabled' : ''}>Confirm Fraud</button>`;
+      const clearBtn = `<button class="rc-decision-btn clear-btn${decided === 'cleared' ? ' decided' : ''}" onclick="rcDecide(${p.id},${l.line_no},'cleared')" ${decided ? 'disabled' : ''}>Clear / Valid</button>`;
+      const decideHtml = decided
+        ? `<span style="font-size:.75rem;font-weight:600;color:${decided === 'confirmed_fraud' ? '#991b1b' : '#15803d'}">${decided === 'confirmed_fraud' ? 'Confirmed Fraud' : 'Cleared'}</span>`
+        : `${fraudBtn}${clearBtn}`;
+      return `<tr class="rc-queue-row">
+        <td>${l.line_no}</td><td>${name}</td><td>${addr}</td>
+        <td>${chips || '—'}</td><td><strong>${l.fraud_score}</strong></td>
+        <td style="white-space:nowrap">${decideHtml}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('rcExportBar').style.display = '';
   }
 
   async function rcAct(packetId, lineNo, action) {
@@ -2932,6 +3060,77 @@
       await rcSelectPacket(packetId);
       await loadReviewCenter();
     } catch(e) { alert('Failed: ' + e.message); }
+  }
+
+  async function rcSaveVoterRoll() {
+    const packetId = _rcSelected && _rcSelected.id;
+    if (!packetId) return;
+    const text = document.getElementById('rcVoterRollInput').value.trim();
+    const msg = document.getElementById('rcVoterMsg');
+    if (!text) { msg.style.color = '#c62828'; msg.textContent = 'Paste a voter roll first.'; return; }
+    const btn = document.getElementById('rcSaveVoterBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const r = await api('/review/packets/' + packetId + '/voter-roll', {
+        method: 'POST', body: JSON.stringify({ voter_roll_text: text }),
+      });
+      msg.style.color = '#15803d';
+      msg.textContent = `Saved — ${r.row_count} voter records parsed. Now click "Match Voters".`;
+      document.getElementById('rcExportBar').style.display = '';
+    } catch(e) { msg.style.color = '#c62828'; msg.textContent = 'Error: ' + e.message; }
+    btn.disabled = false; btn.textContent = 'Save Voter Roll';
+  }
+
+  async function rcRunVoterMatch() {
+    const packetId = _rcSelected && _rcSelected.id;
+    if (!packetId) return;
+    const msg = document.getElementById('rcVoterMsg');
+    const btn = document.getElementById('rcMatchBtn');
+    btn.disabled = true; btn.textContent = 'Matching…';
+    try {
+      const r = await api('/review/packets/' + packetId + '/voter-match', { method: 'POST' });
+      msg.style.color = '#15803d';
+      msg.textContent = `Matched ${r.matched} rows — ${r.valid} valid · ${r.invalid} invalid · ${r.uncertain} uncertain`;
+      await rcSelectPacket(packetId);
+    } catch(e) { msg.style.color = '#c62828'; msg.textContent = 'Error: ' + e.message; }
+    btn.disabled = false; btn.textContent = '⚡ Match Voters';
+  }
+
+  async function rcRunFraudAnalysis() {
+    const packetId = _rcSelected && _rcSelected.id;
+    if (!packetId) return;
+    const msg = document.getElementById('rcVoterMsg');
+    const btn = document.getElementById('rcFraudBtn');
+    btn.disabled = true; btn.textContent = 'Analyzing…';
+    try {
+      const r = await api('/review/packets/' + packetId + '/fraud-analysis', { method: 'POST' });
+      msg.style.color = r.flagged > 0 ? '#92400e' : '#15803d';
+      msg.textContent = `Fraud analysis complete — ${r.flagged} of ${r.lines_analyzed} rows flagged.`;
+      await rcSelectPacket(packetId);
+    } catch(e) { msg.style.color = '#c62828'; msg.textContent = 'Error: ' + e.message; }
+    btn.disabled = false; btn.textContent = '🔍 Analyze Fraud';
+  }
+
+  async function rcDecide(packetId, lineNo, decision) {
+    try {
+      await api('/review/packets/' + packetId + '/lines/' + lineNo + '/decision', {
+        method: 'PATCH', body: JSON.stringify({ decision }),
+      });
+      await rcSelectPacket(packetId);
+    } catch(e) { alert('Failed: ' + e.message); }
+  }
+
+  function rcExport(filter) {
+    const packetId = _rcSelected && _rcSelected.id;
+    if (!packetId) return;
+    const token = localStorage.getItem('pv_token') || _token;
+    const a = document.createElement('a');
+    a.href = `/review/packets/${packetId}/export?filter=${filter}`;
+    a.target = '_blank';
+    // Auth header can't be set on anchor — open in new tab (server uses JWT from query or header)
+    // For simplicity, append token as query param handled by the route
+    a.href += `&token=${encodeURIComponent(token)}`;
+    a.click();
   }
 
   function rcOpenUpload() {

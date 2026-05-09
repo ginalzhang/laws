@@ -21,14 +21,19 @@ Endpoints:
 """
 from __future__ import annotations
 
+import csv
+import difflib
+import io
 import json
 import os
+import re
 import uuid
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..auth import get_current_user
@@ -115,24 +120,31 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
         "worker_id":       packet.worker_id,
         "has_cleaned":     bool(packet.cleaned_path),
         "summary":         rich.get("summary", {}),
+        "voter_roll_text": packet.voter_roll_text or "",
         "lines": [
             {
-                "id":               l.id,
-                "line_no":          l.line_no,
-                "row_status":       l.row_status,
-                "raw_name":         l.raw_name,
-                "norm_name":        l.norm_name,
-                "raw_address":      l.raw_address,
-                "norm_address":     l.norm_address,
-                "raw_city":         l.raw_city,
-                "raw_zip":          l.raw_zip,
-                "valid_zip":        l.valid_zip,
-                "raw_date":         l.raw_date,
-                "has_signature":    l.has_signature,
-                "ai_verdict":       l.ai_verdict,
-                "flags":            json.loads(l.flags_json or "[]"),
-                "action":           l.action,
-                "reviewed_at":      l.reviewed_at.isoformat() if l.reviewed_at else None,
+                "id":                l.id,
+                "line_no":           l.line_no,
+                "row_status":        l.row_status,
+                "raw_name":          l.raw_name,
+                "norm_name":         l.norm_name,
+                "raw_address":       l.raw_address,
+                "norm_address":      l.norm_address,
+                "raw_city":          l.raw_city,
+                "raw_zip":           l.raw_zip,
+                "valid_zip":         l.valid_zip,
+                "raw_date":          l.raw_date,
+                "has_signature":     l.has_signature,
+                "ai_verdict":        l.ai_verdict,
+                "flags":             json.loads(l.flags_json or "[]"),
+                "voter_status":      l.voter_status,
+                "voter_confidence":  l.voter_confidence,
+                "voter_reason":      l.voter_reason,
+                "fraud_flags":       json.loads(l.fraud_flags or "[]"),
+                "fraud_score":       l.fraud_score or 0,
+                "review_decision":   l.review_decision,
+                "action":            l.action,
+                "reviewed_at":       l.reviewed_at.isoformat() if l.reviewed_at else None,
             }
             for l in lines
         ],
@@ -184,6 +196,272 @@ async def set_line_action(
 async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)):
     n = db.approve_all_new_sigs(packet_id, current_user["user_id"])
     return {"approved": n}
+
+
+# ── Voter roll ────────────────────────────────────────────────────────────────
+
+class VoterRollBody(BaseModel):
+    voter_roll_text: str
+
+
+@router.post("/packets/{packet_id}/voter-roll")
+async def save_voter_roll(
+    packet_id: int, body: VoterRollBody, current_user=Depends(get_current_user)
+):
+    packet, _ = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+    db.save_voter_roll(packet_id, body.voter_roll_text)
+    return {"ok": True, "row_count": len(_parse_voter_roll(body.voter_roll_text))}
+
+
+@router.post("/packets/{packet_id}/voter-match")
+async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)):
+    packet, lines = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+    if not packet.voter_roll_text:
+        raise HTTPException(400, "No voter roll saved — POST /voter-roll first")
+
+    voters = _parse_voter_roll(packet.voter_roll_text)
+    if not voters:
+        raise HTTPException(400, "Voter roll parsed 0 entries — check format")
+
+    results = []
+    for l in lines:
+        if l.row_status == "blank" or not l.raw_name:
+            continue
+        match = _fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)
+        results.append({"line_id": l.id, **match})
+
+    db.bulk_update_voter_match(results)
+    valid = sum(1 for r in results if r["voter_status"] == "valid")
+    invalid = sum(1 for r in results if r["voter_status"] == "invalid")
+    uncertain = sum(1 for r in results if r["voter_status"] == "uncertain")
+    return {"matched": len(results), "valid": valid, "invalid": invalid, "uncertain": uncertain}
+
+
+@router.post("/packets/{packet_id}/fraud-analysis")
+async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_user)):
+    packet, lines = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+
+    results = _detect_fraud_patterns(lines)
+    db.bulk_update_fraud(results)
+    flagged = sum(1 for r in results if r["fraud_flags"])
+    return {"lines_analyzed": len(results), "flagged": flagged}
+
+
+class DecisionBody(BaseModel):
+    decision: str  # confirmed_fraud | cleared
+
+
+@router.patch("/packets/{packet_id}/lines/{line_no}/decision")
+async def set_review_decision(
+    packet_id: int, line_no: int, body: DecisionBody, current_user=Depends(get_current_user)
+):
+    if body.decision not in ("confirmed_fraud", "cleared"):
+        raise HTTPException(400, "decision must be confirmed_fraud or cleared")
+    db.set_line_review_decision(packet_id, line_no, body.decision)
+    return {"ok": True}
+
+
+@router.get("/packets/{packet_id}/export")
+async def export_packet(
+    packet_id: int,
+    filter: str = "all",  # all | valid | flagged
+    token: str | None = None,
+    current_user=Depends(get_current_user),
+):
+    packet, lines = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+
+    if filter == "valid":
+        rows = [l for l in lines if l.voter_status == "valid" and l.review_decision != "confirmed_fraud"]
+    elif filter == "flagged":
+        rows = [l for l in lines if l.fraud_score and l.fraud_score > 30 or l.review_decision == "confirmed_fraud"]
+    else:
+        rows = [l for l in lines if l.row_status != "blank"]
+
+    output = io.StringIO()
+    w = csv.writer(output)
+    w.writerow(["line_no", "name", "address", "city", "zip", "date", "has_signature",
+                "voter_status", "voter_confidence", "voter_reason",
+                "fraud_score", "fraud_flags", "review_decision", "action"])
+    for l in rows:
+        w.writerow([
+            l.line_no, l.raw_name, l.raw_address, l.raw_city, l.raw_zip, l.raw_date,
+            l.has_signature, l.voter_status or "", l.voter_confidence or "",
+            l.voter_reason or "", l.fraud_score or 0,
+            "|".join(json.loads(l.fraud_flags or "[]")),
+            l.review_decision or "", l.action or "",
+        ])
+
+    output.seek(0)
+    filename = f"packet_{packet_id}_{filter}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Voter roll helpers ─────────────────────────────────────────────────────────
+
+def _normalize_str(s: str) -> str:
+    s = s.upper().strip()
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\b(ST|AVE|BLVD|DR|RD|LN|CT|PL|WAY)\b", lambda m: {
+        "ST": "STREET", "AVE": "AVENUE", "BLVD": "BOULEVARD",
+        "DR": "DRIVE", "RD": "ROAD", "LN": "LANE",
+        "CT": "COURT", "PL": "PLACE", "WAY": "WAY",
+    }.get(m.group(), m.group()), s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _sim(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, _normalize_str(a), _normalize_str(b)).ratio()
+
+
+def _parse_voter_roll(text: str) -> list[dict]:
+    lines = [l for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return []
+    first = lines[0].lower()
+    has_header = any(kw in first for kw in ["name", "first", "last", "address", "city", "zip"])
+    if has_header:
+        headers = [h.strip().lower() for h in re.split(r"[\t,]", lines[0])]
+        data = lines[1:]
+    else:
+        headers = None
+        data = lines
+
+    voters = []
+    for line in data:
+        cols = [c.strip() for c in re.split(r"[\t,]", line)]
+        if not cols or not any(cols):
+            continue
+        if headers:
+            row = dict(zip(headers, cols + [""] * max(0, len(headers) - len(cols))))
+            fname = row.get("first name", row.get("firstname", row.get("first", "")))
+            lname = row.get("last name", row.get("lastname", row.get("last", "")))
+            full = row.get("name", row.get("full name", f"{fname} {lname}".strip()))
+            addr = row.get("address", row.get("residence address", row.get("street", "")))
+            city = row.get("city", "")
+            zip_ = row.get("zip", row.get("zip code", row.get("zipcode", "")))
+        else:
+            if len(cols) >= 5:
+                full = f"{cols[0]} {cols[1]}".strip(); addr = cols[2]; city = cols[3]; zip_ = cols[4]
+            elif len(cols) >= 3:
+                full = cols[0]; addr = cols[1]; zip_ = cols[2]; city = ""
+            elif len(cols) >= 2:
+                full = cols[0]; addr = cols[1]; zip_ = ""; city = ""
+            else:
+                continue
+        zip5 = re.sub(r"\D", "", zip_)[:5]
+        voters.append({"name": full, "address": f"{addr} {city}".strip(), "zip": zip5})
+    return voters
+
+
+def _fuzzy_voter_match(name: str, address: str, zip_: str, voters: list[dict]) -> dict:
+    best_score, best_voter = 0.0, None
+    for v in voters:
+        name_sim = _sim(name, v["name"])
+        addr_sim = _sim(address, v["address"]) if address and v["address"] else 0.0
+        zip_ok = 1.0 if zip_ and v["zip"] and zip_.strip()[:5] == v["zip"] else 0.0
+        score = name_sim * 0.55 + addr_sim * 0.30 + zip_ok * 0.15
+        if score > best_score:
+            best_score = score; best_voter = v
+    confidence = int(best_score * 100)
+    if confidence >= 72:
+        return {"voter_status": "valid", "voter_confidence": confidence,
+                "voter_reason": f"Matched: {best_voter['name']} — {best_voter['address']}"}
+    elif confidence >= 45:
+        match_str = f"{best_voter['name']} — {best_voter['address']}" if best_voter else "none"
+        return {"voter_status": "uncertain", "voter_confidence": confidence,
+                "voter_reason": f"Partial match ({confidence}%): {match_str}"}
+    return {"voter_status": "invalid", "voter_confidence": confidence,
+            "voter_reason": "No voter roll match found"}
+
+
+# ── Fraud detection helpers ────────────────────────────────────────────────────
+
+def _detect_fraud_patterns(lines: list) -> list[dict]:
+    results = [{"line_id": l.id, "line_no": l.line_no, "fraud_flags": [], "fraud_score": 0}
+               for l in lines]
+    id_to_idx = {l.id: i for i, l in enumerate(lines)}
+    active = [l for l in lines if l.row_status != "blank" and l.raw_name]
+
+    def add_flag(line_id: int, flag: str, score: int):
+        idx = id_to_idx.get(line_id)
+        if idx is not None and flag not in results[idx]["fraud_flags"]:
+            results[idx]["fraud_flags"].append(flag)
+            results[idx]["fraud_score"] += score
+
+    # Missing signature on a filled row
+    for l in lines:
+        if l.row_status == "new_signature" and not l.has_signature:
+            add_flag(l.id, "no_signature", 30)
+        if l.raw_zip and not l.valid_zip:
+            add_flag(l.id, "invalid_zip", 15)
+
+    # Consecutive house numbers (sequential runs of 3+ in same city)
+    def _house_num(addr: str):
+        m = re.match(r"^(\d+)", (addr or "").strip())
+        return int(m.group(1)) if m else None
+
+    city_groups: dict[str, list] = defaultdict(list)
+    for l in active:
+        city_groups[(l.raw_city or "").lower().strip()].append(l)
+
+    for city_lines in city_groups.values():
+        numbered = [(l, _house_num(l.raw_address)) for l in city_lines]
+        numbered = sorted([(l, n) for l, n in numbered if n is not None], key=lambda x: x[1])
+        for j in range(len(numbered) - 2):
+            l1, n1 = numbered[j]; l2, n2 = numbered[j + 1]; l3, n3 = numbered[j + 2]
+            if n2 - n1 <= 6 and n3 - n2 <= 6 and n3 - n1 <= 12:
+                for l in [l1, l2, l3]:
+                    add_flag(l.id, "consecutive_addresses", 40)
+
+    # Long same-city runs (5+ in a row)
+    ordered = sorted(active, key=lambda l: l.line_no)
+    run: list = []; cur_city = None
+    def _flush_run(run):
+        if len(run) >= 5:
+            for l in run:
+                add_flag(l.id, "long_city_run", 20)
+    for l in ordered:
+        c = (l.raw_city or "").lower().strip()
+        if c == cur_city:
+            run.append(l)
+        else:
+            _flush_run(run); cur_city = c; run = [l]
+    _flush_run(run)
+
+    # Similar names across lines
+    names = [(l, (l.norm_name or l.raw_name or "").upper()) for l in active]
+    for a in range(len(names)):
+        for b in range(a + 1, len(names)):
+            la, na = names[a]; lb, nb = names[b]
+            if difflib.SequenceMatcher(None, na, nb).ratio() >= 0.88:
+                add_flag(la.id, "similar_name", 35)
+                add_flag(lb.id, "similar_name", 35)
+
+    # Same date dominance (>70% share a date)
+    dates = [l.raw_date for l in active if l.raw_date]
+    if len(dates) >= 4:
+        most_common, cnt = Counter(dates).most_common(1)[0]
+        if cnt / len(dates) >= 0.70:
+            for l in active:
+                if l.raw_date == most_common:
+                    add_flag(l.id, "uniform_date", 15)
+
+    # Cap at 100
+    for r in results:
+        r["fraud_score"] = min(r["fraud_score"], 100)
+    return results
 
 
 # ── Background processing ─────────────────────────────────────────────────────

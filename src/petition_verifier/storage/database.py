@@ -245,6 +245,7 @@ class PacketRow(Base):
     needs_review     = Column(Integer, default=0)          # count of changed_needs_review rows
     result_json      = Column(Text, default="{}")          # full page_result JSON
     shift_id         = Column(Integer, ForeignKey("shifts.id"), nullable=True)
+    voter_roll_text  = Column(Text, nullable=True)         # pasted voter roll for this packet
     lines            = relationship("PacketLineRow", back_populates="packet",
                                     cascade="all, delete-orphan")
 
@@ -284,6 +285,15 @@ class PacketLineRow(Base):
     ai_verdict       = Column(String, default="needs_review")
     ai_reason        = Column(String, default="")
     flags_json       = Column(Text, default="[]")
+    # Voter roll matching
+    voter_status     = Column(String, nullable=True)       # valid|invalid|uncertain
+    voter_confidence = Column(Integer, nullable=True)       # 0-100
+    voter_reason     = Column(String, nullable=True)
+    # Fraud detection
+    fraud_flags      = Column(Text, default="[]")          # JSON array of fraud pattern strings
+    fraud_score      = Column(Integer, default=0)          # 0-100 risk score
+    # Human review decision
+    review_decision  = Column(String, nullable=True)       # confirmed_fraud|cleared
     # Reviewer action
     action           = Column(String, nullable=True)       # approved|rejected|escalated
     reviewed_by      = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -307,6 +317,13 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
         for stmt in [
             "ALTER TABLE users ADD COLUMN team_id INTEGER",
             "ALTER TABLE review_packets ADD COLUMN shift_id INTEGER",
+            "ALTER TABLE review_packets ADD COLUMN voter_roll_text TEXT",
+            "ALTER TABLE review_packet_lines ADD COLUMN voter_status VARCHAR",
+            "ALTER TABLE review_packet_lines ADD COLUMN voter_confidence INTEGER",
+            "ALTER TABLE review_packet_lines ADD COLUMN voter_reason TEXT",
+            "ALTER TABLE review_packet_lines ADD COLUMN fraud_flags TEXT",
+            "ALTER TABLE review_packet_lines ADD COLUMN fraud_score INTEGER",
+            "ALTER TABLE review_packet_lines ADD COLUMN review_decision VARCHAR",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -1326,6 +1343,43 @@ class Database:
                     n += 1
             session.commit()
             return n
+
+    def save_voter_roll(self, packet_id: int, text: str) -> None:
+        with self._Session() as session:
+            pkt = session.query(PacketRow).filter_by(id=packet_id).first()
+            if pkt:
+                pkt.voter_roll_text = text
+                session.commit()
+
+    def bulk_update_voter_match(self, results: list[dict]) -> None:
+        """results: list of {line_id, voter_status, voter_confidence, voter_reason}"""
+        with self._Session() as session:
+            for r in results:
+                line = session.query(PacketLineRow).filter_by(id=r["line_id"]).first()
+                if line:
+                    line.voter_status     = r["voter_status"]
+                    line.voter_confidence = r["voter_confidence"]
+                    line.voter_reason     = r.get("voter_reason", "")
+            session.commit()
+
+    def bulk_update_fraud(self, results: list[dict]) -> None:
+        """results: list of {line_id, fraud_flags (list), fraud_score}"""
+        with self._Session() as session:
+            for r in results:
+                line = session.query(PacketLineRow).filter_by(id=r["line_id"]).first()
+                if line:
+                    line.fraud_flags = json.dumps(r.get("fraud_flags", []))
+                    line.fraud_score = r.get("fraud_score", 0)
+            session.commit()
+
+    def set_line_review_decision(self, packet_id: int, line_no: int, decision: str) -> None:
+        with self._Session() as session:
+            line = session.query(PacketLineRow).filter_by(
+                packet_id=packet_id, line_no=line_no
+            ).first()
+            if line:
+                line.review_decision = decision
+                session.commit()
 
     # ── Teams ─────────────────────────────────────────────────────────────────
 
