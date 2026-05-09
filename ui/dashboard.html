@@ -3104,8 +3104,15 @@
     btn.disabled = true; btn.textContent = 'Analyzing…';
     try {
       const r = await api('/review/packets/' + packetId + '/fraud-analysis', { method: 'POST' });
-      msg.style.color = r.flagged > 0 ? '#92400e' : '#15803d';
-      msg.textContent = `Fraud analysis complete — ${r.flagged} of ${r.lines_analyzed} rows flagged.`;
+      const ai = r.ai_assessment;
+      if (ai) {
+        const riskColor = { low: '#15803d', medium: '#92400e', high: '#991b1b' }[ai.overall_risk] || '#555';
+        msg.innerHTML = `<span style="font-weight:700;color:${riskColor}">AI: ${ai.overall_risk?.toUpperCase()} risk${ai.validity_pct != null ? ' · ' + ai.validity_pct + '% valid' : ''}</span> — ${_escHtml(ai.summary)} <span style="color:#8e8e93">(${r.flagged} rows flagged)</span>`;
+        msg.style.color = '';
+      } else {
+        msg.style.color = r.flagged > 0 ? '#92400e' : '#15803d';
+        msg.textContent = `Fraud analysis complete — ${r.flagged} of ${r.lines_analyzed} rows flagged.`;
+      }
       await rcSelectPacket(packetId);
     } catch(e) { msg.style.color = '#c62828'; msg.textContent = 'Error: ' + e.message; }
     btn.disabled = false; btn.textContent = '🔍 Analyze Fraud';

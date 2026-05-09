@@ -227,16 +227,67 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
     if not voters:
         raise HTTPException(400, "Voter roll parsed 0 entries — check format")
 
+    active = [l for l in lines if l.row_status != "blank" and l.raw_name]
     results = []
-    for l in lines:
-        if l.row_status == "blank" or not l.raw_name:
-            continue
-        match = _fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)
-        results.append({"line_id": l.id, **match})
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if api_key:
+        # Claude Haiku: for each row, pass top-5 fuzzy candidates and let Claude decide
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        for l in active:
+            # Pre-rank candidates with difflib to limit prompt size
+            scored = sorted(
+                voters,
+                key=lambda v: _sim(l.raw_name, v["name"]) * 0.6 + _sim(l.raw_address or "", v["address"]) * 0.4,
+                reverse=True,
+            )[:5]
+            candidates_text = "\n".join(
+                f"  {i+1}. Name: {v['name']} | Address: {v['address']} | ZIP: {v['zip']}"
+                for i, v in enumerate(scored)
+            )
+            prompt = (
+                f"You are a petition voter-roll verifier. Determine if this petition signer matches any voter roll candidate.\n\n"
+                f"Petition signer:\n"
+                f"  Name: {l.raw_name}\n"
+                f"  Address: {l.raw_address or '(blank)'}\n"
+                f"  City: {l.raw_city or '(blank)'}\n"
+                f"  ZIP: {l.raw_zip or '(blank)'}\n\n"
+                f"Top voter roll candidates:\n{candidates_text}\n\n"
+                f"Respond with JSON only, no explanation:\n"
+                f'{{\"status\": \"valid\"|\"uncertain\"|\"invalid\", \"confidence\": 0-100, \"reason\": \"one sentence\"}}\n\n'
+                f"Use:\n"
+                f"  valid — clear match (name + address align, allowing for minor spelling variations)\n"
+                f"  uncertain — partial match (name matches but address unclear, or vice versa)\n"
+                f"  invalid — no reasonable match found"
+            )
+            try:
+                resp = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=120,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = resp.content[0].text.strip()
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+                verdict = json.loads(raw)
+                results.append({
+                    "line_id": l.id,
+                    "voter_status": verdict.get("status", "uncertain"),
+                    "voter_confidence": int(verdict.get("confidence", 50)),
+                    "voter_reason": verdict.get("reason", ""),
+                })
+            except Exception:
+                # Fall back to difflib for this row
+                results.append({"line_id": l.id, **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)})
+    else:
+        # No API key — pure difflib
+        for l in active:
+            results.append({"line_id": l.id, **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)})
 
     db.bulk_update_voter_match(results)
-    valid = sum(1 for r in results if r["voter_status"] == "valid")
-    invalid = sum(1 for r in results if r["voter_status"] == "invalid")
+    valid    = sum(1 for r in results if r["voter_status"] == "valid")
+    invalid  = sum(1 for r in results if r["voter_status"] == "invalid")
     uncertain = sum(1 for r in results if r["voter_status"] == "uncertain")
     return {"matched": len(results), "valid": valid, "invalid": invalid, "uncertain": uncertain}
 
@@ -247,10 +298,80 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
     if not packet:
         raise HTTPException(404, "Packet not found")
 
+    # Step 1: programmatic pattern detection (always runs)
     results = _detect_fraud_patterns(lines)
+    result_by_id = {r["line_id"]: r for r in results}
+
+    # Step 2: Claude Sonnet holistic fraud pass (if API key available)
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    active = [l for l in lines if l.row_status != "blank" and l.raw_name]
+    sonnet_summary = None
+
+    if api_key and active:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        rows_text = "\n".join(
+            f"  Row {l.line_no}: name={l.raw_name!r}, address={l.raw_address!r}, city={l.raw_city!r}, "
+            f"zip={l.raw_zip!r}, date={l.raw_date!r}, has_signature={l.has_signature}, "
+            f"voter_status={l.voter_status or 'unmatched'}"
+            for l in active
+        )
+        prompt = (
+            "You are a petition fraud analyst. Review these extracted signature rows and identify fraud patterns.\n\n"
+            "Known petition fraud patterns to check:\n"
+            "- Same or nearly identical handwriting style across multiple entries\n"
+            "- Suspiciously sequential addresses (101, 102, 103 same street)\n"
+            "- Same city appearing in implausibly long unbroken runs\n"
+            "- Multiple entries with identical or very similar names\n"
+            "- All entries dated the same day across many rows\n"
+            "- Missing signatures on filled rows\n"
+            "- Names written in the same hand as address fields\n"
+            "- Implausibly neat or uniform entries (real crowds vary)\n"
+            "- Voter roll mismatches clustering on specific rows\n\n"
+            f"Rows:\n{rows_text}\n\n"
+            "Respond with JSON only:\n"
+            '{"overall_risk": "low"|"medium"|"high", "validity_pct": 0-100, "summary": "2-3 sentence assessment", '
+            '"row_flags": [{"row": <line_no>, "flags": ["flag1","flag2"], "score": 0-100}]}\n\n'
+            "Only include rows in row_flags if they have at least one flag. "
+            "Scores: 0=clean, 30-50=suspicious, 60-80=likely fraud, 90-100=almost certainly fraudulent."
+        )
+        try:
+            resp = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = resp.content[0].text.strip()
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            verdict = json.loads(raw)
+            sonnet_summary = {
+                "overall_risk": verdict.get("overall_risk", "unknown"),
+                "validity_pct": verdict.get("validity_pct"),
+                "summary": verdict.get("summary", ""),
+            }
+            # Merge Sonnet per-row flags on top of programmatic ones
+            for rf in verdict.get("row_flags", []):
+                line = next((l for l in active if l.line_no == rf["row"]), None)
+                if not line:
+                    continue
+                r = result_by_id.get(line.id)
+                if not r:
+                    continue
+                for flag in rf.get("flags", []):
+                    if flag not in r["fraud_flags"]:
+                        r["fraud_flags"].append(flag)
+                # Take the higher of programmatic vs Sonnet score
+                r["fraud_score"] = min(100, max(r["fraud_score"], rf.get("score", 0)))
+        except Exception:
+            pass  # fall through with programmatic results only
+
     db.bulk_update_fraud(results)
     flagged = sum(1 for r in results if r["fraud_flags"])
-    return {"lines_analyzed": len(results), "flagged": flagged}
+    response = {"lines_analyzed": len(results), "flagged": flagged}
+    if sonnet_summary:
+        response["ai_assessment"] = sonnet_summary
+    return response
 
 
 class DecisionBody(BaseModel):
