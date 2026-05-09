@@ -37,6 +37,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..auth import get_current_user
+from ..ingestion.ca_counties import CALIFORNIA_COUNTIES, city_in_county
 from ..storage import db
 from ..storage.database import PacketLineRow
 
@@ -121,6 +122,7 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
         "has_cleaned":     bool(packet.cleaned_path),
         "summary":         rich.get("summary", {}),
         "voter_roll_text": packet.voter_roll_text or "",
+        "county": packet.county or "",
         "lines": [
             {
                 "id":                l.id,
@@ -196,6 +198,30 @@ async def set_line_action(
 async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)):
     n = db.approve_all_new_sigs(packet_id, current_user["user_id"])
     return {"approved": n}
+
+
+# ── County list + save ────────────────────────────────────────────────────────
+
+@router.get("/counties")
+async def list_counties():
+    return CALIFORNIA_COUNTIES
+
+
+class CountyBody(BaseModel):
+    county: str
+
+
+@router.post("/packets/{packet_id}/county")
+async def save_packet_county(
+    packet_id: int, body: CountyBody, current_user=Depends(get_current_user)
+):
+    if body.county and body.county not in CALIFORNIA_COUNTIES:
+        raise HTTPException(400, f"Unknown county: {body.county}")
+    packet, _ = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+    db.save_county(packet_id, body.county)
+    return {"ok": True, "county": body.county}
 
 
 # ── Voter roll ────────────────────────────────────────────────────────────────
@@ -298,8 +324,8 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
     if not packet:
         raise HTTPException(404, "Packet not found")
 
-    # Step 1: programmatic pattern detection (always runs)
-    results = _detect_fraud_patterns(lines)
+    # Step 1: programmatic pattern detection (always runs), with county validation if set
+    results = _detect_fraud_patterns(lines, county=packet.county or None)
     result_by_id = {r["line_id"]: r for r in results}
 
     # Step 2: Claude Sonnet holistic fraud pass (if API key available)
@@ -316,8 +342,10 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
             f"voter_status={l.voter_status or 'unmatched'}"
             for l in active
         )
+        county_line = f"This petition is for {packet.county} County, California. Any signer listing a city outside {packet.county} County should be flagged.\n\n" if packet.county else ""
         prompt = (
-            "You are a petition fraud analyst. Review these extracted signature rows and identify fraud patterns.\n\n"
+            f"You are a petition fraud analyst. Review these extracted signature rows and identify fraud patterns.\n\n"
+            f"{county_line}"
             "Known petition fraud patterns to check:\n"
             "- Same or nearly identical handwriting style across multiple entries\n"
             "- Suspiciously sequential addresses (101, 102, 103 same street)\n"
@@ -509,7 +537,7 @@ def _fuzzy_voter_match(name: str, address: str, zip_: str, voters: list[dict]) -
 
 # ── Fraud detection helpers ────────────────────────────────────────────────────
 
-def _detect_fraud_patterns(lines: list) -> list[dict]:
+def _detect_fraud_patterns(lines: list, county: str | None = None) -> list[dict]:
     results = [{"line_id": l.id, "line_no": l.line_no, "fraud_flags": [], "fraud_score": 0}
                for l in lines]
     id_to_idx = {l.id: i for i, l in enumerate(lines)}
@@ -527,6 +555,12 @@ def _detect_fraud_patterns(lines: list) -> list[dict]:
             add_flag(l.id, "no_signature", 30)
         if l.raw_zip and not l.valid_zip:
             add_flag(l.id, "invalid_zip", 15)
+
+    # County / city validation
+    if county:
+        for l in active:
+            if l.raw_city and not city_in_county(l.raw_city, county):
+                add_flag(l.id, f"city_not_in_{county.lower().replace(' ', '_')}_county", 80)
 
     # Consecutive house numbers (sequential runs of 3+ in same city)
     def _house_num(addr: str):

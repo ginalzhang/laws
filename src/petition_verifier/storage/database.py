@@ -246,6 +246,7 @@ class PacketRow(Base):
     result_json      = Column(Text, default="{}")          # full page_result JSON
     shift_id         = Column(Integer, ForeignKey("shifts.id"), nullable=True)
     voter_roll_text  = Column(Text, nullable=True)         # pasted voter roll for this packet
+    county           = Column(String, nullable=True)       # CA county selected for validation
     lines            = relationship("PacketLineRow", back_populates="packet",
                                     cascade="all, delete-orphan")
 
@@ -318,6 +319,7 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
             "ALTER TABLE users ADD COLUMN team_id INTEGER",
             "ALTER TABLE review_packets ADD COLUMN shift_id INTEGER",
             "ALTER TABLE review_packets ADD COLUMN voter_roll_text TEXT",
+            "ALTER TABLE review_packets ADD COLUMN county VARCHAR",
             "ALTER TABLE review_packet_lines ADD COLUMN voter_status VARCHAR",
             "ALTER TABLE review_packet_lines ADD COLUMN voter_confidence INTEGER",
             "ALTER TABLE review_packet_lines ADD COLUMN voter_reason TEXT",
@@ -1343,6 +1345,13 @@ class Database:
                     n += 1
             session.commit()
             return n
+
+    def save_county(self, packet_id: int, county: str) -> None:
+        with self._Session() as session:
+            pkt = session.query(PacketRow).filter_by(id=packet_id).first()
+            if pkt:
+                pkt.county = county
+                session.commit()
 
     def save_voter_roll(self, packet_id: int, text: str) -> None:
         with self._Session() as session:

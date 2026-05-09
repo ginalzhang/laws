@@ -803,14 +803,35 @@
 
             <!-- Voter roll + fraud tools -->
             <div class="rc-voter-section" id="rcVoterSection" style="display:none">
-              <h4>Voter Roll &amp; Fraud Analysis</h4>
+              <h4>Validation &amp; Fraud Analysis</h4>
               <div id="rcValidityBar" class="rc-validity-bar" style="display:none"></div>
-              <div style="font-size:.78rem;color:#6e6e73;margin-bottom:6px">Paste tab-delimited voter roll (First Name, Last Name, Address, City, Zip — or any common format):</div>
-              <textarea id="rcVoterRollInput" placeholder="John&#9;Smith&#9;123 Main St&#9;Los Angeles&#9;90001&#10;Jane&#9;Doe&#9;456 Oak Ave&#9;Pasadena&#9;91101"></textarea>
-              <div class="rc-analysis-btns">
+
+              <!-- County selector (always shown) -->
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+                <label style="font-size:.78rem;font-weight:600;color:#3c3c43;white-space:nowrap">Petition County:</label>
+                <select id="rcCountySelect" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #e5e5ea;border-radius:8px;font-size:.82rem;font-family:inherit;background:#f9f9fb;outline:none">
+                  <option value="">— select county —</option>
+                </select>
+                <button class="btn btn-outline btn-sm" id="rcSaveCountyBtn" onclick="rcSaveCounty()">Save</button>
+                <span id="rcCountyMsg" style="font-size:.75rem;color:#15803d"></span>
+              </div>
+
+              <!-- Mode tabs -->
+              <div style="display:flex;gap:8px;margin-bottom:10px">
+                <button id="rcModeVoter" onclick="rcSetMode('voter')" class="btn btn-primary btn-sm">With Voter Roll</button>
+                <button id="rcModeNoVoter" onclick="rcSetMode('novoter')" class="btn btn-outline btn-sm">County Only (no voter roll)</button>
+              </div>
+
+              <!-- Voter roll paste area -->
+              <div id="rcVoterRollPanel">
+                <div style="font-size:.78rem;color:#6e6e73;margin-bottom:6px">Paste tab-delimited voter roll (First Name, Last Name, Address, City, Zip — or any common format):</div>
+                <textarea id="rcVoterRollInput" placeholder="John&#9;Smith&#9;123 Main St&#9;Los Angeles&#9;90001&#10;Jane&#9;Doe&#9;456 Oak Ave&#9;Pasadena&#9;91101"></textarea>
+              </div>
+
+              <div class="rc-analysis-btns" id="rcAnalysisBtns">
                 <button class="btn btn-primary btn-sm" id="rcSaveVoterBtn" onclick="rcSaveVoterRoll()">Save Voter Roll</button>
                 <button class="btn btn-outline btn-sm" id="rcMatchBtn" onclick="rcRunVoterMatch()" style="display:none">⚡ Match Voters</button>
-                <button class="btn btn-outline btn-sm" id="rcFraudBtn" onclick="rcRunFraudAnalysis()" style="display:none">🔍 Analyze Fraud</button>
+                <button class="btn btn-outline btn-sm" id="rcFraudBtn" onclick="rcRunFraudAnalysis()">🔍 Analyze Fraud</button>
               </div>
               <div id="rcVoterMsg" style="margin-top:6px;font-size:.78rem;min-height:14px"></div>
               <div class="rc-export-bar" id="rcExportBar" style="display:none">
@@ -2813,8 +2834,64 @@
   let _rcPackets = [];
   let _rcSelected = null;
   let _rcPollTimer = null;
+  let _rcMode = 'voter';  // 'voter' | 'novoter'
+
+  // Load CA counties into selector on first Review Center visit
+  async function _rcLoadCounties() {
+    const sel = document.getElementById('rcCountySelect');
+    if (!sel || sel.options.length > 1) return;
+    try {
+      const counties = await api('/review/counties');
+      counties.forEach(c => {
+        const o = document.createElement('option');
+        o.value = o.textContent = c;
+        sel.appendChild(o);
+      });
+    } catch(_) {}
+  }
+
+  function rcSetMode(mode) {
+    _rcMode = mode;
+    const voterPanel = document.getElementById('rcVoterRollPanel');
+    const saveBtn    = document.getElementById('rcSaveVoterBtn');
+    const matchBtn   = document.getElementById('rcMatchBtn');
+    const modeVoter  = document.getElementById('rcModeVoter');
+    const modeNo     = document.getElementById('rcModeNoVoter');
+    if (mode === 'voter') {
+      voterPanel.style.display = '';
+      saveBtn.style.display = '';
+      matchBtn.style.display = _rcSelected && _rcSelected.voter_roll_text ? '' : 'none';
+      modeVoter.className = 'btn btn-primary btn-sm';
+      modeNo.className    = 'btn btn-outline btn-sm';
+    } else {
+      voterPanel.style.display = 'none';
+      saveBtn.style.display = 'none';
+      matchBtn.style.display = 'none';
+      modeVoter.className = 'btn btn-outline btn-sm';
+      modeNo.className    = 'btn btn-primary btn-sm';
+    }
+  }
+
+  async function rcSaveCounty() {
+    const packetId = _rcSelected && _rcSelected.id;
+    if (!packetId) return;
+    const county = document.getElementById('rcCountySelect').value;
+    const msg = document.getElementById('rcCountyMsg');
+    const btn = document.getElementById('rcSaveCountyBtn');
+    btn.disabled = true;
+    try {
+      await api('/review/packets/' + packetId + '/county', {
+        method: 'POST', body: JSON.stringify({ county }),
+      });
+      msg.style.color = '#15803d';
+      msg.textContent = county ? `Saved — ${county} County` : 'Cleared';
+      if (_rcSelected) _rcSelected.county = county;
+    } catch(e) { msg.style.color = '#c62828'; msg.textContent = e.message; }
+    btn.disabled = false;
+  }
 
   async function loadReviewCenter() {
+    _rcLoadCounties();
     try {
       _rcPackets = await api('/review/packets');
       _rcRenderList();
@@ -2931,15 +3008,21 @@
         <div style="margin-top:14px;font-size:.72rem;color:#8e8e93;font-style:italic">AI-assisted pre-review workflow.<br>All decisions made by staff.</div>`;
     }
 
-    // Voter roll section (shown once packet is done)
+    // Voter roll / county section (shown once packet is done)
     const voterSection = document.getElementById('rcVoterSection');
     if (p.status === 'done') {
       voterSection.style.display = '';
-      document.getElementById('rcMatchBtn').style.display = '';
-      document.getElementById('rcFraudBtn').style.display = '';
+      // Restore county selection
+      const sel = document.getElementById('rcCountySelect');
+      if (p.county) sel.value = p.county;
+      // Restore voter roll text and mode
       if (p.voter_roll_text) {
         document.getElementById('rcVoterRollInput').value = p.voter_roll_text;
+        document.getElementById('rcMatchBtn').style.display = '';
         document.getElementById('rcExportBar').style.display = '';
+        rcSetMode('voter');
+      } else {
+        rcSetMode(_rcMode);
       }
       _rcRenderValidityBar(p.lines || []);
     } else {
@@ -3005,18 +3088,34 @@
     const hasFraud = active.some(l => l.fraud_score > 0);
     if (!hasVoter && !hasFraud) { bar.style.display = 'none'; return; }
     bar.style.display = '';
-    const valid    = active.filter(l => l.voter_status === 'valid' && l.review_decision !== 'confirmed_fraud').length;
-    const invalid  = active.filter(l => l.voter_status === 'invalid').length;
-    const uncert   = active.filter(l => l.voter_status === 'uncertain').length;
-    const fraud    = active.filter(l => l.fraud_score > 30 || l.review_decision === 'confirmed_fraud').length;
-    const pct      = active.length ? Math.round(valid / active.length * 100) : 0;
-    bar.innerHTML = `
-      <div class="rc-validity-stat"><div class="v-num">${active.length}</div><div class="v-lbl">Total</div></div>
-      <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${pct}%</div><div class="v-lbl">Valid est.</div></div>
-      <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${valid}</div><div class="v-lbl">Valid</div></div>
-      <div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${invalid}</div><div class="v-lbl">Invalid</div></div>
-      <div class="rc-validity-stat" style="background:#fffbeb"><div class="v-num" style="color:#92400e">${uncert}</div><div class="v-lbl">Uncertain</div></div>
-      ${hasFraud ? `<div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${fraud}</div><div class="v-lbl">Fraud Risk</div></div>` : ''}`;
+
+    if (hasVoter) {
+      // Full voter roll mode
+      const valid   = active.filter(l => l.voter_status === 'valid'   && l.review_decision !== 'confirmed_fraud').length;
+      const invalid = active.filter(l => l.voter_status === 'invalid' || l.review_decision === 'confirmed_fraud').length;
+      const uncert  = active.filter(l => l.voter_status === 'uncertain').length;
+      const fraud   = active.filter(l => l.fraud_score > 30 || l.review_decision === 'confirmed_fraud').length;
+      const pct     = active.length ? Math.round(valid / active.length * 100) : 0;
+      bar.innerHTML = `
+        <div class="rc-validity-stat"><div class="v-num">${active.length}</div><div class="v-lbl">Total</div></div>
+        <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${pct}%</div><div class="v-lbl">Valid est.</div></div>
+        <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${valid}</div><div class="v-lbl">Valid</div></div>
+        <div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${invalid}</div><div class="v-lbl">Invalid</div></div>
+        <div class="rc-validity-stat" style="background:#fffbeb"><div class="v-num" style="color:#92400e">${uncert}</div><div class="v-lbl">Uncertain</div></div>
+        ${hasFraud ? `<div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${fraud}</div><div class="v-lbl">Fraud Risk</div></div>` : ''}`;
+    } else {
+      // County-only mode: valid = no fraud flags, invalid = high fraud or county mismatch, uncertain = some flags
+      const clean   = active.filter(l => l.fraud_score === 0 && l.review_decision !== 'confirmed_fraud').length;
+      const flagged = active.filter(l => l.fraud_score > 60 || l.review_decision === 'confirmed_fraud').length;
+      const suspect = active.filter(l => l.fraud_score > 0 && l.fraud_score <= 60 && l.review_decision !== 'confirmed_fraud').length;
+      const pct     = active.length ? Math.round(clean / active.length * 100) : 0;
+      bar.innerHTML = `
+        <div class="rc-validity-stat"><div class="v-num">${active.length}</div><div class="v-lbl">Total</div></div>
+        <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${pct}%</div><div class="v-lbl">Clean est.</div></div>
+        <div class="rc-validity-stat" style="background:#f0fdf4"><div class="v-num" style="color:#15803d">${clean}</div><div class="v-lbl">No flags</div></div>
+        <div class="rc-validity-stat" style="background:#fffbeb"><div class="v-num" style="color:#92400e">${suspect}</div><div class="v-lbl">Suspicious</div></div>
+        <div class="rc-validity-stat" style="background:#fef2f2"><div class="v-num" style="color:#991b1b">${flagged}</div><div class="v-lbl">Flagged</div></div>`;
+    }
   }
 
   function _rcRenderQueue(p) {
