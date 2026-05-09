@@ -772,7 +772,7 @@
     async function handlePhotoUpload(event) {
       const files = Array.from(event.target.files || []);
       if (!files.length) return;
-      event.target.value = '';  // allow re-selecting same file
+      try { event.target.value = ''; } catch(_) {}  // reset for re-select; iOS throws, ignore it
 
       for (const file of files) {
         const id = Date.now() + Math.random();
