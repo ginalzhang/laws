@@ -1182,11 +1182,13 @@ class Database:
             except Exception:
                 pass
             session.add(pkt)
+            _first_err = None
             try:
                 session.commit()
                 session.refresh(pkt)
                 return pkt.id
-            except Exception as first_err:
+            except Exception as exc:
+                _first_err = exc
                 session.rollback()
 
             # Fallback: retry without shift_id (in case that column is missing)
@@ -1201,13 +1203,13 @@ class Database:
                 session.commit()
                 session.refresh(pkt2)
                 return pkt2.id
-            except Exception as second_err:
+            except Exception as exc:
                 session.rollback()
                 raise RuntimeError(
                     f"create_packet failed on both attempts. "
-                    f"First: {type(first_err).__name__}: {first_err}. "
-                    f"Second: {type(second_err).__name__}: {second_err}"
-                ) from second_err
+                    f"First: {type(_first_err).__name__}: {_first_err}. "
+                    f"Second: {type(exc).__name__}: {exc}"
+                ) from exc
 
     def list_packets(self) -> list:
         with self._Session() as session:
