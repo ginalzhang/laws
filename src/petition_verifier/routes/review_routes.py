@@ -642,132 +642,6 @@ def _process_packet(packet_id: int, raw_path: Path) -> None:
         db.fail_packet(packet_id, f"{type(exc).__name__}: {exc}\n\n{tb}")
 
 
-_CLAUDE_VISION_PROMPT = """\
-This is a California petition signature sheet with 7-8 numbered rows of handwritten voter information. For each numbered row (1 through 7 or 8), extract ONLY the handwritten content — ignore all pre-printed form labels.
-
-For each row return:
-- name: handwritten name on the Print Name line
-- address: handwritten street address
-- city: handwritten city name (after the City: label)
-- zip: handwritten 5-digit zip code (after the Zip: label)
-
-If a row is blank/unsigned return null. Return ONLY JSON:
-{"rows": [{"row": 1, "name": "...", "address": "...", "city": "...", "zip": "..."}, ...]}"""
-
-
-def _claude_extract_rows(image, packet_id: int):
-    """Extract signer rows from a petition image via Claude vision.
-
-    Retries the API call 3x with a 2-second backoff before giving up.
-    Returns [] on persistent failure — caller falls back to Google Vision cascade.
-    """
-    import anthropic
-    import base64
-    import io as _io
-    import time
-
-    from ..models import ExtractedSignature
-
-    tag = f"[_process_packet pkt={packet_id}] claude_extract"
-
-    # Verify the API key was picked up from the env. Anthropic() reads
-    # ANTHROPIC_API_KEY automatically — print a prefix so we can confirm
-    # it's present and not, e.g., a stale empty value.
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print(f"{tag} ANTHROPIC_API_KEY not set in env", flush=True)
-        return []
-    print(f"{tag} using ANTHROPIC_API_KEY={api_key[:8]}... (len={len(api_key)})", flush=True)
-
-    buf = _io.BytesIO()
-    image.save(buf, format="JPEG", quality=92)
-    img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
-
-    # Construct client explicitly with the key so the source is unambiguous.
-    client = anthropic.Anthropic(api_key=api_key)
-
-    response = None
-    last_exc = None
-    for attempt in range(1, 4):  # 3 attempts
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=2048,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {"type": "base64",
-                                                      "media_type": "image/jpeg",
-                                                      "data": img_b64}},
-                        {"type": "text", "text": _CLAUDE_VISION_PROMPT},
-                    ],
-                }],
-            )
-            break
-        except Exception as exc:
-            last_exc = exc
-            print(
-                f"{tag} attempt {attempt}/3 failed: {type(exc).__name__}: {exc}",
-                flush=True,
-            )
-            if attempt < 3:
-                time.sleep(2)
-
-    if response is None:
-        print(f"{tag} all 3 attempts failed; falling through to Vision cascade", flush=True)
-        return []
-
-    raw = ""
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            raw = block.text.strip()
-            break
-
-    print(f"{tag} raw response: {raw[:800]!r}", flush=True)
-
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        print(f"{tag} json parse failed: {exc}", flush=True)
-        return []
-
-    rows = parsed.get("rows", []) if isinstance(parsed, dict) else parsed
-    if not isinstance(rows, list):
-        return []
-
-    sigs = []
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        name    = str(r.get("name")    or "").strip()
-        address = str(r.get("address") or "").strip()
-        city    = str(r.get("city")    or "").strip()
-        zip_    = str(r.get("zip")     or "").strip()
-        if not name and not address:
-            continue
-
-        full_addr = ", ".join(filter(None, [address, city, zip_]))
-        try:
-            line_no = int(r.get("row") or len(sigs) + 1)
-        except (TypeError, ValueError):
-            line_no = len(sigs) + 1
-
-        sigs.append(ExtractedSignature(
-            line_number=line_no,
-            page=1,
-            raw_name=name,
-            raw_address=full_addr,
-            raw_date="",
-            signature_present=True,
-        ))
-
-    print(f"{tag} extracted {len(sigs)} sigs", flush=True)
-    return sigs
-
-
 def _do_process(packet_id: int, raw_path: Path) -> None:
     import re as _re
     from PIL import Image, ImageOps
@@ -797,13 +671,30 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     prev_rows = db.get_prev_rows_for_fingerprint(fp, exclude_packet_id=packet_id)
 
     # ── Extract signer rows ──────────────────────────────────────────────────
-    # Primary: Claude vision — understands the form layout directly, no
-    # coordinate heuristics. Fallback: Google Vision cascade (kept for when
-    # ANTHROPIC_API_KEY isn't set or the Claude call fails).
+    # Primary: Claude vision via the existing ClaudeProcessor — proven path
+    # that already works on Render (used by Path 2 / OCR_BACKEND=claude).
+    # Reuses its prompt, JSON parsing, and `_rows_to_sigs` conversion so we
+    # don't duplicate the network/auth/parse logic. Falls back to Google
+    # Vision cascade if ANTHROPIC_API_KEY isn't set or the call fails.
     extracted_sigs = []
     tag = f"[_process_packet pkt={packet_id}]"
     if os.environ.get("ANTHROPIC_API_KEY"):
-        extracted_sigs = _claude_extract_rows(preprocessed, packet_id)
+        try:
+            import anthropic
+            from ..ingestion.claude_extractor import ClaudeProcessor
+            processor = ClaudeProcessor()
+            client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+            rows = processor._call_claude(client, preprocessed, page_num=1)
+            extracted_sigs = processor._rows_to_sigs(rows, page_num=1, line_start=1)
+            print(f"{tag} ClaudeProcessor extracted {len(extracted_sigs)} sigs", flush=True)
+        except Exception as exc:
+            import traceback
+            print(
+                f"{tag} ClaudeProcessor failed: {type(exc).__name__}: {exc}\n"
+                f"{traceback.format_exc()}",
+                flush=True,
+            )
+            extracted_sigs = []
 
     if extracted_sigs:
         # Claude succeeded — skip the Vision cascade entirely.
