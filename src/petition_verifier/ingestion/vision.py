@@ -908,12 +908,29 @@ _CITY_LABEL_RE = re.compile(r"^city[:.,]?$", re.I)
 _ZIP_LABEL_RE = re.compile(r"^(zip|zipcode|zip[-_]?code)[:.,]?$", re.I)
 _LEADING_ROW_DIGIT_RE = re.compile(r"^\s*[1-8](?:[\s.):]+|(?=[A-Za-z]))")
 
+# Pre-printed petition form label tokens. _is_printed_label already excludes
+# these at the word level, but if _join concatenates a label with adjacent text
+# (e.g. "Print" + "Name" with no gap → "PrintName") it slips through. This
+# regex scrubs tokens from the joined string as a belt-and-suspenders pass.
+_FORM_LABEL_TOKEN_RE = re.compile(
+    r"\b(print|name|signature|address|residence|only|city|zip|state|date)\b",
+    re.IGNORECASE,
+)
+
 
 def _strip_leading_row_number(text: str) -> str:
     """Strip a leading row digit (1-8) that bled into the field. Belt-and-suspenders
     on top of band/word-level filtering — handles cases where Vision concatenated
     the digit with the next word into a single token like '2DANGRY'."""
     return _LEADING_ROW_DIGIT_RE.sub("", text, count=1).lstrip()
+
+
+def _strip_form_label_tokens(text: str) -> str:
+    """Remove pre-printed form label tokens that slipped through word-level
+    filtering. Collapses adjacent whitespace and strips border punctuation."""
+    cleaned = _FORM_LABEL_TOKEN_RE.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" :.,-_")
 
 
 def _extract_by_header_columns(
@@ -954,13 +971,13 @@ def _extract_by_header_columns(
         x_date   = int(page_width * 0.88)
 
     signer_words = [w for w in words if w.top > header_y + 5]
-    # merge_px=180 — each petition row spans TWO physical lines (Print Name +
+    # merge_px=120 — each petition row spans TWO physical lines (Print Name +
     # Residence Address on top, Signature + City + Zip + Date on bottom),
-    # ~140-160px apart. Earlier value of 55 only captured the top line; the
-    # bottom line (with City:/Zip:/Date: labels) clustered as a separate row
-    # that failed the row-digit check and got dropped, leaving zip/date empty.
-    # Row pitch on a 7-row petition is ~215px so 180 leaves a safe gap.
-    rows         = _cluster_rows_px(signer_words, merge_px=180)
+    # ~80-110px apart. 55 only captured the top line; 180 was too wide and
+    # merged adjacent rows together (e.g. "PNANTOEDANGRY"). 120 captures both
+    # physical lines of one row without bleeding into the next row's top line
+    # (which lives ~215px below).
+    rows         = _cluster_rows_px(signer_words, merge_px=120)
     print(
         f"[_extract_by_header_columns] clustered {len(signer_words)} signer-words "
         f"into {len(rows)} rows (sizes: {[len(r) for r in rows[:10]]})",
@@ -1019,11 +1036,18 @@ def _extract_by_header_columns(
         else:
             zip_ws = [w for w in band(x_zip, x_date) if zip_re.match(w.text)]
 
-        raw_name    = _strip_leading_row_number(_join(name_ws))
+        # Post-extraction label scrub: catches any label tokens that survive
+        # word-level filtering (e.g. when _join concatenates label with adjacent
+        # handwritten text). Cheap, idempotent, and idempotent on clean strings.
+        raw_name    = _strip_form_label_tokens(
+            _strip_leading_row_number(_join(name_ws))
+        )
         raw_address = ", ".join(filter(None, [
-            _join(addr_ws), _join(city_ws), _join(zip_ws),
+            _strip_form_label_tokens(_join(addr_ws)),
+            _strip_form_label_tokens(_join(city_ws)),
+            _strip_form_label_tokens(_join(zip_ws)),
         ]))
-        raw_date    = _join(date_ws)
+        raw_date    = _strip_form_label_tokens(_join(date_ws))
         sig_present = bool(sig_ws)
 
         if not raw_name and not raw_address:
