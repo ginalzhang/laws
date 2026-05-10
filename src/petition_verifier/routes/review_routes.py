@@ -268,63 +268,56 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
     active = [l for l in lines if l.row_status != "blank" and l.raw_name]
     results = []
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if api_key:
         # Claude Haiku: for each row, pass top-5 fuzzy candidates and let Claude decide
-        import httpx as _httpx
-        _hdrs = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        with _httpx.Client(http2=False, timeout=30) as _http:
-            for l in active:
-                # Pre-rank candidates with difflib to limit prompt size
-                scored = sorted(
-                    voters,
-                    key=lambda v: _sim(l.raw_name, v["name"]) * 0.6 + _sim(l.raw_address or "", v["address"]) * 0.4,
-                    reverse=True,
-                )[:5]
-                candidates_text = "\n".join(
-                    f"  {i+1}. Name: {v['name']} | Address: {v['address']} | ZIP: {v['zip']}"
-                    for i, v in enumerate(scored)
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        for l in active:
+            # Pre-rank candidates with difflib to limit prompt size
+            scored = sorted(
+                voters,
+                key=lambda v: _sim(l.raw_name, v["name"]) * 0.6 + _sim(l.raw_address or "", v["address"]) * 0.4,
+                reverse=True,
+            )[:5]
+            candidates_text = "\n".join(
+                f"  {i+1}. Name: {v['name']} | Address: {v['address']} | ZIP: {v['zip']}"
+                for i, v in enumerate(scored)
+            )
+            prompt = (
+                f"You are a petition voter-roll verifier. Determine if this petition signer matches any voter roll candidate.\n\n"
+                f"Petition signer:\n"
+                f"  Name: {l.raw_name}\n"
+                f"  Address: {l.raw_address or '(blank)'}\n"
+                f"  City: {l.raw_city or '(blank)'}\n"
+                f"  ZIP: {l.raw_zip or '(blank)'}\n\n"
+                f"Top voter roll candidates:\n{candidates_text}\n\n"
+                f"Respond with JSON only, no explanation:\n"
+                f'{{\"status\": \"valid\"|\"uncertain\"|\"invalid\", \"confidence\": 0-100, \"reason\": \"one sentence\"}}\n\n'
+                f"Use:\n"
+                f"  valid — clear match (name + address align, allowing for minor spelling variations)\n"
+                f"  uncertain — partial match (name matches but address unclear, or vice versa)\n"
+                f"  invalid — no reasonable match found"
+            )
+            try:
+                resp = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=120,
+                    messages=[{"role": "user", "content": prompt}],
                 )
-                prompt = (
-                    f"You are a petition voter-roll verifier. Determine if this petition signer matches any voter roll candidate.\n\n"
-                    f"Petition signer:\n"
-                    f"  Name: {l.raw_name}\n"
-                    f"  Address: {l.raw_address or '(blank)'}\n"
-                    f"  City: {l.raw_city or '(blank)'}\n"
-                    f"  ZIP: {l.raw_zip or '(blank)'}\n\n"
-                    f"Top voter roll candidates:\n{candidates_text}\n\n"
-                    f"Respond with JSON only, no explanation:\n"
-                    f'{{\"status\": \"valid\"|\"uncertain\"|\"invalid\", \"confidence\": 0-100, \"reason\": \"one sentence\"}}\n\n'
-                    f"Use:\n"
-                    f"  valid — clear match (name + address align, allowing for minor spelling variations)\n"
-                    f"  uncertain — partial match (name matches but address unclear, or vice versa)\n"
-                    f"  invalid — no reasonable match found"
-                )
-                try:
-                    _r = _http.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers=_hdrs,
-                        json={"model": "claude-haiku-4-5-20251001", "max_tokens": 120,
-                              "messages": [{"role": "user", "content": prompt}]},
-                    )
-                    _r.raise_for_status()
-                    raw = _r.json()["content"][0]["text"].strip()
-                    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-                    raw = re.sub(r"\s*```$", "", raw)
-                    verdict = json.loads(raw)
-                    results.append({
-                        "line_id": l.id,
-                        "voter_status": verdict.get("status", "uncertain"),
-                        "voter_confidence": int(verdict.get("confidence", 50)),
-                        "voter_reason": verdict.get("reason", ""),
-                    })
-                except Exception:
-                    # Fall back to difflib for this row
-                    results.append({"line_id": l.id, **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)})
+                raw = resp.content[0].text.strip()
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+                verdict = json.loads(raw)
+                results.append({
+                    "line_id": l.id,
+                    "voter_status": verdict.get("status", "uncertain"),
+                    "voter_confidence": int(verdict.get("confidence", 50)),
+                    "voter_reason": verdict.get("reason", ""),
+                })
+            except Exception:
+                # Fall back to difflib for this row
+                results.append({"line_id": l.id, **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)})
     else:
         # No API key — pure difflib
         for l in active:
@@ -348,17 +341,13 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
     result_by_id = {r["line_id"]: r for r in results}
 
     # Step 2: Claude Sonnet holistic fraud pass (if API key available)
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     active = [l for l in lines if l.row_status != "blank" and l.raw_name]
     sonnet_summary = None
 
     if api_key and active:
-        import httpx as _httpx
-        _hdrs = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
         rows_text = "\n".join(
             f"  Row {l.line_no}: name={l.raw_name!r}, address={l.raw_address!r}, city={l.raw_city!r}, "
             f"zip={l.raw_zip!r}, date={l.raw_date!r}, has_signature={l.has_signature}, "
@@ -387,15 +376,12 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
             "Scores: 0=clean, 30-50=suspicious, 60-80=likely fraud, 90-100=almost certainly fraudulent."
         )
         try:
-            with _httpx.Client(http2=False, timeout=60) as _http:
-                _r = _http.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers=_hdrs,
-                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 1024,
-                          "messages": [{"role": "user", "content": prompt}]},
-                )
-            _r.raise_for_status()
-            raw = _r.json()["content"][0]["text"].strip()
+            resp = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = resp.content[0].text.strip()
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
             verdict = json.loads(raw)
@@ -692,11 +678,14 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     # Vision cascade if ANTHROPIC_API_KEY isn't set or the call fails.
     extracted_sigs = []
     tag = f"[_process_packet pkt={packet_id}]"
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    _api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if _api_key:
         try:
+            import anthropic
             from ..ingestion.claude_extractor import ClaudeProcessor
             processor = ClaudeProcessor()
-            rows = processor._call_claude(os.environ["ANTHROPIC_API_KEY"], preprocessed, page_num=1)
+            client = anthropic.Anthropic(api_key=_api_key, timeout=60.0)
+            rows = processor._call_claude(client, preprocessed, page_num=1)
             extracted_sigs = processor._rows_to_sigs(rows, page_num=1, line_start=1)
             print(f"{tag} ClaudeProcessor extracted {len(extracted_sigs)} sigs", flush=True)
         except Exception as exc:
