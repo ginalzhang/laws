@@ -765,8 +765,12 @@ def claude_resolve_ambiguous(
     if not ambiguous:
         return rows
 
-    import anthropic, httpx
-    client = anthropic.Anthropic(api_key=api_key, http_client=httpx.Client(http2=False))
+    import httpx as _httpx
+    _hdrs = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
 
     prompt_rows = []
     for r in ambiguous:
@@ -797,12 +801,15 @@ def claude_resolve_ambiguous(
     )
 
     try:
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = resp.content[0].text.strip()
+        with _httpx.Client(http2=False, timeout=30) as _http:
+            _r = _http.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=_hdrs,
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 512,
+                      "messages": [{"role": "user", "content": prompt}]},
+            )
+        _r.raise_for_status()
+        text = _r.json()["content"][0]["text"].strip()
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
         verdicts = {v["row_number"]: v["verdict"] for v in json.loads(text)}

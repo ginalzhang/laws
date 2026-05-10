@@ -48,20 +48,20 @@ _API_IMAGE_MAX_DIM = 1600   # Anthropic-recommended ceiling; keeps payload small
 _API_IMAGE_QUALITY = 85     # plenty for handwriting at this resolution
 
 
-def _make_client(api_key: str | None = None, timeout: float = 60.0):
-    """Return an Anthropic client that forces HTTP/1.1.
+_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-    Render (and some other cloud providers) don't support HTTP/2, which the
-    Anthropic SDK enables by default via httpx.  Passing http2=False prevents
-    the APIConnectionError that occurs on those platforms.
-    """
+
+def _anthropic_post(api_key: str, body: dict, timeout: float = 60.0) -> dict:
     import httpx
-    import anthropic
-    return anthropic.Anthropic(
-        api_key=api_key or os.environ["ANTHROPIC_API_KEY"],
-        http_client=httpx.Client(http2=False),
-        timeout=timeout,
-    )
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    with httpx.Client(http2=False, timeout=timeout) as client:
+        r = client.post(_ANTHROPIC_URL, headers=headers, json=body)
+    r.raise_for_status()
+    return r.json()
 
 
 def _to_base64_jpeg(image: Image.Image) -> str:
@@ -90,11 +90,11 @@ class ClaudeProcessor(BasePDFProcessor):
     """
 
     def extract(self, pdf_path: Path) -> list[ExtractedSignature]:
-        import anthropic
-
         pdf_path = Path(pdf_path)
         if not pdf_path.exists():
             raise FileNotFoundError(pdf_path)
+
+        api_key = os.environ["ANTHROPIC_API_KEY"]
 
         suffix = pdf_path.suffix.lower()
         if suffix == ".pdf":
@@ -106,7 +106,6 @@ class ClaudeProcessor(BasePDFProcessor):
         else:
             raise ValueError(f"Unsupported file type: {suffix}")
 
-        client = _make_client(timeout=60.0)
         all_sigs: list[ExtractedSignature] = []
         line_counter = 1
 
@@ -115,18 +114,18 @@ class ClaudeProcessor(BasePDFProcessor):
                 f"[claude_extractor] page {page_num}: sending {image.width}x{image.height}px image to API",
                 flush=True,
             )
-            rows = self._call_claude(client, image, page_num)
+            rows = self._call_claude(api_key, image, page_num)
             page_sigs = self._rows_to_sigs(rows, page_num, line_counter)
             line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
 
         return all_sigs
 
-    def _call_claude(self, client, image: Image.Image, page_num: int = 1) -> list[dict]:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
-            messages=[{
+    def _call_claude(self, api_key: str, image: Image.Image, page_num: int = 1) -> list[dict]:
+        resp = _anthropic_post(api_key, {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 2048,
+            "messages": [{
                 "role": "user",
                 "content": [
                     {
@@ -140,8 +139,8 @@ class ClaudeProcessor(BasePDFProcessor):
                     {"type": "text", "text": _PROMPT},
                 ],
             }],
-        )
-        raw = response.content[0].text.strip()
+        }, timeout=60.0)
+        raw = resp["content"][0]["text"].strip()
         # Log the raw response so we can see what the model actually returned
         # before any parsing — useful for diagnosing blank-row symptoms
         # (refusal, empty array, malformed JSON, etc).

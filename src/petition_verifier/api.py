@@ -89,19 +89,24 @@ async def anthropic_connectivity_check():
         return
     print(f"[anthropic-check] using key prefix={api_key[:8]}... len={len(api_key)}", flush=True)
     try:
-        import anthropic, httpx
-        client = anthropic.Anthropic(
-            api_key=api_key,
-            http_client=httpx.Client(http2=False),
-            timeout=15.0,
-        )
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=10,
-            messages=[{"role": "user", "content": "ping"}],
-        )
-        text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
-        print(f"[anthropic-check] OK — got {resp.usage.output_tokens} output tokens, text={text!r}", flush=True)
+        import httpx
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        with httpx.Client(http2=False, timeout=15) as _http:
+            r = _http.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 10,
+                      "messages": [{"role": "user", "content": "ping"}]},
+            )
+        r.raise_for_status()
+        data = r.json()
+        text = data["content"][0]["text"] if data.get("content") else ""
+        tokens = data.get("usage", {}).get("output_tokens", "?")
+        print(f"[anthropic-check] OK — got {tokens} output tokens, text={text!r}", flush=True)
     except Exception as exc:
         print(f"[anthropic-check] FAILED: {type(exc).__name__}: {exc}", flush=True)
 
@@ -140,18 +145,23 @@ async def healthcheck_anthropic():
 
 @app.get("/healthcheck-anthropic-full")
 async def healthcheck_anthropic_full():
-    import anthropic, httpx, os
-    client = anthropic.Anthropic(
-        api_key=os.environ.get("ANTHROPIC_API_KEY"),
-        http_client=httpx.Client(http2=False),
-    )
+    import httpx, os
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    body = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 10,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
     try:
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=10,
-            messages=[{"role": "user", "content": "ping"}]
-        )
-        return {"status": "ok", "response": msg.content[0].text}
+        with httpx.Client(http2=False, timeout=30) as client:
+            r = client.post("https://api.anthropic.com/v1/messages", headers=headers, json=body)
+        return {"status": r.status_code, "body": r.json()}
     except Exception as e:
         return {"status": "failed", "error": str(e), "type": type(e).__name__}
 
