@@ -244,7 +244,6 @@ class PacketRow(Base):
     already_counted  = Column(Integer, default=0)          # count of already_counted rows
     needs_review     = Column(Integer, default=0)          # count of changed_needs_review rows
     result_json      = Column(Text, default="{}")          # full page_result JSON
-    shift_id         = Column(Integer, ForeignKey("shifts.id"), nullable=True)
     voter_roll_text  = Column(Text, nullable=True)         # pasted voter roll for this packet
     county           = Column(String, nullable=True)       # CA county selected for validation
     lines            = relationship("PacketLineRow", back_populates="packet",
@@ -317,7 +316,6 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
     with engine.connect() as conn:
         for stmt in [
             "ALTER TABLE users ADD COLUMN team_id INTEGER",
-            "ALTER TABLE review_packets ADD COLUMN shift_id INTEGER",
             "ALTER TABLE review_packets ADD COLUMN voter_roll_text TEXT",
             "ALTER TABLE review_packets ADD COLUMN county VARCHAR",
             "ALTER TABLE review_packet_lines ADD COLUMN voter_status VARCHAR",
@@ -331,7 +329,12 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception:
-                pass
+                # Postgres marks the transaction as aborted after any error.
+                # Rollback so the next ALTER TABLE gets a clean transaction.
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
     return sessionmaker(bind=engine)
 
 
@@ -1169,7 +1172,7 @@ class Database:
 
     # ── Review packet methods ─────────────────────────────────────────────────
 
-    def create_packet(self, worker_id: int, original_name: str, raw_path: str, shift_id: int | None = None) -> int:
+    def create_packet(self, worker_id: int, original_name: str, raw_path: str) -> int:
         with self._Session() as session:
             pkt = PacketRow(
                 worker_id=worker_id,
@@ -1177,39 +1180,10 @@ class Database:
                 raw_path=raw_path,
                 status="processing",
             )
-            try:
-                pkt.shift_id = shift_id
-            except Exception:
-                pass
             session.add(pkt)
-            _first_err = None
-            try:
-                session.commit()
-                session.refresh(pkt)
-                return pkt.id
-            except Exception as exc:
-                _first_err = exc
-                session.rollback()
-
-            # Fallback: retry without shift_id (in case that column is missing)
-            try:
-                pkt2 = PacketRow(
-                    worker_id=worker_id,
-                    original_name=original_name,
-                    raw_path=raw_path,
-                    status="processing",
-                )
-                session.add(pkt2)
-                session.commit()
-                session.refresh(pkt2)
-                return pkt2.id
-            except Exception as exc:
-                session.rollback()
-                raise RuntimeError(
-                    f"create_packet failed on both attempts. "
-                    f"First: {type(_first_err).__name__}: {_first_err}. "
-                    f"Second: {type(exc).__name__}: {exc}"
-                ) from exc
+            session.commit()
+            session.refresh(pkt)
+            return pkt.id
 
     def list_packets(self) -> list:
         with self._Session() as session:
