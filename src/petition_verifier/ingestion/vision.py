@@ -903,6 +903,19 @@ def _find_col_headers(words: list[_Word]) -> Optional[dict]:
     }
 
 
+_ROW_NUM_RE = re.compile(r"^[1-8][.):]*$")
+_CITY_LABEL_RE = re.compile(r"^city[:.,]?$", re.I)
+_ZIP_LABEL_RE = re.compile(r"^(zip|zipcode|zip[-_]?code)[:.,]?$", re.I)
+_LEADING_ROW_DIGIT_RE = re.compile(r"^\s*[1-8](?:[\s.):]+|(?=[A-Za-z]))")
+
+
+def _strip_leading_row_number(text: str) -> str:
+    """Strip a leading row digit (1-8) that bled into the field. Belt-and-suspenders
+    on top of band/word-level filtering — handles cases where Vision concatenated
+    the digit with the next word into a single token like '2DANGRY'."""
+    return _LEADING_ROW_DIGIT_RE.sub("", text, count=1).lstrip()
+
+
 def _extract_by_header_columns(
     words: list[_Word],
     image: Image.Image,
@@ -943,28 +956,59 @@ def _extract_by_header_columns(
     signer_words = [w for w in words if w.top > header_y + 5]
     rows         = _cluster_rows_px(signer_words, merge_px=55)
     sigs: list[ExtractedSignature] = []
+    debug_logged = False
 
     for row_words in rows:
         # Must contain a line number digit (1–8) to be a signer row.
         # Vision OCR returns various formats: "1", "1.", "1)", "1:" — accept all.
-        if not any(re.match(r"^[1-8][.):]*$", w.text) for w in row_words):
+        if not any(_ROW_NUM_RE.match(w.text) for w in row_words):
             continue
 
-        def band(x_lo: int, x_hi: int) -> list[_Word]:
+        def band(x_lo: int, x_hi: int, drop_row_nums: bool = False) -> list[_Word]:
             return sorted(
                 [w for w in row_words
-                 if x_lo <= w.left < x_hi and not _is_printed_label(w.text)],
+                 if x_lo <= w.left < x_hi
+                 and not _is_printed_label(w.text)
+                 and not (drop_row_nums and _ROW_NUM_RE.match(w.text))],
                 key=lambda w: w.left,
             )
 
-        name_ws = band(x_name, x_addr)
-        addr_ws = band(x_addr, x_city)
-        city_ws = band(x_city, x_zip)
-        zip_ws  = [w for w in band(x_zip, x_date) if zip_re.match(w.text)]
-        date_ws = band(x_date, page_width)
-        sig_ws  = band(x_sig,  x_name)
+        # Label-anchored fallback for city / zip — the in-row "City:" and "Zip:"
+        # printed labels are reliable per-row anchors when band detection drifts.
+        city_label = next((w for w in row_words if _CITY_LABEL_RE.match(w.text)), None)
+        zip_label  = next((w for w in row_words if _ZIP_LABEL_RE.match(w.text)),  None)
 
-        raw_name    = _join(name_ws)
+        def after_label(label: _Word, max_x: int) -> list[_Word]:
+            return sorted(
+                [w for w in row_words
+                 if w.left > label.right
+                 and w.left < max_x
+                 and not _is_printed_label(w.text)
+                 and not _ROW_NUM_RE.match(w.text)],
+                key=lambda w: w.left,
+            )
+
+        # drop_row_nums on the name band — the row digit can drift into x_name
+        # on tilted/perspective photos and end up as "2 DANGRY".
+        name_ws = band(x_name, x_addr, drop_row_nums=True)
+        addr_ws = band(x_addr, x_city)
+        date_ws = band(x_date, page_width)
+        sig_ws  = band(x_sig,  x_name, drop_row_nums=True)
+
+        # City: prefer label-anchored (per-row), fall back to band
+        if city_label:
+            city_max = zip_label.left if zip_label else x_zip
+            city_ws = after_label(city_label, city_max)
+        else:
+            city_ws = band(x_city, x_zip)
+
+        # Zip: prefer label-anchored (per-row, must look like 5 digits)
+        if zip_label:
+            zip_ws = [w for w in after_label(zip_label, x_date) if zip_re.match(w.text)]
+        else:
+            zip_ws = [w for w in band(x_zip, x_date) if zip_re.match(w.text)]
+
+        raw_name    = _strip_leading_row_number(_join(name_ws))
         raw_address = ", ".join(filter(None, [
             _join(addr_ws), _join(city_ws), _join(zip_ws),
         ]))
@@ -975,6 +1019,26 @@ def _extract_by_header_columns(
             continue
         if len(sigs) >= 8:
             break
+
+        # One-time debug dump of the first extracted row's word geometry, so we
+        # can verify coordinate-based parsing in production logs.
+        if not debug_logged:
+            row_top = min(w.top for w in row_words)
+            row_bot = max(w.bottom for w in row_words)
+            print(
+                f"[_extract_by_header_columns debug] first row y=[{row_top},{row_bot}] "
+                f"x_name={x_name} x_addr={x_addr} x_city={x_city} x_zip={x_zip} x_date={x_date} "
+                f"city_label={(city_label.left, city_label.text) if city_label else None} "
+                f"zip_label={(zip_label.left, zip_label.text) if zip_label else None}",
+                flush=True,
+            )
+            for w in sorted(row_words, key=lambda w: w.left):
+                print(
+                    f"[_extract_by_header_columns debug]   word={w.text!r} "
+                    f"x={w.left} y={w.top} w={w.width} h={w.height} conf={w.conf:.2f}",
+                    flush=True,
+                )
+            debug_logged = True
 
         avg_conf    = sum(w.conf for w in row_words) / len(row_words)
         handwritten = [w for w in row_words if not _is_printed_label(w.text)]
