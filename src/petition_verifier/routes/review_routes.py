@@ -658,37 +658,63 @@ If a row is blank/unsigned return null. Return ONLY JSON:
 def _claude_extract_rows(image, packet_id: int):
     """Extract signer rows from a petition image via Claude vision.
 
-    Returns [] on any failure — caller falls back to Google Vision cascade.
+    Retries the API call 3x with a 2-second backoff before giving up.
+    Returns [] on persistent failure — caller falls back to Google Vision cascade.
     """
     import anthropic
     import base64
     import io as _io
+    import time
 
     from ..models import ExtractedSignature
 
     tag = f"[_process_packet pkt={packet_id}] claude_extract"
 
+    # Verify the API key was picked up from the env. Anthropic() reads
+    # ANTHROPIC_API_KEY automatically — print a prefix so we can confirm
+    # it's present and not, e.g., a stale empty value.
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print(f"{tag} ANTHROPIC_API_KEY not set in env", flush=True)
+        return []
+    print(f"{tag} using ANTHROPIC_API_KEY={api_key[:8]}... (len={len(api_key)})", flush=True)
+
     buf = _io.BytesIO()
     image.save(buf, format="JPEG", quality=92)
     img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
 
-    try:
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2048,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64",
-                                                  "media_type": "image/jpeg",
-                                                  "data": img_b64}},
-                    {"type": "text", "text": _CLAUDE_VISION_PROMPT},
-                ],
-            }],
-        )
-    except Exception as exc:
-        print(f"{tag} api call failed: {type(exc).__name__}: {exc}", flush=True)
+    # Construct client explicitly with the key so the source is unambiguous.
+    client = anthropic.Anthropic(api_key=api_key)
+
+    response = None
+    last_exc = None
+    for attempt in range(1, 4):  # 3 attempts
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64",
+                                                      "media_type": "image/jpeg",
+                                                      "data": img_b64}},
+                        {"type": "text", "text": _CLAUDE_VISION_PROMPT},
+                    ],
+                }],
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            print(
+                f"{tag} attempt {attempt}/3 failed: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            if attempt < 3:
+                time.sleep(2)
+
+    if response is None:
+        print(f"{tag} all 3 attempts failed; falling through to Vision cascade", flush=True)
         return []
 
     raw = ""
