@@ -700,6 +700,59 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     except Exception:
         extracted_sigs = []
 
+    # ── Optional: ensemble extraction fallback for rows with empty fields ────
+    # Only fires when EXTRACTION_USE_ENSEMBLE=true is set on the env, and only
+    # for rows where Google Vision returned an empty name or address. Per-field
+    # replacement: ensemble values fill blanks; non-blank Vision fields stay.
+    if os.environ.get("EXTRACTION_USE_ENSEMBLE", "").lower() == "true" and extracted_sigs:
+        from ..extraction import extract_row_ensemble
+
+        W = preprocessed.width
+        H = preprocessed.height
+        for sig in extracted_sigs:
+            if sig.signature_bbox is None:
+                continue
+            # Skip rows where Vision already filled the critical fields.
+            if sig.raw_name and sig.raw_address:
+                continue
+            try:
+                y_top = max(0, sig.signature_bbox.y)
+                y_bot = min(H, sig.signature_bbox.y + sig.signature_bbox.height)
+                row_crop = preprocessed.crop((0, y_top, W, y_bot))
+                ensemble = extract_row_ensemble(row_crop, county="")
+            except Exception as exc:
+                print(f"ensemble failed on row {sig.line_number}: {exc}", flush=True)
+                continue
+
+            # Per-field confidence: take the higher of the two vision agents.
+            haiku  = ensemble.get("extractions", {}).get("haiku", {})
+            sonnet = ensemble.get("extractions", {}).get("sonnet", {})
+            def _conf(key, _h=haiku, _s=sonnet):
+                return max(_h.get(key, 0) or 0, _s.get(key, 0) or 0)
+
+            filled: list[str] = []
+            if not sig.raw_name and ensemble.get("name") and _conf("name_confidence") >= 50:
+                sig.raw_name = ensemble["name"]
+                filled.append("name")
+            if not sig.raw_address:
+                parts: list[str] = []
+                if ensemble.get("address") and _conf("address_confidence") >= 50:
+                    parts.append(ensemble["address"])
+                if ensemble.get("city") and _conf("city_confidence") >= 50:
+                    parts.append(ensemble["city"])
+                if ensemble.get("zip_code") and _conf("zip_confidence") >= 50:
+                    parts.append(ensemble["zip_code"])
+                if parts:
+                    sig.raw_address = ", ".join(parts)
+                    filled.append("address")
+
+            if filled:
+                print(
+                    f"ensemble row {sig.line_number} filled {filled}: "
+                    f"name={sig.raw_name!r} addr={sig.raw_address!r}",
+                    flush=True,
+                )
+
     # ── Convert ExtractedSignature → page_rows ────────────────────────────────
     _zip_re = _re.compile(r"^\d{5}$")
 
