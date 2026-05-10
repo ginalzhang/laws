@@ -971,16 +971,29 @@ def _extract_by_header_columns(
         x_date   = int(page_width * 0.88)
 
     signer_words = [w for w in words if w.top > header_y + 5]
-    # merge_px=120 — each petition row spans TWO physical lines (Print Name +
-    # Residence Address on top, Signature + City + Zip + Date on bottom),
-    # ~80-110px apart. 55 only captured the top line; 180 was too wide and
-    # merged adjacent rows together (e.g. "PNANTOEDANGRY"). 120 captures both
-    # physical lines of one row without bleeding into the next row's top line
-    # (which lives ~215px below).
-    rows         = _cluster_rows_px(signer_words, merge_px=120)
+    # Cluster greedily by y-proximity, then merge digit-less continuation
+    # clusters into the previous (digit-bearing) signer row. This is more
+    # robust than single-px tuning: each petition row's top line has a printed
+    # row digit (1-8); the bottom line (Signature/City/Zip/Date) has no digit,
+    # so we merge it backward into the most recent signer cluster if it's
+    # within 250px of that signer's top.
+    rows = _cluster_rows_px(signer_words, merge_px=150)
+    merged: list[list[_Word]] = []
+    for cluster in rows:
+        has_digit = any(_ROW_NUM_RE.match(w.text) for w in cluster)
+        if has_digit or not merged:
+            merged.append(cluster)
+            continue
+        prev_top = min(w.top for w in merged[-1])
+        cur_top  = min(w.top for w in cluster)
+        if cur_top - prev_top <= 250:
+            merged[-1].extend(cluster)
+        else:
+            merged.append(cluster)
+    rows = merged
     print(
         f"[_extract_by_header_columns] clustered {len(signer_words)} signer-words "
-        f"into {len(rows)} rows (sizes: {[len(r) for r in rows[:10]]})",
+        f"into {len(rows)} rows after digit-less merge (sizes: {[len(r) for r in rows[:10]]})",
         flush=True,
     )
     sigs: list[ExtractedSignature] = []

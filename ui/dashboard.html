@@ -859,12 +859,12 @@
                 <table class="rc-table">
                   <thead>
                     <tr>
-                      <th>#</th><th>Status</th><th>Name</th><th>Address</th><th>ZIP</th><th>Date</th>
+                      <th>#</th><th>Status</th><th>Name</th><th>Address</th><th>City</th><th>ZIP</th><th>Date</th>
                       <th style="text-align:center">Sig</th><th>Voter</th><th>Fraud</th><th>Flags</th><th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="rcTableBody">
-                    <tr><td colspan="11" style="text-align:center;color:#8e8e93;padding:20px">Select a packet</td></tr>
+                    <tr><td colspan="12" style="text-align:center;color:#8e8e93;padding:20px">Select a packet</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -3043,7 +3043,7 @@
       const msg = (p.status === 'processing' || p.status === 'pending') ? 'Processing…'
                 : p.status === 'failed' ? 'Processing failed'
                 : 'No rows found';
-      tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#8e8e93;padding:20px">${msg}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#8e8e93;padding:20px">${msg}</td></tr>`;
       return;
     }
     tbody.innerHTML = lines.map(l => {
@@ -3073,6 +3073,7 @@
         <td>${_rcStatusBadge(l.row_status)}</td>
         <td>${nameCell}</td>
         <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_escHtml(l.norm_address || l.raw_address)}">${addrCell}</td>
+        <td>${_escHtml(l.raw_city) || '<span style="color:#c7c7cc">—</span>'}</td>
         <td>${_escHtml(l.raw_zip) || '<span style="color:#c7c7cc">—</span>'}</td>
         <td>${_escHtml(l.raw_date) || '<span style="color:#c7c7cc">—</span>'}</td>
         <td style="text-align:center">${l.has_signature ? '✓' : '<span style="color:#c7c7cc">—</span>'}</td>
