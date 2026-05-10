@@ -30,39 +30,18 @@ from .tesseract import DPI, IMAGE_SUFFIXES
 
 
 _PROMPT = """\
-You are extracting handwritten voter information from a California petition signature sheet.
+This is a California petition signature sheet with 7-8 numbered rows of handwritten voter information. Each row has a printed row number (1, 2, 3...) on the left side.
 
-CRITICAL: The petition has TWO types of text:
-1. PRINTED text — crisp, uniform, pre-printed form labels and legal language. IGNORE ALL OF THIS.
-2. HANDWRITTEN text — messy, irregular, written by hand. THIS IS WHAT YOU EXTRACT.
+For each numbered row, extract the handwritten text only — not the pre-printed field labels like "Print Name", "Address Only", "City", "Zip". The handwritten content you want is: the person's name written on the Print Name line, their street address, their city, and their zip code.
 
-The form has numbered rows 1 through 7 (or 8). Each row number appears on the left edge. Inside each row:
-- The person's HANDWRITTEN name appears on the "Print Name" line
-- Their HANDWRITTEN street address appears on the "Residence Address Only" line
-- Their HANDWRITTEN city appears after the "City:" label
-- Their HANDWRITTEN zip code appears after the "Zip:" label
+Also note for each row whether a handwritten signature is present in the Signature area, and any other row numbers whose handwriting looks visually identical to this row (a fraud signal).
 
-For each row, return the handwritten values. If a field is hard to read, give your best guess — never skip it. If a row is genuinely empty (no handwriting at all), return null for that row.
+If a row appears blank or unsigned, skip it.
 
-Return ONLY this JSON, no other text:
-{
-  "rows": [
-    {"row": 1, "name": "...", "address": "...", "city": "...", "zip": "..."},
-    {"row": 2, "name": "...", "address": "...", "city": "...", "zip": "..."},
-    ...
-  ]
-}"""
+Return results as a JSON array — no markdown fences, no commentary — with one object per non-blank row:
+[{"row_number": 1, "name": "Jane Smith", "address": "123 Main St", "city": "Los Angeles", "zip": "90001", "has_signature": true, "same_handwriting_as": []}, ...]
 
-# Words that should never appear in handwritten voter fields — if they do, the
-# model is reading printed boilerplate instead of handwritten voter data.
-_BOILERPLATE_RE = re.compile(
-    r"\b(PROPONENTS?|SIGNERS?|ATTORNEY|INITIATIVE|PETITION|CIRCULATOR|"
-    r"QUALIFIED|REGISTERED|SECRETARY|PROPOSITION|MEASURE|PURSUANT|"
-    r"SECTION|PARAGRAPH|FISCAL|IMPACT|ORDINANCE|STATUTE|GOVERNMENT|"
-    r"WHEREAS|CERTIFY|DECLARATION|SPONSOR|ASSEMBLY|SENATE|DISTRICT|"
-    r"HEREBY|OFFICIAL|FUNDERS?|NOTICE|BALLOT|PROPONENT)\b",
-    re.IGNORECASE,
-)
+If no rows have handwritten content, return: []"""
 
 
 def _to_base64_jpeg(image: Image.Image) -> str:
@@ -71,10 +50,6 @@ def _to_base64_jpeg(image: Image.Image) -> str:
     # quality=95 preserves fine handwriting detail; no resize so full resolution is sent
     image.save(buf, format="JPEG", quality=95)
     return base64.standard_b64encode(buf.getvalue()).decode()
-
-
-def _is_boilerplate(text: str) -> bool:
-    return bool(text and _BOILERPLATE_RE.search(text))
 
 
 class ClaudeProcessor(BasePDFProcessor):
@@ -139,7 +114,9 @@ class ClaudeProcessor(BasePDFProcessor):
             }],
         )
         raw = response.content[0].text.strip()
-        # Log raw response so we can see exactly what the model returns
+        # Log the raw response so we can see what the model actually returned
+        # before any parsing — useful for diagnosing blank-row symptoms
+        # (refusal, empty array, malformed JSON, etc).
         print(f"[claude_extractor] page {page_num} raw response:\n{raw}\n", flush=True)
 
         # Strip markdown fences if model adds them despite instructions
@@ -151,7 +128,8 @@ class ClaudeProcessor(BasePDFProcessor):
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Claude returned non-JSON: {raw[:300]}") from exc
 
-        # New format: {"rows": [...]}  — fall back to bare list for old responses
+        # New prompt asks for a bare list. Older responses or alternate prompts
+        # may wrap it as {"rows": [...]} — handle both.
         if isinstance(parsed, dict) and "rows" in parsed:
             rows = parsed["rows"]
         elif isinstance(parsed, list):
@@ -176,38 +154,18 @@ class ClaudeProcessor(BasePDFProcessor):
             address = str(row.get("address", "")).strip()
             city    = str(row.get("city",    "")).strip()
             zip_    = str(row.get("zip",     "")).strip()
-            # has_signature not in new prompt format — infer from presence of content
+            # has_signature may be omitted by the model; default to True if any
+            # other content exists, False only on truly empty rows.
             has_sig = bool(row.get("has_signature", bool(name or address)))
-
-            # Detect boilerplate leakage
-            if _is_boilerplate(name) or _is_boilerplate(address):
-                print(
-                    f"[claude_extractor] row {row.get('row', '?')} flagged as extraction_error "
-                    f"(boilerplate detected): name={name!r} address={address!r}",
-                    flush=True,
-                )
-                raw_line = row.get("row") or row.get("line")
-                try:
-                    line_num = line_start + int(raw_line) - 1
-                except (TypeError, ValueError):
-                    line_num = line_start + len(sigs)
-                sigs.append(ExtractedSignature(
-                    line_number=line_num,
-                    page=page_num,
-                    raw_name="[EXTRACTION_ERROR: boilerplate]",
-                    raw_address="",
-                    raw_date="",
-                    signature_present=False,
-                ))
-                continue
 
             if not name and not address:
                 continue
 
             full_address = ", ".join(filter(None, [address, city, zip_]))
 
-            # New format uses "row" key; old format used "line"
-            raw_line = row.get("row") or row.get("line")
+            # Accept any of the three keys the model has been asked to use across
+            # prompt versions: row_number (current), row, line (legacy).
+            raw_line = row.get("row_number") or row.get("row") or row.get("line")
             try:
                 raw_line = int(raw_line)
                 line_num = line_start + raw_line - 1 if 1 <= raw_line <= 8 else line_start + len(sigs)
