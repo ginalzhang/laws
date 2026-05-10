@@ -33,31 +33,44 @@ from .tesseract import DPI, IMAGE_SUFFIXES
 _PROMPT = """\
 This is a California initiative petition signature sheet photographed with a phone camera.
 
-Layout of the page:
-• Large printed header at the top (ballot title, Official Top Funders box, Notice to Public) — IGNORE.
-• Numbered signer rows 1–7 in the middle. Each row spans TWO physical lines:
-    Top line:    [row#]  Print Name: ___________  Residence Address ONLY: ___________
-    Bottom line:          Signature: ___________  City: ___________  Zip: ___________
-• "Declaration of Circulator" section at the bottom — IGNORE.
+CRITICAL: This page contains a large block of pre-printed boilerplate text — ballot title, \
+legal language, "Official Top Funders" box, "Notice to Public", instructions. \
+DO NOT READ OR EXTRACT ANY OF THAT. It is all printed and irrelevant.
 
-For each FILLED row (skip completely blank rows) extract:
-  line            — the printed row number (integer 1–7)
-  name            — handwritten text written after the "Print Name:" label
-  address         — handwritten street address after "Residence Address ONLY:" (number + street, no city/zip)
-  city            — handwritten text after "City:" label
-  zip             — handwritten 5-digit zip code (digits only, e.g. "90001")
-  has_signature   — true if there is handwritten ink in the Signature area, false if blank
-  same_handwriting_as — list of OTHER row numbers whose handwriting looks identical (fraud signal). Use [].
+YOUR ONLY TASK: Extract handwritten voter entries from the numbered signature rows.
 
-Rules:
-• Extract ONLY handwritten content — ignore all printed labels and instructions.
-• Use "" for any field that is blank or unreadable.
-• A colored sticker covering the county field is normal — ignore it.
+Page structure:
+• TOP ~40% of image — pre-printed header/boilerplate. IGNORE ENTIRELY.
+• MIDDLE ~50% of image — numbered signer rows (rows 1–8). THIS IS YOUR FOCUS.
+• BOTTOM ~10% of image — "Declaration of Circulator" printed section. IGNORE ENTIRELY.
 
-Return ONLY valid JSON — no markdown fences, no explanation:
+Each numbered row spans TWO physical lines:
+  Line A (top):    [row number]  Print Name: [HANDWRITTEN NAME]   Residence Address ONLY: [HANDWRITTEN STREET ADDRESS]
+  Line B (bottom):              Signature:  [HANDWRITTEN SIG]    City: [HANDWRITTEN CITY]   Zip: [HANDWRITTEN ZIP]
+
+The row number is a small printed digit (1, 2, 3 … up to 8) on the far left. Use it as the "line" field.
+
+For each row that has ANY handwritten content (skip rows that are completely blank):
+  line            — the printed row number (integer 1–8)
+  name            — the handwritten person's name after "Print Name:" — NOT the printed label itself
+  address         — the handwritten street address after "Residence Address ONLY:" (street number + street name only, no city/zip)
+  city            — the handwritten city name after "City:"
+  zip             — the handwritten 5-digit zip code after "Zip:" (digits only, e.g. "90210")
+  has_signature   — true if there is a handwritten ink signature present in the Signature area, false if blank
+  same_handwriting_as — list of OTHER row numbers (integers) whose handwriting looks identical to this row (fraud signal); use [] if none
+
+Hard rules:
+• ONLY extract ink that was written by hand by a voter — never extract printed text.
+• If a field is blank or unreadable, use "".
+• Ignore any colored stickers (they cover printed county fields — not relevant).
+• Do not confuse printed labels ("Print Name:", "City:", etc.) with the handwritten answers next to them.
+• The boilerplate headers often contain words like "NOTICE", "California", city names, addresses — \
+these are PRINTED and must be ignored even if they look like valid names or addresses.
+
+Return ONLY a valid JSON array — no markdown fences, no commentary, nothing else:
 [{"line":1,"name":"Jane Smith","address":"123 Main St","city":"Los Angeles","zip":"90001","has_signature":true,"same_handwriting_as":[]},...]
 
-If nothing is filled in, return: []"""
+If no rows have any handwritten content at all, return: []"""
 
 
 def _to_base64_jpeg(image: Image.Image) -> str:
