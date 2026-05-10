@@ -642,6 +642,106 @@ def _process_packet(packet_id: int, raw_path: Path) -> None:
         db.fail_packet(packet_id, f"{type(exc).__name__}: {exc}\n\n{tb}")
 
 
+_CLAUDE_VISION_PROMPT = """\
+This is a California petition signature sheet with 7-8 numbered rows of handwritten voter information. For each numbered row (1 through 7 or 8), extract ONLY the handwritten content — ignore all pre-printed form labels.
+
+For each row return:
+- name: handwritten name on the Print Name line
+- address: handwritten street address
+- city: handwritten city name (after the City: label)
+- zip: handwritten 5-digit zip code (after the Zip: label)
+
+If a row is blank/unsigned return null. Return ONLY JSON:
+{"rows": [{"row": 1, "name": "...", "address": "...", "city": "...", "zip": "..."}, ...]}"""
+
+
+def _claude_extract_rows(image, packet_id: int):
+    """Extract signer rows from a petition image via Claude vision.
+
+    Returns [] on any failure — caller falls back to Google Vision cascade.
+    """
+    import anthropic
+    import base64
+    import io as _io
+
+    from ..models import ExtractedSignature
+
+    tag = f"[_process_packet pkt={packet_id}] claude_extract"
+
+    buf = _io.BytesIO()
+    image.save(buf, format="JPEG", quality=92)
+    img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
+
+    try:
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64",
+                                                  "media_type": "image/jpeg",
+                                                  "data": img_b64}},
+                    {"type": "text", "text": _CLAUDE_VISION_PROMPT},
+                ],
+            }],
+        )
+    except Exception as exc:
+        print(f"{tag} api call failed: {type(exc).__name__}: {exc}", flush=True)
+        return []
+
+    raw = ""
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            raw = block.text.strip()
+            break
+
+    print(f"{tag} raw response: {raw[:800]!r}", flush=True)
+
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"{tag} json parse failed: {exc}", flush=True)
+        return []
+
+    rows = parsed.get("rows", []) if isinstance(parsed, dict) else parsed
+    if not isinstance(rows, list):
+        return []
+
+    sigs = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name    = str(r.get("name")    or "").strip()
+        address = str(r.get("address") or "").strip()
+        city    = str(r.get("city")    or "").strip()
+        zip_    = str(r.get("zip")     or "").strip()
+        if not name and not address:
+            continue
+
+        full_addr = ", ".join(filter(None, [address, city, zip_]))
+        try:
+            line_no = int(r.get("row") or len(sigs) + 1)
+        except (TypeError, ValueError):
+            line_no = len(sigs) + 1
+
+        sigs.append(ExtractedSignature(
+            line_number=line_no,
+            page=1,
+            raw_name=name,
+            raw_address=full_addr,
+            raw_date="",
+            signature_present=True,
+        ))
+
+    print(f"{tag} extracted {len(sigs)} sigs", flush=True)
+    return sigs
+
+
 def _do_process(packet_id: int, raw_path: Path) -> None:
     import re as _re
     from PIL import Image, ImageOps
@@ -670,64 +770,74 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     # ── Fetch previous rows for the same page fingerprint ────────────────────
     prev_rows = db.get_prev_rows_for_fingerprint(fp, exclude_packet_id=packet_id)
 
-    # ── Google Vision extraction — single call, 4-level fallback ─────────────
-    from ..ingestion.vision import (
-        _vision_words, _find_grid_top,
-        _extract_by_header_columns, _is_vision_block_format, _extract_vision_block,
-        _extract_by_line_numbers, _extract_vision_columns,
-    )
-
+    # ── Extract signer rows ──────────────────────────────────────────────────
+    # Primary: Claude vision — understands the form layout directly, no
+    # coordinate heuristics. Fallback: Google Vision cascade (kept for when
+    # ANTHROPIC_API_KEY isn't set or the Claude call fails).
     extracted_sigs = []
     tag = f"[_process_packet pkt={packet_id}]"
-    try:
-        words = _vision_words(preprocessed)
-        print(f"{tag} google vision returned {len(words)} words from {preprocessed.width}x{preprocessed.height}px image", flush=True)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        extracted_sigs = _claude_extract_rows(preprocessed, packet_id)
 
-        # Clip to signature grid: skip ballot header, stop at Declaration
-        grid_top = _find_grid_top(words)
-        decl_top = next(
-            (w.top for w in words if _re.match(r"^declaration$", w.text, _re.I)),
-            None,
+    if extracted_sigs:
+        # Claude succeeded — skip the Vision cascade entirely.
+        pass
+    else:
+        # Fallback: Google Vision cascade
+        print(f"{tag} falling back to google vision cascade", flush=True)
+        from ..ingestion.vision import (
+            _vision_words, _find_grid_top,
+            _extract_by_header_columns, _is_vision_block_format, _extract_vision_block,
+            _extract_by_line_numbers, _extract_vision_columns,
         )
-        # Sanity check: "Declaration of Circulator" lives at the bottom of the
-        # page. If a word "declaration" is detected within ~20% of image height
-        # of grid_top, it's almost certainly a header artefact (e.g. the title
-        # contains the word) and clipping on it will eat the row band.
-        if grid_top is not None and decl_top is not None:
-            min_gap = preprocessed.height * 0.2
-            if decl_top - grid_top < min_gap:
-                print(
-                    f"{tag} ignoring decl_top={decl_top} (too close to grid_top={grid_top}, "
-                    f"gap={decl_top - grid_top}px, min={int(min_gap)}px)",
-                    flush=True,
-                )
-                decl_top = None
-        before_clip = len(words)
-        if grid_top is not None:
-            words = [w for w in words if w.top >= grid_top]
-        if decl_top is not None:
-            words = [w for w in words if w.top < decl_top]
-        print(f"{tag} clipping: grid_top={grid_top} decl_top={decl_top} words {before_clip} -> {len(words)}", flush=True)
+        try:
+            words = _vision_words(preprocessed)
+            print(f"{tag} google vision returned {len(words)} words from {preprocessed.width}x{preprocessed.height}px image", flush=True)
 
-        # 4-level cascade (mirrors VisionProcessor.extract)
-        sigs = _extract_by_header_columns(words, preprocessed, 1, 1)
-        print(f"{tag} _extract_by_header_columns -> {len(sigs)} sigs", flush=True)
-        if not sigs and _is_vision_block_format(words):
-            sigs = _extract_vision_block(words, preprocessed, 1, 1)
-            print(f"{tag} _extract_vision_block -> {len(sigs)} sigs", flush=True)
-        if not sigs:
-            sigs = _extract_by_line_numbers(words, preprocessed, 1, 1)
-            print(f"{tag} _extract_by_line_numbers -> {len(sigs)} sigs", flush=True)
-        if not sigs:
-            sigs = _extract_vision_columns(words, preprocessed, 1, 1)
-            print(f"{tag} _extract_vision_columns -> {len(sigs)} sigs", flush=True)
-        extracted_sigs = sigs
-        print(f"{tag} extracted {len(extracted_sigs)} sigs total", flush=True)
-    except Exception:
-        # Don't lose the traceback — Render logs need it to diagnose blank rows.
-        import traceback
-        print(f"{tag} cascade failed:\n{traceback.format_exc()}", flush=True)
-        extracted_sigs = []
+            # Clip to signature grid: skip ballot header, stop at Declaration
+            grid_top = _find_grid_top(words)
+            decl_top = next(
+                (w.top for w in words if _re.match(r"^declaration$", w.text, _re.I)),
+                None,
+            )
+            # Sanity check: "Declaration of Circulator" lives at the bottom of the
+            # page. If a word "declaration" is detected within ~20% of image height
+            # of grid_top, it's almost certainly a header artefact and clipping on
+            # it will eat the row band.
+            if grid_top is not None and decl_top is not None:
+                min_gap = preprocessed.height * 0.2
+                if decl_top - grid_top < min_gap:
+                    print(
+                        f"{tag} ignoring decl_top={decl_top} (too close to grid_top={grid_top}, "
+                        f"gap={decl_top - grid_top}px, min={int(min_gap)}px)",
+                        flush=True,
+                    )
+                    decl_top = None
+            before_clip = len(words)
+            if grid_top is not None:
+                words = [w for w in words if w.top >= grid_top]
+            if decl_top is not None:
+                words = [w for w in words if w.top < decl_top]
+            print(f"{tag} clipping: grid_top={grid_top} decl_top={decl_top} words {before_clip} -> {len(words)}", flush=True)
+
+            sigs = _extract_by_header_columns(words, preprocessed, 1, 1)
+            print(f"{tag} _extract_by_header_columns -> {len(sigs)} sigs", flush=True)
+            if not sigs and _is_vision_block_format(words):
+                sigs = _extract_vision_block(words, preprocessed, 1, 1)
+                print(f"{tag} _extract_vision_block -> {len(sigs)} sigs", flush=True)
+            if not sigs:
+                sigs = _extract_by_line_numbers(words, preprocessed, 1, 1)
+                print(f"{tag} _extract_by_line_numbers -> {len(sigs)} sigs", flush=True)
+            if not sigs:
+                sigs = _extract_vision_columns(words, preprocessed, 1, 1)
+                print(f"{tag} _extract_vision_columns -> {len(sigs)} sigs", flush=True)
+            extracted_sigs = sigs
+            print(f"{tag} extracted {len(extracted_sigs)} sigs total via cascade", flush=True)
+        except Exception:
+            # Don't lose the traceback — Render logs need it to diagnose blank rows.
+            import traceback
+            print(f"{tag} cascade failed:\n{traceback.format_exc()}", flush=True)
+            extracted_sigs = []
 
     # ── Optional: ensemble extraction fallback for rows with empty fields ────
     # Only fires when EXTRACTION_USE_ENSEMBLE=true is set on the env, and only
