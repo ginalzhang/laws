@@ -271,8 +271,8 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if api_key:
         # Claude Haiku: for each row, pass top-5 fuzzy candidates and let Claude decide
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        import anthropic, httpx
+        client = anthropic.Anthropic(api_key=api_key, http_client=httpx.Client(http2=False))
         for l in active:
             # Pre-rank candidates with difflib to limit prompt size
             scored = sorted(
@@ -346,8 +346,8 @@ async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_us
     sonnet_summary = None
 
     if api_key and active:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        import anthropic, httpx
+        client = anthropic.Anthropic(api_key=api_key, http_client=httpx.Client(http2=False))
         rows_text = "\n".join(
             f"  Row {l.line_no}: name={l.raw_name!r}, address={l.raw_address!r}, city={l.raw_city!r}, "
             f"zip={l.raw_zip!r}, date={l.raw_date!r}, has_signature={l.has_signature}, "
@@ -680,11 +680,12 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     tag = f"[_process_packet pkt={packet_id}]"
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
-            import anthropic
+            import anthropic, httpx
             from ..ingestion.claude_extractor import ClaudeProcessor
             processor = ClaudeProcessor()
             client = anthropic.Anthropic(
                 api_key=os.environ["ANTHROPIC_API_KEY"],
+                http_client=httpx.Client(http2=False),
                 timeout=60.0,
             )
             rows = processor._call_claude(client, preprocessed, page_num=1)

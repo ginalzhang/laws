@@ -765,8 +765,8 @@ def claude_resolve_ambiguous(
     if not ambiguous:
         return rows
 
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    import anthropic, httpx
+    client = anthropic.Anthropic(api_key=api_key, http_client=httpx.Client(http2=False))
 
     prompt_rows = []
     for r in ambiguous:

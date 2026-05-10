@@ -48,6 +48,22 @@ _API_IMAGE_MAX_DIM = 1600   # Anthropic-recommended ceiling; keeps payload small
 _API_IMAGE_QUALITY = 85     # plenty for handwriting at this resolution
 
 
+def _make_client(api_key: str | None = None, timeout: float = 60.0):
+    """Return an Anthropic client that forces HTTP/1.1.
+
+    Render (and some other cloud providers) don't support HTTP/2, which the
+    Anthropic SDK enables by default via httpx.  Passing http2=False prevents
+    the APIConnectionError that occurs on those platforms.
+    """
+    import httpx
+    import anthropic
+    return anthropic.Anthropic(
+        api_key=api_key or os.environ["ANTHROPIC_API_KEY"],
+        http_client=httpx.Client(http2=False),
+        timeout=timeout,
+    )
+
+
 def _to_base64_jpeg(image: Image.Image) -> str:
     """Encode image as base64 JPEG, resized so the long edge fits within
     _API_IMAGE_MAX_DIM. Petition photos arrive at 3024x4032 (~12 megapixels)
@@ -90,10 +106,7 @@ class ClaudeProcessor(BasePDFProcessor):
         else:
             raise ValueError(f"Unsupported file type: {suffix}")
 
-        client = anthropic.Anthropic(
-            api_key=os.environ["ANTHROPIC_API_KEY"],
-            timeout=60.0,
-        )
+        client = _make_client(timeout=60.0)
         all_sigs: list[ExtractedSignature] = []
         line_counter = 1
 

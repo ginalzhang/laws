@@ -89,8 +89,12 @@ async def anthropic_connectivity_check():
         return
     print(f"[anthropic-check] using key prefix={api_key[:8]}... len={len(api_key)}", flush=True)
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key, timeout=15.0)
+        import anthropic, httpx
+        client = anthropic.Anthropic(
+            api_key=api_key,
+            http_client=httpx.Client(http2=False),
+            timeout=15.0,
+        )
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=10,
@@ -136,8 +140,11 @@ async def healthcheck_anthropic():
 
 @app.get("/healthcheck-anthropic-full")
 async def healthcheck_anthropic_full():
-    import anthropic, os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    import anthropic, httpx, os
+    client = anthropic.Anthropic(
+        api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        http_client=httpx.Client(http2=False),
+    )
     try:
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
