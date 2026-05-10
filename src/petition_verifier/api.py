@@ -124,6 +124,16 @@ async def health():
     return {"ok": True}
 
 
+@app.get("/healthcheck-anthropic")
+async def healthcheck_anthropic():
+    import httpx
+    try:
+        r = httpx.get("https://api.anthropic.com", timeout=10)
+        return {"status": "reachable", "code": r.status_code}
+    except Exception as e:
+        return {"status": "unreachable", "error": str(e)}
+
+
 @app.get("/stats/live-count")
 async def live_sig_count():
     """Total approved signatures across all projects — poll for live updates."""
