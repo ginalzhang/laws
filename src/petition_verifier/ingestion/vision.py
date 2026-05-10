@@ -954,7 +954,18 @@ def _extract_by_header_columns(
         x_date   = int(page_width * 0.88)
 
     signer_words = [w for w in words if w.top > header_y + 5]
-    rows         = _cluster_rows_px(signer_words, merge_px=55)
+    # merge_px=180 — each petition row spans TWO physical lines (Print Name +
+    # Residence Address on top, Signature + City + Zip + Date on bottom),
+    # ~140-160px apart. Earlier value of 55 only captured the top line; the
+    # bottom line (with City:/Zip:/Date: labels) clustered as a separate row
+    # that failed the row-digit check and got dropped, leaving zip/date empty.
+    # Row pitch on a 7-row petition is ~215px so 180 leaves a safe gap.
+    rows         = _cluster_rows_px(signer_words, merge_px=180)
+    print(
+        f"[_extract_by_header_columns] clustered {len(signer_words)} signer-words "
+        f"into {len(rows)} rows (sizes: {[len(r) for r in rows[:10]]})",
+        flush=True,
+    )
     sigs: list[ExtractedSignature] = []
     debug_logged = False
 
