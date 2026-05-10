@@ -134,6 +134,21 @@ async def healthcheck_anthropic():
         return {"status": "unreachable", "error": str(e)}
 
 
+@app.get("/healthcheck-anthropic-full")
+async def healthcheck_anthropic_full():
+    import anthropic, os
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    try:
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "ping"}]
+        )
+        return {"status": "ok", "response": msg.content[0].text}
+    except Exception as e:
+        return {"status": "failed", "error": str(e), "type": type(e).__name__}
+
+
 @app.get("/stats/live-count")
 async def live_sig_count():
     """Total approved signatures across all projects — poll for live updates."""
