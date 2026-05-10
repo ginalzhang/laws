@@ -44,11 +44,23 @@ Return results as a JSON array — no markdown fences, no commentary — with on
 If no rows have handwritten content, return: []"""
 
 
+_API_IMAGE_MAX_DIM = 1600   # Anthropic-recommended ceiling; keeps payload small
+_API_IMAGE_QUALITY = 85     # plenty for handwriting at this resolution
+
+
 def _to_base64_jpeg(image: Image.Image) -> str:
-    """Encode image as base64 JPEG at full resolution (no downscaling)."""
+    """Encode image as base64 JPEG, resized so the long edge fits within
+    _API_IMAGE_MAX_DIM. Petition photos arrive at 3024x4032 (~12 megapixels)
+    which encodes to ~10MB of base64 and has been timing out at the network
+    layer on Render. Resizing to 1600px long edge brings the payload to
+    ~150-300KB while still leaving rows ~80px tall — readable by the model."""
+    if max(image.size) > _API_IMAGE_MAX_DIM:
+        scaled = image.copy()
+        scaled.thumbnail((_API_IMAGE_MAX_DIM, _API_IMAGE_MAX_DIM), Image.LANCZOS)
+    else:
+        scaled = image
     buf = io.BytesIO()
-    # quality=95 preserves fine handwriting detail; no resize so full resolution is sent
-    image.save(buf, format="JPEG", quality=95)
+    scaled.save(buf, format="JPEG", quality=_API_IMAGE_QUALITY)
     return base64.standard_b64encode(buf.getvalue()).decode()
 
 
@@ -78,7 +90,10 @@ class ClaudeProcessor(BasePDFProcessor):
         else:
             raise ValueError(f"Unsupported file type: {suffix}")
 
-        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        client = anthropic.Anthropic(
+            api_key=os.environ["ANTHROPIC_API_KEY"],
+            timeout=60.0,
+        )
         all_sigs: list[ExtractedSignature] = []
         line_counter = 1
 

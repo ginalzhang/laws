@@ -683,7 +683,10 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             import anthropic
             from ..ingestion.claude_extractor import ClaudeProcessor
             processor = ClaudeProcessor()
-            client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+            client = anthropic.Anthropic(
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                timeout=60.0,
+            )
             rows = processor._call_claude(client, preprocessed, page_num=1)
             extracted_sigs = processor._rows_to_sigs(rows, page_num=1, line_start=1)
             print(f"{tag} ClaudeProcessor extracted {len(extracted_sigs)} sigs", flush=True)

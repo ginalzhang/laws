@@ -73,6 +73,34 @@ async def ensure_permanent_users():
     if old_kaykay:
         db.update_user(old_kaykay.id, is_active=False)
 
+
+@app.on_event("startup")
+async def anthropic_connectivity_check():
+    """Diagnose Anthropic API reachability from this Render service at boot.
+
+    A minimal text-only Haiku call separates "can we reach api.anthropic.com
+    at all" from "is the petition image too large for the request to make
+    it through". Result lives in Render logs once at startup.
+    """
+    import os
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("[anthropic-check] ANTHROPIC_API_KEY not set — skipping startup check", flush=True)
+        return
+    print(f"[anthropic-check] using key prefix={api_key[:8]}... len={len(api_key)}", flush=True)
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key, timeout=15.0)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
+        print(f"[anthropic-check] OK — got {resp.usage.output_tokens} output tokens, text={text!r}", flush=True)
+    except Exception as exc:
+        print(f"[anthropic-check] FAILED: {type(exc).__name__}: {exc}", flush=True)
+
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_UI_DIR)), name="static")
