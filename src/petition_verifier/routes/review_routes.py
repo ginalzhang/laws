@@ -674,8 +674,10 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
     )
 
     extracted_sigs = []
+    tag = f"[_process_packet pkt={packet_id}]"
     try:
         words = _vision_words(preprocessed)
+        print(f"{tag} google vision returned {len(words)} words from {preprocessed.width}x{preprocessed.height}px image", flush=True)
 
         # Clip to signature grid: skip ballot header, stop at Declaration
         grid_top = _find_grid_top(words)
@@ -683,21 +685,31 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             (w.top for w in words if _re.match(r"^declaration$", w.text, _re.I)),
             None,
         )
+        before_clip = len(words)
         if grid_top is not None:
             words = [w for w in words if w.top >= grid_top]
         if decl_top is not None:
             words = [w for w in words if w.top < decl_top]
+        print(f"{tag} clipping: grid_top={grid_top} decl_top={decl_top} words {before_clip} -> {len(words)}", flush=True)
 
         # 4-level cascade (mirrors VisionProcessor.extract)
         sigs = _extract_by_header_columns(words, preprocessed, 1, 1)
+        print(f"{tag} _extract_by_header_columns -> {len(sigs)} sigs", flush=True)
         if not sigs and _is_vision_block_format(words):
             sigs = _extract_vision_block(words, preprocessed, 1, 1)
+            print(f"{tag} _extract_vision_block -> {len(sigs)} sigs", flush=True)
         if not sigs:
             sigs = _extract_by_line_numbers(words, preprocessed, 1, 1)
+            print(f"{tag} _extract_by_line_numbers -> {len(sigs)} sigs", flush=True)
         if not sigs:
             sigs = _extract_vision_columns(words, preprocessed, 1, 1)
+            print(f"{tag} _extract_vision_columns -> {len(sigs)} sigs", flush=True)
         extracted_sigs = sigs
+        print(f"{tag} extracted {len(extracted_sigs)} sigs total", flush=True)
     except Exception:
+        # Don't lose the traceback — Render logs need it to diagnose blank rows.
+        import traceback
+        print(f"{tag} cascade failed:\n{traceback.format_exc()}", flush=True)
         extracted_sigs = []
 
     # ── Optional: ensemble extraction fallback for rows with empty fields ────
