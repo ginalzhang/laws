@@ -2,8 +2,7 @@
 Claude Vision extraction backend.
 
 Sends each page image directly to Claude and asks for structured extraction of
-all signer rows plus handwriting-similarity assessment — one API call per page,
-no coordinate math required.
+all signer rows — one API call per page, no coordinate math required.
 
 Setup:
   Add to .env:
@@ -31,52 +30,51 @@ from .tesseract import DPI, IMAGE_SUFFIXES
 
 
 _PROMPT = """\
-This is a California initiative petition signature sheet photographed with a phone camera.
+You are extracting handwritten voter information from a California petition signature sheet.
 
-CRITICAL: This page contains a large block of pre-printed boilerplate text — ballot title, \
-legal language, "Official Top Funders" box, "Notice to Public", instructions. \
-DO NOT READ OR EXTRACT ANY OF THAT. It is all printed and irrelevant.
+CRITICAL: The petition has TWO types of text:
+1. PRINTED text — crisp, uniform, pre-printed form labels and legal language. IGNORE ALL OF THIS.
+2. HANDWRITTEN text — messy, irregular, written by hand. THIS IS WHAT YOU EXTRACT.
 
-YOUR ONLY TASK: Extract handwritten voter entries from the numbered signature rows.
+The form has numbered rows 1 through 7 (or 8). Each row number appears on the left edge. Inside each row:
+- The person's HANDWRITTEN name appears on the "Print Name" line
+- Their HANDWRITTEN street address appears on the "Residence Address Only" line
+- Their HANDWRITTEN city appears after the "City:" label
+- Their HANDWRITTEN zip code appears after the "Zip:" label
 
-Page structure:
-• TOP ~40% of image — pre-printed header/boilerplate. IGNORE ENTIRELY.
-• MIDDLE ~50% of image — numbered signer rows (rows 1–8). THIS IS YOUR FOCUS.
-• BOTTOM ~10% of image — "Declaration of Circulator" printed section. IGNORE ENTIRELY.
+For each row, return the handwritten values. If a field is hard to read, give your best guess — never skip it. If a row is genuinely empty (no handwriting at all), return null for that row.
 
-Each numbered row spans TWO physical lines:
-  Line A (top):    [row number]  Print Name: [HANDWRITTEN NAME]   Residence Address ONLY: [HANDWRITTEN STREET ADDRESS]
-  Line B (bottom):              Signature:  [HANDWRITTEN SIG]    City: [HANDWRITTEN CITY]   Zip: [HANDWRITTEN ZIP]
+Return ONLY this JSON, no other text:
+{
+  "rows": [
+    {"row": 1, "name": "...", "address": "...", "city": "...", "zip": "..."},
+    {"row": 2, "name": "...", "address": "...", "city": "...", "zip": "..."},
+    ...
+  ]
+}"""
 
-The row number is a small printed digit (1, 2, 3 … up to 8) on the far left. Use it as the "line" field.
-
-For each row that has ANY handwritten content (skip rows that are completely blank):
-  line            — the printed row number (integer 1–8)
-  name            — the handwritten person's name after "Print Name:" — NOT the printed label itself
-  address         — the handwritten street address after "Residence Address ONLY:" (street number + street name only, no city/zip)
-  city            — the handwritten city name after "City:"
-  zip             — the handwritten 5-digit zip code after "Zip:" (digits only, e.g. "90210")
-  has_signature   — true if there is a handwritten ink signature present in the Signature area, false if blank
-  same_handwriting_as — list of OTHER row numbers (integers) whose handwriting looks identical to this row (fraud signal); use [] if none
-
-Hard rules:
-• ONLY extract ink that was written by hand by a voter — never extract printed text.
-• If a field is blank or unreadable, use "".
-• Ignore any colored stickers (they cover printed county fields — not relevant).
-• Do not confuse printed labels ("Print Name:", "City:", etc.) with the handwritten answers next to them.
-• The boilerplate headers often contain words like "NOTICE", "California", city names, addresses — \
-these are PRINTED and must be ignored even if they look like valid names or addresses.
-
-Return ONLY a valid JSON array — no markdown fences, no commentary, nothing else:
-[{"line":1,"name":"Jane Smith","address":"123 Main St","city":"Los Angeles","zip":"90001","has_signature":true,"same_handwriting_as":[]},...]
-
-If no rows have any handwritten content at all, return: []"""
+# Words that should never appear in handwritten voter fields — if they do, the
+# model is reading printed boilerplate instead of handwritten voter data.
+_BOILERPLATE_RE = re.compile(
+    r"\b(PROPONENTS?|SIGNERS?|ATTORNEY|INITIATIVE|PETITION|CIRCULATOR|"
+    r"QUALIFIED|REGISTERED|SECRETARY|PROPOSITION|MEASURE|PURSUANT|"
+    r"SECTION|PARAGRAPH|FISCAL|IMPACT|ORDINANCE|STATUTE|GOVERNMENT|"
+    r"WHEREAS|CERTIFY|DECLARATION|SPONSOR|ASSEMBLY|SENATE|DISTRICT|"
+    r"HEREBY|OFFICIAL|FUNDERS?|NOTICE|BALLOT|PROPONENT)\b",
+    re.IGNORECASE,
+)
 
 
 def _to_base64_jpeg(image: Image.Image) -> str:
+    """Encode image as base64 JPEG at full resolution (no downscaling)."""
     buf = io.BytesIO()
-    image.save(buf, format="JPEG", quality=92)
+    # quality=95 preserves fine handwriting detail; no resize so full resolution is sent
+    image.save(buf, format="JPEG", quality=95)
     return base64.standard_b64encode(buf.getvalue()).decode()
+
+
+def _is_boilerplate(text: str) -> bool:
+    return bool(text and _BOILERPLATE_RE.search(text))
 
 
 class ClaudeProcessor(BasePDFProcessor):
@@ -110,17 +108,21 @@ class ClaudeProcessor(BasePDFProcessor):
         line_counter = 1
 
         for page_num, image in enumerate(images, start=1):
-            rows = self._call_claude(client, image)
+            print(
+                f"[claude_extractor] page {page_num}: sending {image.width}x{image.height}px image to API",
+                flush=True,
+            )
+            rows = self._call_claude(client, image, page_num)
             page_sigs = self._rows_to_sigs(rows, page_num, line_counter)
             line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
 
         return all_sigs
 
-    def _call_claude(self, client, image: Image.Image) -> list[dict]:
+    def _call_claude(self, client, image: Image.Image, page_num: int = 1) -> list[dict]:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{
                 "role": "user",
                 "content": [
@@ -136,13 +138,28 @@ class ClaudeProcessor(BasePDFProcessor):
                 ],
             }],
         )
-        text = response.content[0].text.strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
+        raw = response.content[0].text.strip()
+        # Log raw response so we can see exactly what the model returns
+        print(f"[claude_extractor] page {page_num} raw response:\n{raw}\n", flush=True)
+
+        # Strip markdown fences if model adds them despite instructions
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+
         try:
-            return json.loads(text)
+            parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Claude returned non-JSON: {text[:200]}") from exc
+            raise RuntimeError(f"Claude returned non-JSON: {raw[:300]}") from exc
+
+        # New format: {"rows": [...]}  — fall back to bare list for old responses
+        if isinstance(parsed, dict) and "rows" in parsed:
+            rows = parsed["rows"]
+        elif isinstance(parsed, list):
+            rows = parsed
+        else:
+            rows = []
+
+        return [r for r in rows if r is not None]
 
     def _rows_to_sigs(
         self,
@@ -154,30 +171,43 @@ class ClaudeProcessor(BasePDFProcessor):
         for row in rows:
             if not isinstance(row, dict):
                 continue
+
             name    = str(row.get("name",    "")).strip()
             address = str(row.get("address", "")).strip()
             city    = str(row.get("city",    "")).strip()
             zip_    = str(row.get("zip",     "")).strip()
-            date    = str(row.get("date",    "")).strip()
-            has_sig = bool(row.get("has_signature", False))
+            # has_signature not in new prompt format — infer from presence of content
+            has_sig = bool(row.get("has_signature", bool(name or address)))
 
-            # Convert same_handwriting_as from form row numbers to absolute line numbers
-            raw_same = row.get("same_handwriting_as", [])
-            same_hw: list[int] = []
-            for x in raw_same:
+            # Detect boilerplate leakage
+            if _is_boilerplate(name) or _is_boilerplate(address):
+                print(
+                    f"[claude_extractor] row {row.get('row', '?')} flagged as extraction_error "
+                    f"(boilerplate detected): name={name!r} address={address!r}",
+                    flush=True,
+                )
+                raw_line = row.get("row") or row.get("line")
                 try:
-                    n = int(x)
-                    if 1 <= n <= 8:
-                        same_hw.append(line_start + n - 1)
+                    line_num = line_start + int(raw_line) - 1
                 except (TypeError, ValueError):
-                    pass
+                    line_num = line_start + len(sigs)
+                sigs.append(ExtractedSignature(
+                    line_number=line_num,
+                    page=page_num,
+                    raw_name="[EXTRACTION_ERROR: boilerplate]",
+                    raw_address="",
+                    raw_date="",
+                    signature_present=False,
+                ))
+                continue
 
             if not name and not address:
                 continue
 
             full_address = ", ".join(filter(None, [address, city, zip_]))
 
-            raw_line = row.get("line")
+            # New format uses "row" key; old format used "line"
+            raw_line = row.get("row") or row.get("line")
             try:
                 raw_line = int(raw_line)
                 line_num = line_start + raw_line - 1 if 1 <= raw_line <= 8 else line_start + len(sigs)
@@ -189,8 +219,7 @@ class ClaudeProcessor(BasePDFProcessor):
                 page=page_num,
                 raw_name=name,
                 raw_address=full_address,
-                raw_date=date,
+                raw_date="",
                 signature_present=has_sig,
-                same_handwriting_as=same_hw or None,
             ))
         return sigs
