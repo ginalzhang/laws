@@ -644,12 +644,16 @@ def _process_packet(packet_id: int, raw_path: Path) -> None:
 
 def _do_process(packet_id: int, raw_path: Path) -> None:
     import re as _re
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     # ── Load image ────────────────────────────────────────────────────────────
     import pillow_heif
     pillow_heif.register_heif_opener()
-    pil_img = Image.open(raw_path).convert("RGB")
+    pil_img = Image.open(raw_path)
+    # Honor EXIF orientation — iPhone photos are stored with a rotation tag and
+    # arrive sideways unless we apply it. A landscape-oriented petition image
+    # breaks every cascade strategy that assumes rows run top-to-bottom.
+    pil_img = ImageOps.exif_transpose(pil_img).convert("RGB")
 
     # ── Preprocess + save cleaned copy ────────────────────────────────────────
     from ..ingestion.field_vision import (
@@ -685,6 +689,19 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             (w.top for w in words if _re.match(r"^declaration$", w.text, _re.I)),
             None,
         )
+        # Sanity check: "Declaration of Circulator" lives at the bottom of the
+        # page. If a word "declaration" is detected within ~20% of image height
+        # of grid_top, it's almost certainly a header artefact (e.g. the title
+        # contains the word) and clipping on it will eat the row band.
+        if grid_top is not None and decl_top is not None:
+            min_gap = preprocessed.height * 0.2
+            if decl_top - grid_top < min_gap:
+                print(
+                    f"{tag} ignoring decl_top={decl_top} (too close to grid_top={grid_top}, "
+                    f"gap={decl_top - grid_top}px, min={int(min_gap)}px)",
+                    flush=True,
+                )
+                decl_top = None
         before_clip = len(words)
         if grid_top is not None:
             words = [w for w in words if w.top >= grid_top]
