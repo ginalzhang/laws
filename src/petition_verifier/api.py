@@ -722,24 +722,3 @@ async def seed_demo_data():
     }
 
 
-@app.post("/fix-activate-users")
-async def fix_activate_users():
-    """Temporary: activate all users. Remove after use."""
-    users = db.list_users()
-    deactivated = [u for u in users if not u.is_active]
-    for u in deactivated:
-        db.update_user(u.id, is_active=True)
-    return {"ok": True, "activated": [u.email for u in deactivated]}
-
-
-@app.post("/fix-reset-boss")
-async def fix_reset_boss():
-    """Temporary: reset boss password to password123. Remove after use."""
-    from .auth import hash_password
-    users = db.list_users()
-    boss = next((u for u in users if u.email == "boss@petition.co"), None)
-    if not boss:
-        return {"ok": False, "message": "boss user not found"}
-    new_hash = hash_password("password123")
-    db.update_user(boss.id, password_hash=new_hash)
-    return {"ok": True, "message": "boss password reset to password123", "hash_preview": new_hash[:20]}

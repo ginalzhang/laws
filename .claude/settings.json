@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(pvfy:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m ruff:*)",
+      "Bash(pip install -e .)",
+      "Bash(pip install -e .[dev])",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git push origin bangui)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(wc:*)",
+      "Bash(uvicorn:*)",
+      "Read(./**)",
+      "Edit(./src/**)",
+      "Edit(./tests/**)",
+      "Edit(./ui/**)",
+      "Edit(./.claude/**)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./pyproject.toml)",
+      "Edit(./README.md)",
+      "Edit(./SETUP.md)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Edit(**/*.db)",
+      "Write(**/*.db)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'f=\"$CLAUDE_TOOL_INPUT_FILE_PATH\"; case \"$f\" in *.py) command -v ruff >/dev/null 2>&1 && ruff format \"$f\" >/dev/null 2>&1 && ruff check --fix --quiet \"$f\" >/dev/null 2>&1 ;; esac; exit 0'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cmd=\"$CLAUDE_TOOL_INPUT_COMMAND\"; case \"$cmd\" in *\"DROP TABLE\"*|*\"DROP DATABASE\"*|*\"rm -rf /\"*|*\"git push --force\"*|*\"git push -f \"*) echo \"BLOCKED by hook: dangerous command pattern\" >&2; exit 2 ;; esac; exit 0'"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'b=$(git branch --show-current 2>/dev/null || echo unknown); echo \"[ctx] branch=$b — review CLAUDE.md gotchas before edits to api.py/database.py.\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
