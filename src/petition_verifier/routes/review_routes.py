@@ -828,6 +828,11 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
         status    = "blank" if (not name and not street) else "new_signature"
         line_no   = max(1, len(page_rows) + 1)
 
+        conf = sig.ocr_confidence if sig.ocr_confidence is not None else 1.0
+        flags: list[str] = []
+        if conf < 0.75:
+            flags.append("low_confidence_ocr")
+
         page_rows.append({
             "row_number":     line_no,
             "name":           {"raw": name,   "normalized": name.upper(),   "ocr_confidence": "high"},
@@ -836,7 +841,7 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             "zip":            {"raw": zip_,   "normalized": zip_,           "valid_format": valid_zip},
             "date":           {"raw": sig.raw_date or "", "normalized": sig.raw_date or "", "ocr_confidence": "high"},
             "signature_present": bool(sig.signature_present),
-            "flags":          [],
+            "flags":          flags,
             "status":         status,
             "row_fingerprint": "",
         })

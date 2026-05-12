@@ -30,18 +30,36 @@ from .tesseract import DPI, IMAGE_SUFFIXES
 
 
 _PROMPT = """\
-This is a California petition signature sheet with 7-8 numbered rows of handwritten voter information. Each row has a printed row number (1, 2, 3...) on the left side.
+You are a precise document transcription assistant. Extract data from this petition signature sheet image.
 
-For each numbered row, extract the handwritten text only — not the pre-printed field labels like "Print Name", "Address Only", "City", "Zip". The handwritten content you want is: the person's name written on the Print Name line, their street address, their city, and their zip code.
+For each numbered entry, extract EXACTLY what is physically printed/written on the paper:
 
-Also note for each row whether a handwritten signature is present in the Signature area, and any other row numbers whose handwriting looks visually identical to this row (a fraud signal).
+RULES:
+- Transcribe characters LITERALLY. Do not "correct" or normalize names.
+- If a letter looks like "T", write "T" — do not substitute a more common name.
+- Handwritten names are often unusual or non-standard. That is expected.
+- If a word is ambiguous between two letters, pick the one that matches the overall handwriting style on the page.
+- Street numbers and zip codes must be transcribed digit-by-digit.
+- Never infer or guess a full name from a partial read — transcribe only what is visible.
+- Skip blank or unsigned rows entirely.
 
-If a row appears blank or unsigned, skip it.
+For each entry return JSON in this exact format:
+{
+  "entries": [
+    {
+      "number": 1,
+      "print_name": "...",
+      "address": "...",
+      "city": "...",
+      "zip": "...",
+      "has_signature": true,
+      "confidence": 0.0,
+      "low_confidence_fields": []
+    }
+  ]
+}
 
-Return results as a JSON array — no markdown fences, no commentary — with one object per non-blank row:
-[{"row_number": 1, "name": "Jane Smith", "address": "123 Main St", "city": "Los Angeles", "zip": "90001", "has_signature": true, "same_handwriting_as": []}, ...]
-
-If no rows have handwritten content, return: []"""
+Return ONLY valid JSON. No preamble, no markdown fences."""
 
 
 _API_IMAGE_MAX_DIM = 1600   # Anthropic-recommended ceiling; keeps payload small
@@ -146,9 +164,11 @@ class ClaudeProcessor(BasePDFProcessor):
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Claude returned non-JSON: {raw[:300]}") from exc
 
-        # New prompt asks for a bare list. Older responses or alternate prompts
-        # may wrap it as {"rows": [...]} — handle both.
-        if isinstance(parsed, dict) and "rows" in parsed:
+        # Handle {"entries": [...]} (current prompt), {"rows": [...]} (legacy),
+        # or a bare list (old prompt).
+        if isinstance(parsed, dict) and "entries" in parsed:
+            rows = parsed["entries"]
+        elif isinstance(parsed, dict) and "rows" in parsed:
             rows = parsed["rows"]
         elif isinstance(parsed, list):
             rows = parsed
@@ -168,22 +188,30 @@ class ClaudeProcessor(BasePDFProcessor):
             if not isinstance(row, dict):
                 continue
 
-            name    = str(row.get("name",    "")).strip()
+            # Current prompt uses "print_name"; legacy prompts used "name".
+            name    = str(row.get("print_name", row.get("name",    ""))).strip()
             address = str(row.get("address", "")).strip()
             city    = str(row.get("city",    "")).strip()
             zip_    = str(row.get("zip",     "")).strip()
-            # has_signature may be omitted by the model; default to True if any
-            # other content exists, False only on truly empty rows.
             has_sig = bool(row.get("has_signature", bool(name or address)))
+            confidence = float(row.get("confidence", 1.0))
+            low_fields = row.get("low_confidence_fields", [])
 
             if not name and not address:
                 continue
 
+            if low_fields:
+                print(
+                    f"[claude_extractor] page {page_num} low-confidence fields"
+                    f" {low_fields} (score={confidence:.2f}): name={name!r} addr={address!r}",
+                    flush=True,
+                )
+
             full_address = ", ".join(filter(None, [address, city, zip_]))
 
-            # Accept any of the three keys the model has been asked to use across
-            # prompt versions: row_number (current), row, line (legacy).
-            raw_line = row.get("row_number") or row.get("row") or row.get("line")
+            # Accept number (current), row_number, row, or line (legacy).
+            raw_line = (row.get("number") or row.get("row_number")
+                        or row.get("row") or row.get("line"))
             try:
                 raw_line = int(raw_line)
                 line_num = line_start + raw_line - 1 if 1 <= raw_line <= 8 else line_start + len(sigs)
@@ -197,5 +225,6 @@ class ClaudeProcessor(BasePDFProcessor):
                 raw_address=full_address,
                 raw_date="",
                 signature_present=has_sig,
+                ocr_confidence=confidence,
             ))
         return sigs
