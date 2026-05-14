@@ -13,10 +13,10 @@ apt-get install tesseract-ocr poppler-utils
 ## Python install
 
 ```bash
-cd petition-verifier
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install --upgrade pip
+pip install -e '.[dev]'
 ```
 
 ## Configure
@@ -111,9 +111,15 @@ THRESHOLD_REVIEW=65
 
 ```bash
 # Unit tests (no PDF required)
-pytest tests/test_matching.py -v
+python -m pytest tests/test_matching.py -v
 
-# Integration test (generate fixtures first)
-python tests/fixtures/generate_test_data.py
-pytest tests/ -v
+# Integration test (uses committed fixtures)
+python -m pytest tests/ -v
 ```
+
+Regenerate fixtures only when intentionally updating `tests/fixtures/`:
+```bash
+make fixtures
+```
+
+For agent-oriented architecture, route, and testing notes, see `AGENTS.md` and `docs/`.
