@@ -23,11 +23,12 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, Integer, String, Text,
-    ForeignKey, create_engine, text, func, case,
+    ForeignKey, UniqueConstraint, create_engine, text, func, case,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
 from ..models import ProjectResult, VerificationResult, VerificationStatus
+from ..verification_policy import packet_line_bulk_approvable
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db")
@@ -66,6 +67,9 @@ class ProjectRow(Base):
 
 class SignatureRow(Base):
     __tablename__ = "signatures"
+    __table_args__ = (
+        UniqueConstraint("project_id", "line_number", name="uq_signatures_project_line"),
+    )
 
     id                = Column(Integer, primary_key=True, autoincrement=True)
     project_id        = Column(String, ForeignKey("projects.id"), nullable=False)
@@ -265,6 +269,9 @@ class ShiftReflectionRow(Base):
 
 class PacketLineRow(Base):
     __tablename__ = "review_packet_lines"
+    __table_args__ = (
+        UniqueConstraint("packet_id", "line_no", name="uq_review_packet_lines_packet_line"),
+    )
     id               = Column(Integer, primary_key=True, autoincrement=True)
     packet_id        = Column(Integer, ForeignKey("review_packets.id"), nullable=False)
     line_no          = Column(Integer, nullable=False)
@@ -366,10 +373,12 @@ class Database:
                 continuation_of=continuation_of,
             )
             session.merge(proj)
+            session.flush()
+            session.query(SignatureRow).filter_by(project_id=result.project_id).delete()
 
             for vr in result.signatures:
                 row = self._vr_to_row(vr, result.project_id)
-                session.merge(row)
+                session.add(row)
 
             session.commit()
 
@@ -1185,9 +1194,12 @@ class Database:
             session.refresh(pkt)
             return pkt.id
 
-    def list_packets(self) -> list:
+    def list_packets(self, worker_id: Optional[int] = None) -> list:
         with self._Session() as session:
-            pkts = session.query(PacketRow).order_by(PacketRow.uploaded_at.desc()).all()
+            query = session.query(PacketRow)
+            if worker_id is not None:
+                query = query.filter(PacketRow.worker_id == worker_id)
+            pkts = query.order_by(PacketRow.uploaded_at.desc()).all()
             for p in pkts:
                 session.expunge(p)
             return pkts
@@ -1314,7 +1326,7 @@ class Database:
         return self.approve_all_new_sigs(packet_id, reviewer_id)
 
     def approve_all_new_sigs(self, packet_id: int, reviewer_id: int) -> int:
-        """Approve all rows classified as new_signature."""
+        """Approve only clean, voter-valid new signatures."""
         with self._Session() as session:
             lines = (
                 session.query(PacketLineRow)
@@ -1323,11 +1335,28 @@ class Database:
             )
             n = 0
             for l in lines:
-                if not l.action:
-                    l.action      = "approved"
-                    l.reviewed_by = reviewer_id
-                    l.reviewed_at = datetime.utcnow()
-                    n += 1
+                try:
+                    fraud_flags = json.loads(l.fraud_flags or "[]")
+                    ai_flags = json.loads(l.flags_json or "[]")
+                except Exception:
+                    fraud_flags = ["invalid_flags_json"]
+                    ai_flags = ["invalid_flags_json"]
+                if not packet_line_bulk_approvable(
+                    row_status=l.row_status,
+                    has_signature=bool(l.has_signature),
+                    voter_status=l.voter_status,
+                    action=l.action,
+                    ai_verdict=l.ai_verdict,
+                    ai_flags=ai_flags,
+                    fraud_flags=fraud_flags,
+                    fraud_score=l.fraud_score,
+                    review_decision=l.review_decision,
+                ):
+                    continue
+                l.action      = "approved"
+                l.reviewed_by = reviewer_id
+                l.reviewed_at = datetime.utcnow()
+                n += 1
             session.commit()
             return n
 
@@ -1544,4 +1573,3 @@ class Database:
                 session.expunge(s)
                 result.setdefault(s.worker_id, []).append(s)
             return result
-

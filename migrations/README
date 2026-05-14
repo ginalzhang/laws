@@ -1,0 +1,3 @@
+Alembic migrations for Petition Verifier.
+
+Use `DATABASE_URL=... alembic upgrade head` to apply migrations.

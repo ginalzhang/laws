@@ -2,7 +2,7 @@
 Duplicate signature detection within a single batch (one PDF or one project).
 
 Two-pass approach:
-  1. Exact key match — same normalized (last, first, street_number) seen twice
+  1. Exact key match — same normalized name + full street/city/zip seen twice
   2. Near-duplicate via rapidfuzz — catches OCR variants of the same person
      (e.g. "Jon Smith 123 Main" vs "John Smith 123 Maine")
 
@@ -27,10 +27,13 @@ NEAR_DUPE_THRESHOLD = 92
 
 def _exact_key(sig: NormalizedSignature) -> str:
     """Stable key for exact duplicate detection."""
-    # Use voter_id if we have it, otherwise fall back to name+street number
-    street_num = re.match(r"^\d+", sig.street)
-    num = street_num.group(0) if street_num else ""
-    return f"{sig.last_name}|{sig.first_name}|{num}".lower()
+    name = f"{sig.last_name}|{sig.first_name}".lower().strip("|")
+    street = re.sub(r"\W+", " ", sig.street.lower()).strip()
+    city = re.sub(r"\W+", " ", sig.city.lower()).strip()
+    zip_code = sig.zip_code.strip()
+    if not name or not street:
+        return ""
+    return "|".join([name, street, city, zip_code])
 
 
 class DuplicateDetector:
@@ -54,7 +57,7 @@ class DuplicateDetector:
         key = _exact_key(sig)
 
         # 1. Exact key match
-        if key in self._exact:
+        if key and key in self._exact:
             return self._exact[key]
 
         # 2. Near-duplicate via fuzzy match on search key
@@ -66,6 +69,7 @@ class DuplicateDetector:
                     return prev_line
 
         # Not a duplicate — register it
-        self._exact[key] = sig.line_number
+        if key:
+            self._exact[key] = sig.line_number
         self._seen.append((query, sig.line_number))
         return None

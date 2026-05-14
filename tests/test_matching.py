@@ -111,6 +111,14 @@ def test_different_people_not_duplicates():
     assert detector.check(s2) is None
 
 
+def test_same_name_and_house_number_on_different_streets_not_duplicate():
+    detector = DuplicateDetector()
+    s1 = normalize_signature(_make_sig("John Smith", "123 Main St, Springfield CA", line=1))
+    s2 = normalize_signature(_make_sig("John Smith", "123 Oak Ave, Springfield CA", line=2))
+    assert detector.check(s1) is None
+    assert detector.check(s2) is None
+
+
 def test_detector_resets():
     detector = DuplicateDetector()
     s = normalize_signature(_make_sig("Jane Smith", "123 Main St", line=1))

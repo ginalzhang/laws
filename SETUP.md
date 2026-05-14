@@ -26,7 +26,19 @@ cp .env.example .env
 # Edit .env:
 #   VOTER_ROLL_CSV=path/to/your/voter_roll.csv
 #   DATABASE_URL=sqlite:///./petition_verifier.db  (default)
+#   SECRET_KEY=<long random string for login sessions>
 ```
+
+For a first production/admin login, set these once before the first deploy:
+
+```bash
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=<at least 12 characters>
+BOOTSTRAP_ADMIN_NAME="Initial Admin"
+```
+
+The bootstrap creates the boss account only if it does not already exist. It
+does not reset passwords on later deploys.
 
 ## Voter roll CSV format
 
@@ -111,9 +123,34 @@ THRESHOLD_REVIEW=65
 
 ```bash
 # Unit tests (no PDF required)
+pip install -e ".[dev]"
 pytest tests/test_matching.py -v
 
 # Integration test (generate fixtures first)
 python tests/fixtures/generate_test_data.py
 pytest tests/ -v
+```
+
+## Development shortcuts
+
+Name-based login, scan-login, demo seeding, and fix/reset endpoints are disabled
+by default. For local demos only, set:
+
+```bash
+DEV_AUTO_LOGIN=true
+```
+
+## Database migrations
+
+For new databases, apply the baseline schema with:
+
+```bash
+DATABASE_URL=sqlite:///./petition_verifier.db alembic upgrade head
+```
+
+Existing deployments that were created with the older automatic `create_all()`
+path should be stamped after confirming their schema matches the models:
+
+```bash
+alembic stamp head
 ```
