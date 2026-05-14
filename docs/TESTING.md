@@ -23,6 +23,7 @@ pip install -e '.[dev,vision]'
 ## Fast Checks
 ```bash
 python -m compileall -q src tests
+python -m alembic upgrade head
 python -m pytest tests/test_matching.py tests/test_extraction_ensemble.py tests/test_app_smoke.py -v
 ```
 
@@ -51,7 +52,8 @@ make fixtures
 
 ## Local Server
 ```bash
-SECRET_KEY=dev-local-secret PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
+DATABASE_URL=sqlite:///./petition_verifier.db PYTHONPATH=src python -m alembic upgrade head
+SECRET_KEY=dev-local-secret DEV_AUTO_LOGIN=true PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
 ```
 
 Equivalent:
@@ -80,6 +82,7 @@ Local approximation:
 python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 python -m pytest tests/ -v
+PYTHONPATH=src python -m alembic upgrade head
 SECRET_KEY=ci-test-secret-key PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
 ```
 

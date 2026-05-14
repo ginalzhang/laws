@@ -36,7 +36,7 @@ Make targets use `.venv/bin/python` automatically when the venv exists.
 ## Where Things Live
 - `src/petition_verifier/api.py`: FastAPI app setup, static UI serving, router registration, legacy petition/project endpoints, seed/fix endpoints.
 - `src/petition_verifier/routes/`: modular FastAPI routers for auth, review packets, workers, shifts, payroll, schedule, stats, teams, locations, and reflections.
-- `src/petition_verifier/storage/database.py`: SQLAlchemy models, `create_all` startup schema handling, and the main `Database` service.
+- `src/petition_verifier/storage/database.py`: SQLAlchemy models and the main `Database` service; Alembic owns schema mutation.
 - `src/petition_verifier/ingestion/`: OCR/PDF/image backends for Tesseract, Google Vision-style extraction, Claude, Reducto, and field-specific parsing.
 - `src/petition_verifier/matching/`: address normalization, voter matching, duplicate detection, and fraud heuristics.
 - `src/petition_verifier/extraction/`: ensemble extraction/reconciliation logic.
@@ -76,7 +76,7 @@ make smoke-local
 
 ## Large/Risky Files
 - `ui/dashboard.html`: large management UI with embedded CSS/JS and direct API calls.
-- `src/petition_verifier/storage/database.py`: ORM schema, startup schema changes, and persistence methods in one file.
+- `src/petition_verifier/storage/database.py`: ORM schema and persistence methods in one file; schema changes must use Alembic.
 - `src/petition_verifier/api.py`: app composition plus legacy endpoints and startup side effects.
 - `src/petition_verifier/routes/review_routes.py`: packet upload/review, OCR fallbacks, voter matching, fraud analysis, and export.
 - `src/petition_verifier/ingestion/vision.py` and `field_vision.py`: OCR heuristics that are sensitive to image layout and external credentials.

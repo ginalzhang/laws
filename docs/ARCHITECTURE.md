@@ -19,7 +19,7 @@ The frontend is static HTML/CSS/JS served by FastAPI. There is no Node build, sh
 - `routes/auth_routes.py`: login flows, dev token, active users, field-manager password/user helpers, scan login, logout, current user.
 - `routes/review_routes.py`: review packet uploads, packet lines, image serving, county/voter-roll matching, fraud analysis, decisions, and export.
 - `routes/worker_routes.py`, `shift_routes.py`, `schedule_routes.py`, `payroll_routes.py`, `payment_routes.py`, `stats_routes.py`, `team_routes.py`, `location_routes.py`, `reflection_routes.py`: workforce and field operations APIs.
-- `storage/database.py`: ORM table definitions, startup `create_all` plus best-effort `ALTER TABLE`, and persistence methods.
+- `storage/database.py`: ORM table definitions and persistence methods; Alembic owns schema mutation.
 - `pipeline.py`: classic petition verification orchestration.
 - `ingestion/`: OCR and document extraction backends.
 - `matching/`: normalization, voter roll matching, duplicate detection, and fraud detection.
@@ -35,7 +35,7 @@ The frontend is static HTML/CSS/JS served by FastAPI. There is no Node build, sh
 | File | Why risky | Editing guidance |
 | --- | --- | --- |
 | `ui/dashboard.html` | Largest file; embedded CSS/JS; direct fetch calls to auth, projects, review, and fraud endpoints. | Search for the endpoint and nearby state/render functions before editing. Keep changes local. |
-| `src/petition_verifier/storage/database.py` | ORM schema, startup schema mutation, and all persistence methods are combined. | Avoid schema changes unless the DB migration behavior is explicitly addressed. |
+| `src/petition_verifier/storage/database.py` | ORM schema and all persistence methods are combined. | Avoid schema changes unless the Alembic migration behavior is explicitly addressed. |
 | `src/petition_verifier/api.py` | App composition, startup users, legacy endpoints, and maintenance endpoints are mixed. | Check router modules before adding new routes. Be careful with auth expectations. |
 | `src/petition_verifier/routes/review_routes.py` | Upload processing, OCR fallbacks, matching, fraud analysis, and export live together. | Preserve existing fallback order unless the task is about OCR behavior. |
 | `src/petition_verifier/ingestion/vision.py` | Google Vision-style OCR heuristics and layout parsing. | Test with fixture generation and avoid broad heuristic rewrites. |

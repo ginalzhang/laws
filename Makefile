@@ -3,8 +3,10 @@ HOST ?= 127.0.0.1
 PORT ?= 8000
 BASE_URL ?= http://$(HOST):$(PORT)
 SECRET_KEY ?= dev-local-secret
+DATABASE_URL ?= sqlite:///./petition_verifier.db
+DEV_AUTO_LOGIN ?= true
 
-.PHONY: setup compile test-fast check-system-deps fixtures test run smoke-local
+.PHONY: setup compile test-fast check-system-deps fixtures test db-upgrade db-sql run smoke-local
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -26,8 +28,15 @@ fixtures:
 test: check-system-deps
 	$(PYTHON) -m pytest tests/ -v
 
+db-upgrade:
+	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head
+
+db-sql:
+	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head --sql
+
 run:
-	SECRET_KEY=$(SECRET_KEY) PYTHONPATH=src $(PYTHON) -m uvicorn petition_verifier.api:app --host $(HOST) --port $(PORT)
+	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head
+	DATABASE_URL=$(DATABASE_URL) SECRET_KEY=$(SECRET_KEY) DEV_AUTO_LOGIN=$(DEV_AUTO_LOGIN) PYTHONPATH=src $(PYTHON) -m uvicorn petition_verifier.api:app --host $(HOST) --port $(PORT)
 
 smoke-local:
 	curl -sf "$(BASE_URL)/health"

@@ -23,7 +23,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, Integer, String, Text,
-    ForeignKey, UniqueConstraint, create_engine, text, func, case,
+    ForeignKey, UniqueConstraint, create_engine, func, case,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
@@ -319,29 +319,6 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
         connect_args={"options": "-c statement_timeout=30000"},
         execution_options={"prepared_statement_cache_size": 0},
     ) if is_postgres else create_engine(url, echo=False)
-    Base.metadata.create_all(engine)
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE users ADD COLUMN team_id INTEGER",
-            "ALTER TABLE review_packets ADD COLUMN voter_roll_text TEXT",
-            "ALTER TABLE review_packets ADD COLUMN county VARCHAR",
-            "ALTER TABLE review_packet_lines ADD COLUMN voter_status VARCHAR",
-            "ALTER TABLE review_packet_lines ADD COLUMN voter_confidence INTEGER",
-            "ALTER TABLE review_packet_lines ADD COLUMN voter_reason TEXT",
-            "ALTER TABLE review_packet_lines ADD COLUMN fraud_flags TEXT",
-            "ALTER TABLE review_packet_lines ADD COLUMN fraud_score INTEGER",
-            "ALTER TABLE review_packet_lines ADD COLUMN review_decision VARCHAR",
-        ]:
-            try:
-                conn.execute(text(stmt))
-                conn.commit()
-            except Exception:
-                # Postgres marks the transaction as aborted after any error.
-                # Rollback so the next ALTER TABLE gets a clean transaction.
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
     return sessionmaker(bind=engine)
 
 

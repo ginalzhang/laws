@@ -7,7 +7,8 @@ from petition_verifier.models import (
     VerificationResult,
     VerificationStatus,
 )
-from petition_verifier.storage.database import Database, SignatureRow
+from petition_verifier.storage.database import SignatureRow
+from tests.db_helpers import migrated_database
 
 
 def _result(project_id: str, raw_name: str) -> ProjectResult:
@@ -44,7 +45,7 @@ def _result(project_id: str, raw_name: str) -> ProjectResult:
 
 
 def test_save_project_replaces_existing_signature_rows_for_same_project(tmp_path):
-    db = Database(f"sqlite:///{tmp_path / 'petition.db'}")
+    db = migrated_database(tmp_path / "petition.db")
 
     db.save_project(_result("project-1", "Jane Smith"))
     db.save_project(_result("project-1", "Jane Smith Updated"))

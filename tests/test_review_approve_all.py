@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 
-from petition_verifier.storage.database import Database, PacketLineRow, PacketRow
+from petition_verifier.storage.database import PacketLineRow, PacketRow
+from tests.db_helpers import migrated_database
 
 
 def test_approve_all_only_approves_clean_voter_valid_signed_rows(tmp_path):
-    db = Database(f"sqlite:///{tmp_path / 'review.db'}")
+    db = migrated_database(tmp_path / "review.db")
 
     def line(line_no: int, **overrides):
         data = {

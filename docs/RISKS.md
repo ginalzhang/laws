@@ -13,8 +13,7 @@ Changing any of this is a product/security decision. If a task touches auth, doc
 ## Database And Runtime State
 - Default DB is `sqlite:///./petition_verifier.db`.
 - PostgreSQL URLs starting with `postgres://` are rewritten to `postgresql://`.
-- Tables are created with `Base.metadata.create_all`.
-- Some schema changes are applied by best-effort `ALTER TABLE` statements at startup and errors are swallowed.
+- Alembic is the only supported schema mutation path; app startup does not create or patch tables.
 - Review packet files are stored in `packet_uploads/` relative to the process working directory.
 - Render deploys may have ephemeral local filesystem behavior, so DB rows can outlive uploaded files unless persistent storage is configured.
 
@@ -39,7 +38,7 @@ Changing any of this is a product/security decision. If a task touches auth, doc
 | File | Risk |
 | --- | --- |
 | `ui/dashboard.html` | Large embedded frontend; endpoint changes can silently break UI flows. |
-| `src/petition_verifier/storage/database.py` | Schema, migrations-by-startup, and data access are combined. |
+| `src/petition_verifier/storage/database.py` | Schema models and data access are combined; Alembic owns migrations. |
 | `src/petition_verifier/api.py` | Startup side effects and public/legacy endpoints are mixed with app setup. |
 | `src/petition_verifier/routes/review_routes.py` | Review packet flow combines upload, OCR, voter matching, fraud analysis, and export. |
 | `src/petition_verifier/ingestion/vision.py` | OCR/layout heuristics are fragile and credential-dependent. |

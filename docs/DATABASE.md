@@ -1,13 +1,13 @@
 # Database Map
 
-Persistence is centralized in `src/petition_verifier/storage/database.py`. It contains SQLAlchemy table classes, startup schema creation/patching, and the `Database` service methods used by routes.
+Persistence is centralized in `src/petition_verifier/storage/database.py`. It contains SQLAlchemy table classes and the `Database` service methods used by routes. Alembic owns schema creation and migration.
 
 ## Runtime Setup
 - Default URL: `sqlite:///./petition_verifier.db`.
 - Render/Postgres URLs beginning with `postgres://` are rewritten to `postgresql://`.
-- `Base.metadata.create_all(engine)` creates missing tables at startup.
-- A small list of best-effort `ALTER TABLE` statements runs at startup and swallows errors after rollback.
-- There is no active Alembic migration workflow despite `alembic` being installed.
+- Alembic is the only supported schema mutation path.
+- Application startup and `Database()` construction do not create tables or run `ALTER TABLE`.
+- Local, CI, and deploy startup commands must run `alembic upgrade head` first.
 
 Treat schema changes as high risk. Document expected SQLite and Postgres behavior before changing columns or table names.
 
@@ -30,8 +30,20 @@ Treat schema changes as high risk. Document expected SQLite and Postgres behavio
 ## Editing Rules
 - Add route behavior by calling existing `Database` methods when possible.
 - If adding a DB method, keep it near related methods in `database.py` and return detached rows or plain dicts consistently with neighboring code.
-- Do not silently add startup `ALTER TABLE` statements without documenting the intended SQLite/Postgres behavior.
+- Do not add startup DDL. Add an Alembic revision and test it against SQLite; review `alembic upgrade head --sql` before production use.
 - Avoid broad splits of `database.py` in small feature work; first add tests/docs around the behavior you are touching.
+
+## Migration Commands
+```bash
+make db-upgrade
+make db-sql
+```
+
+For existing deployments created by the old `create_all()` startup path, inspect
+the live schema against the current models, then stamp the database:
+```bash
+DATABASE_URL=... alembic stamp head
+```
 
 ## Local State
 Runtime DB files are ignored by git via `*.db`. If a local server smoke creates `petition_verifier.db`, remove it before finalizing:

@@ -26,13 +26,36 @@ make setup       # pip install -e '.[dev]'
 make compile     # compile src and tests
 make test-fast   # fast, no-server test subset
 make check-system-deps # confirm Poppler/Tesseract are installed
+make db-upgrade  # apply Alembic migrations to DATABASE_URL
+make db-sql      # print Alembic upgrade SQL for review
 make test        # full pytest against committed fixtures
 make fixtures    # intentionally regenerate committed test fixtures
-make run         # local FastAPI server
+make run         # run migrations, then start local FastAPI server
 make smoke-local # smoke a running local server
 ```
 
 Make targets use `.venv/bin/python` automatically when the venv exists.
+
+## Database Migrations
+Alembic is the only schema mutation path. App startup no longer calls
+`Base.metadata.create_all()` or best-effort `ALTER TABLE` statements.
+
+For a new local database:
+```bash
+make db-upgrade
+make run
+```
+
+For an existing database created by the old startup schema path, first confirm
+the schema matches the current models, then mark it at the baseline:
+```bash
+DATABASE_URL=sqlite:///./petition_verifier.db alembic stamp head
+```
+
+Review migration SQL before applying to production:
+```bash
+make db-sql
+```
 
 ## Where To Change Things
 | Area | Start here |

@@ -3,7 +3,7 @@ services:
     name: petition-verifier
     runtime: python
     buildCommand: "apt-get install -y tesseract-ocr poppler-utils && pip install -r requirements-deploy.txt"
-    startCommand: "PYTHONPATH=src uvicorn petition_verifier.api:app --host 0.0.0.0 --port $PORT"
+    startCommand: "PYTHONPATH=src alembic upgrade head && PYTHONPATH=src uvicorn petition_verifier.api:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: SECRET_KEY
         generateValue: true

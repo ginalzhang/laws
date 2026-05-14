@@ -143,7 +143,7 @@ DEV_AUTO_LOGIN=true
 For new databases, apply the baseline schema with:
 
 ```bash
-DATABASE_URL=sqlite:///./petition_verifier.db alembic upgrade head
+make db-upgrade
 ```
 
 Existing deployments that were created with the older automatic `create_all()`
@@ -152,6 +152,17 @@ path should be stamped after confirming their schema matches the models:
 ```bash
 alembic stamp head
 ```
+
+Alembic is now the only supported schema mutation workflow. The application no
+longer creates tables or runs best-effort `ALTER TABLE` statements on import or
+startup, so deploy and local startup commands must run migrations first. To
+review SQL without applying it:
+
+```bash
+make db-sql
+```
+
+`make run` applies migrations before starting FastAPI.
 
 Regenerate fixtures only when intentionally updating `tests/fixtures/`:
 ```bash
