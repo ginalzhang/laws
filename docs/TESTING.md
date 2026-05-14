@@ -25,6 +25,7 @@ pip install -e '.[dev,vision]'
 python -m compileall -q src tests
 python -m alembic upgrade head
 python -m pytest tests/test_matching.py tests/test_extraction_ensemble.py tests/test_app_smoke.py -v
+cd web && npm run typecheck && npm run lint && npm run test
 ```
 
 Equivalent Make targets:
@@ -61,6 +62,12 @@ Equivalent:
 make run
 ```
 
+Build the React review queue before checking `/app/review` through FastAPI:
+```bash
+make web-install
+make web-build
+```
+
 ## Local Smoke Test
 Start the server in one shell, then run:
 ```bash
@@ -86,8 +93,18 @@ PYTHONPATH=src python -m alembic upgrade head
 SECRET_KEY=ci-test-secret-key PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
 ```
 
+Frontend checks:
+```bash
+cd web
+npm ci
+npm run build
+npm run lint
+npm run test
+npm run test:e2e
+```
+
 ## Known Gaps
-- There is no lint or typecheck configuration yet.
+- Python lint/typecheck configuration is not present yet.
 - Route/auth coverage is mostly smoke-level.
-- UI behavior is not covered by browser tests.
+- UI browser coverage currently covers the React review queue shell only.
 - Render still uses `requirements-deploy.txt`, so deploy dependency changes need a deploy-specific check.

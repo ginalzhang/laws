@@ -28,6 +28,9 @@ make test-fast   # fast, no-server test subset
 make check-system-deps # confirm Poppler/Tesseract are installed
 make db-upgrade  # apply Alembic migrations to DATABASE_URL
 make db-sql      # print Alembic upgrade SQL for review
+make web-install # install React/Vite dependencies
+make web-build   # generate API types, typecheck, and build /app/review assets
+make web-test    # frontend typecheck, lint, and unit tests
 make test        # full pytest against committed fixtures
 make fixtures    # intentionally regenerate committed test fixtures
 make run         # run migrations, then start local FastAPI server
@@ -67,6 +70,7 @@ make db-sql
 | Voter matching, normalization, duplicates, fraud heuristics | `src/petition_verifier/matching/` |
 | Shared result models | `src/petition_verifier/models.py` |
 | Static browser UI | `ui/*.html`, `ui/sw.js` |
+| React review queue milestone | `web/` served at `/app/review` after `make web-build` |
 | CLI | `src/petition_verifier/cli/main.py` |
 
 Check both `api.py` and `routes/` before adding endpoints. Check `ui/*.html` before changing API paths or response shapes.

@@ -31,11 +31,11 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
 from ..ingestion.ca_counties import CALIFORNIA_COUNTIES, city_in_county
@@ -48,6 +48,90 @@ router = APIRouter(prefix="/review", tags=["review"])
 UPLOAD_DIR = Path("packet_uploads")
 
 REVIEWER_ROLES = {"boss", "admin", "field_manager", "evan", "evann", "office_worker"}
+
+
+class PacketListItem(BaseModel):
+    id: int
+    original_name: str
+    uploaded_at: Optional[str] = None
+    status: str
+    total_lines: Optional[int] = None
+    new_sigs: Optional[int] = None
+    already_counted: Optional[int] = None
+    needs_review: Optional[int] = None
+    worker_id: Optional[int] = None
+
+
+class PacketLineOut(BaseModel):
+    id: int
+    line_no: int
+    row_status: Optional[str] = None
+    raw_name: Optional[str] = None
+    norm_name: Optional[str] = None
+    raw_address: Optional[str] = None
+    norm_address: Optional[str] = None
+    raw_city: Optional[str] = None
+    raw_zip: Optional[str] = None
+    valid_zip: Optional[bool] = None
+    raw_date: Optional[str] = None
+    has_signature: Optional[bool] = None
+    ai_verdict: Optional[str] = None
+    flags: list[str] = Field(default_factory=list)
+    voter_status: Optional[str] = None
+    voter_confidence: Optional[int] = None
+    voter_reason: Optional[str] = None
+    fraud_flags: list[str] = Field(default_factory=list)
+    fraud_score: int = 0
+    review_decision: Optional[str] = None
+    action: Optional[str] = None
+    reviewed_at: Optional[str] = None
+
+
+class PacketDetailOut(BaseModel):
+    id: int
+    original_name: str
+    uploaded_at: Optional[str] = None
+    status: str
+    error_msg: Optional[str] = None
+    total_lines: Optional[int] = None
+    new_sigs: Optional[int] = None
+    already_counted: Optional[int] = None
+    needs_review: Optional[int] = None
+    worker_id: Optional[int] = None
+    has_cleaned: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+    voter_roll_text: str = ""
+    county: str = ""
+    lines: list[PacketLineOut] = Field(default_factory=list)
+
+
+class OkResponse(BaseModel):
+    ok: bool
+
+
+class CountyResponse(OkResponse):
+    county: str
+
+
+class ApproveAllResponse(BaseModel):
+    approved: int
+
+
+class VoterRollResponse(OkResponse):
+    row_count: int
+
+
+class VoterMatchResponse(BaseModel):
+    matched: int
+    valid: int
+    invalid: int
+    uncertain: int
+
+
+class FraudAnalysisResponse(BaseModel):
+    lines_analyzed: int
+    flagged: int
+    ai_assessment: Optional[dict[str, Any]] = None
 
 
 def _is_reviewer(user: dict) -> bool:
@@ -105,7 +189,7 @@ async def upload_packet(
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
-@router.get("/packets")
+@router.get("/packets", response_model=list[PacketListItem])
 async def list_packets(current_user=Depends(get_current_user)):
     packets = db.list_packets(
         worker_id=None if _is_reviewer(current_user) else current_user["user_id"]
@@ -128,7 +212,7 @@ async def list_packets(current_user=Depends(get_current_user)):
 
 # ── Detail ────────────────────────────────────────────────────────────────────
 
-@router.get("/packets/{packet_id}")
+@router.get("/packets/{packet_id}", response_model=PacketDetailOut)
 async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
     packet, lines = db.get_packet_detail(packet_id)
     if not packet:
@@ -213,7 +297,7 @@ class ActionBody(BaseModel):
     action: str   # approved | rejected | escalated
 
 
-@router.post("/packets/{packet_id}/lines/{line_no}/action")
+@router.post("/packets/{packet_id}/lines/{line_no}/action", response_model=OkResponse)
 async def set_line_action(
     packet_id: int,
     line_no: int,
@@ -232,7 +316,7 @@ async def set_line_action(
 
 # ── Approve all new signatures ────────────────────────────────────────────────
 
-@router.post("/packets/{packet_id}/approve-all")
+@router.post("/packets/{packet_id}/approve-all", response_model=ApproveAllResponse)
 async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)):
     _require_reviewer(current_user)
     packet, _ = db.get_packet_detail(packet_id)
@@ -244,7 +328,7 @@ async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)
 
 # ── County list + save ────────────────────────────────────────────────────────
 
-@router.get("/counties")
+@router.get("/counties", response_model=list[str])
 async def list_counties():
     return CALIFORNIA_COUNTIES
 
@@ -253,7 +337,7 @@ class CountyBody(BaseModel):
     county: str
 
 
-@router.post("/packets/{packet_id}/county")
+@router.post("/packets/{packet_id}/county", response_model=CountyResponse)
 async def save_packet_county(
     packet_id: int, body: CountyBody, current_user=Depends(get_current_user)
 ):
@@ -273,7 +357,7 @@ class VoterRollBody(BaseModel):
     voter_roll_text: str
 
 
-@router.post("/packets/{packet_id}/voter-roll")
+@router.post("/packets/{packet_id}/voter-roll", response_model=VoterRollResponse)
 async def save_voter_roll(
     packet_id: int, body: VoterRollBody, current_user=Depends(get_current_user)
 ):
@@ -285,7 +369,7 @@ async def save_voter_roll(
     return {"ok": True, "row_count": len(_parse_voter_roll(body.voter_roll_text))}
 
 
-@router.post("/packets/{packet_id}/voter-match")
+@router.post("/packets/{packet_id}/voter-match", response_model=VoterMatchResponse)
 async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)):
     _require_reviewer(current_user)
     packet, lines = db.get_packet_detail(packet_id)
@@ -363,7 +447,11 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
     return {"matched": len(results), "valid": valid, "invalid": invalid, "uncertain": uncertain}
 
 
-@router.post("/packets/{packet_id}/fraud-analysis")
+@router.post(
+    "/packets/{packet_id}/fraud-analysis",
+    response_model=FraudAnalysisResponse,
+    response_model_exclude_none=True,
+)
 async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_user)):
     _require_reviewer(current_user)
     packet, lines = db.get_packet_detail(packet_id)
@@ -452,7 +540,7 @@ class DecisionBody(BaseModel):
     decision: str  # confirmed_fraud | cleared
 
 
-@router.patch("/packets/{packet_id}/lines/{line_no}/decision")
+@router.patch("/packets/{packet_id}/lines/{line_no}/decision", response_model=OkResponse)
 async def set_review_decision(
     packet_id: int, line_no: int, body: DecisionBody, current_user=Depends(get_current_user)
 ):

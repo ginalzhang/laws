@@ -130,6 +130,10 @@ _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if _UI_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_UI_DIR)), name="static")
 
+_WEB_DIST = Path(__file__).parent.parent.parent / "web" / "dist"
+if _WEB_DIST.exists():
+    app.mount("/app/review", StaticFiles(directory=str(_WEB_DIST), html=True), name="review_app")
+
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(worker_router, prefix="/workers", tags=["workers"])
 app.include_router(shift_router, prefix="/shifts", tags=["shifts"])

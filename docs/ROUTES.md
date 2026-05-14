@@ -7,6 +7,7 @@ Routes are split between legacy handlers in `src/petition_verifier/api.py` and m
 | --- | --- |
 | `GET /health`, `/healthcheck-anthropic`, `/healthcheck-anthropic-full` | health and external API diagnostics |
 | `GET /`, `/canvasser`, `/field-manager`, `/evann` | serve static HTML entry pages |
+| `GET /app/review` | serve built React review queue when `web/dist` exists |
 | `GET /stats/live-count` | public live approved-signature count |
 | `GET /projects`, `/projects/{project_id}/signatures`, `/projects/{project_id}/signatures/{line_number}` | legacy project browsing |
 | `POST /projects/{project_id}/signatures/{line_number}/review` | legacy staff review update |
@@ -39,6 +40,7 @@ Routes are split between legacy handlers in `src/petition_verifier/api.py` and m
 - `ui/canvasser.html`: calls `/review/upload` and authenticated worker APIs.
 - `ui/field-manager.html` and `ui/evann.html`: call stats/auth/workforce APIs.
 - `ui/index.html`: legacy review UI calling `/process` and `/fraud-scan`.
+- `web/`: React review queue milestone calling `/review/*`; it keeps current bearer-token compatibility and does not replace vanilla routes yet.
 
 ## Auth Notes
 Current auth behavior is mixed. Some endpoints use bearer auth through `get_current_user`, some are public, and some maintenance/demo endpoints are unauthenticated. Treat auth changes as product/security changes, not cleanup.

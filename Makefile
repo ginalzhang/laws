@@ -6,7 +6,7 @@ SECRET_KEY ?= dev-local-secret
 DATABASE_URL ?= sqlite:///./petition_verifier.db
 DEV_AUTO_LOGIN ?= true
 
-.PHONY: setup compile test-fast check-system-deps fixtures test db-upgrade db-sql run smoke-local
+.PHONY: setup compile test-fast check-system-deps fixtures test db-upgrade db-sql web-install web-generate-api web-build web-test web-e2e run smoke-local
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -33,6 +33,21 @@ db-upgrade:
 
 db-sql:
 	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head --sql
+
+web-install:
+	cd web && npm install
+
+web-generate-api:
+	cd web && npm run generate:api
+
+web-build:
+	cd web && npm run build
+
+web-test:
+	cd web && npm run typecheck && npm run lint && npm run test
+
+web-e2e:
+	cd web && npm run test:e2e
 
 run:
 	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head
