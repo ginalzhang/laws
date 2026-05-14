@@ -24,13 +24,15 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install -e ".[dev]"
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
 
       - name: Run Python tests
         env:
           PYTHONPATH: src
           SECRET_KEY: ci-test-secret-key
-        run: pytest -q
+        run: |
+          pytest -q
 
       - name: Start server
         env:
@@ -38,7 +40,7 @@ jobs:
           DEV_AUTO_LOGIN: "true"
           PYTHONPATH: src
         run: |
-          uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000 &
+          python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000 &
           for i in $(seq 1 30); do
             curl -sf http://localhost:8000/health > /dev/null 2>&1 && echo "Server ready after ${i}s" && break
             sleep 1
