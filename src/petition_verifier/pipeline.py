@@ -16,18 +16,10 @@ from pathlib import Path
 from .ingestion import get_processor
 from .matching import DuplicateDetector, VoterMatcher, normalize_signature
 from .models import ProjectResult, VerificationResult, VerificationStatus
+from .verification_policy import classify_signature_status
 
 THRESHOLD_APPROVE = int(os.getenv("THRESHOLD_APPROVE", "85"))
 THRESHOLD_REVIEW  = int(os.getenv("THRESHOLD_REVIEW",  "70"))
-
-
-def _status(confidence: float) -> VerificationStatus:
-    if confidence >= THRESHOLD_APPROVE:
-        return VerificationStatus.APPROVED
-    if confidence >= THRESHOLD_REVIEW:
-        return VerificationStatus.REVIEW
-    return VerificationStatus.REJECTED
-
 
 class Pipeline:
     def __init__(
@@ -57,13 +49,15 @@ class Pipeline:
             norm  = normalize_signature(ext)
             match = self._matcher.match(norm) if self._matcher else None
 
-            # Duplicate check
             dupe_of = detector.check(norm)
-            if dupe_of is not None:
-                status = VerificationStatus.DUPLICATE
-            else:
-                confidence = match.confidence if match else 0.0
-                status = _status(confidence)
+            confidence = match.confidence if match else 0.0
+            status = classify_signature_status(
+                confidence=confidence,
+                signature_present=ext.signature_present,
+                duplicate_of_line=dupe_of,
+                threshold_approve=THRESHOLD_APPROVE,
+                threshold_review=THRESHOLD_REVIEW,
+            )
 
             results.append(
                 VerificationResult(

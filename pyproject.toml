@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "petition-verifier"
 version = "0.1.0"
 description = "Petition signature verification — OCR, voter roll matching, fraud detection"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     # PDF processing
     "pdf2image>=1.17.0",
@@ -21,8 +21,13 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
     "psycopg2-binary>=2.9.0",
+    # Auth
+    "bcrypt>=4.0.0",
+    "python-jose[cryptography]>=3.3.0",
     # Claude Vision OCR
     "anthropic>=0.30.0",
+    "google-cloud-vision>=3.0.0",
+    "opencv-python-headless>=4.8.0",
     # API / CLI
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
@@ -38,6 +43,11 @@ dependencies = [
 
 [project.optional-dependencies]
 reducto = ["requests>=2.31.0"]
+vision = [
+    "google-cloud-vision>=3.0.0",
+    "numpy>=1.22.4",
+    "opencv-python-headless>=4.8.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",

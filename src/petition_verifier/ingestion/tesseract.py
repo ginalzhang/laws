@@ -413,6 +413,7 @@ class TesseractProcessor(BasePDFProcessor):
                 page_sigs = _extract_block_format(
                     words, image, page_num, line_counter
                 )
+                line_counter += len(page_sigs)
             else:
                 rows  = _cluster_rows(words)
                 bands = _detect_column_bands(rows, page_width)
@@ -442,7 +443,6 @@ class TesseractProcessor(BasePDFProcessor):
                     ))
                     line_counter += 1
 
-            line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
 
         return all_sigs

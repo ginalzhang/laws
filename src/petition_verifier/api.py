@@ -32,7 +32,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .storage import db
-from .auth import get_current_user
+from .auth import (
+    dev_auto_login_enabled,
+    get_current_user,
+    require_admin,
+    require_manager,
+    require_worker,
+)
 from .routes.auth_routes import router as auth_router
 from .routes.worker_routes import router as worker_router
 from .routes.shift_routes import router as shift_router
@@ -45,33 +51,52 @@ from .routes.stats_routes import router as stats_router
 from .routes.review_routes import router as review_router
 from .routes.team_routes import router as team_router
 from .routes.reflection_routes import router as reflection_router
+from .upload_validation import PETITION_SUFFIXES, VOTER_ROLL_SUFFIXES, read_validated_upload
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
-# ── Hardcoded permanent accounts ─────────────────────────────────────────────
-# Permanent accounts — recreated/updated on every startup so role/password stay correct.
+# ── Development-only bootstrap accounts ──────────────────────────────────────
 _PERMANENT_USERS = [
     {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss", "full_name": "arianafan2000"},
     {"email": "evan@app.local",          "password": "evan",          "role": "evan", "full_name": "evann"},
 ]
 
 @app.on_event("startup")
-async def ensure_permanent_users():
+async def ensure_dev_users():
+    if not dev_auto_login_enabled():
+        return
     from .auth import hash_password
     for u in _PERMANENT_USERS:
         existing = db.get_user_by_email(u["email"])
         if not existing:
             db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
-        else:
-            # Keep password and role in sync on every deploy
-            db.update_user(existing.id, password_hash=hash_password(u["password"]), role=u["role"], full_name=u["full_name"], is_active=True)
-    # Seed default FM team password if not already set
+    # Seed default FM team password only for explicit development mode.
     if not db.get_setting("fm_password"):
         db.set_setting("fm_password", "seals")
-    # Remove old hardcoded Kay Kay entry left over from previous deploys
-    old_kaykay = db.get_user_by_email("kaykay@app.local")
-    if old_kaykay:
-        db.update_user(old_kaykay.id, is_active=False)
+
+
+def bootstrap_admin_from_env(database) -> bool:
+    email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip()
+    password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
+    full_name = os.getenv("BOOTSTRAP_ADMIN_NAME", "Initial Admin").strip() or "Initial Admin"
+    if not email and not password:
+        return False
+    if not email or not password:
+        raise RuntimeError("Set both BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD")
+    if len(password) < 12:
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters")
+    if database.get_user_by_email(email):
+        return False
+    from .auth import hash_password
+    database.create_user(email, hash_password(password), "boss", full_name)
+    return True
+
+
+@app.on_event("startup")
+async def ensure_bootstrap_admin():
+    created = bootstrap_admin_from_env(db)
+    if created:
+        print("[bootstrap-admin] created initial boss account from environment", flush=True)
 
 
 @app.on_event("startup")
@@ -125,7 +150,7 @@ async def health():
 
 
 @app.get("/healthcheck-anthropic")
-async def healthcheck_anthropic():
+async def healthcheck_anthropic(_user: dict = Depends(require_admin)):
     import httpx
     try:
         r = httpx.get("https://api.anthropic.com", timeout=10)
@@ -135,7 +160,7 @@ async def healthcheck_anthropic():
 
 
 @app.get("/healthcheck-anthropic-full")
-async def healthcheck_anthropic_full():
+async def healthcheck_anthropic_full(_user: dict = Depends(require_admin)):
     import anthropic, os
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -152,7 +177,7 @@ async def healthcheck_anthropic_full():
 
 
 @app.get("/stats/live-count")
-async def live_sig_count():
+async def live_sig_count(_user: dict = Depends(require_worker)):
     """Total approved signatures across all projects — poll for live updates."""
     return {"total_valid_sigs": db.get_total_valid_sigs()}
 
@@ -322,7 +347,7 @@ async def evann_page():
 
 
 @app.get("/projects")
-async def list_projects():
+async def list_projects(_user: dict = Depends(require_manager)):
     rows = db.list_projects()
     return [
         {
@@ -346,6 +371,7 @@ async def list_signatures(
     status: Optional[str] = None,   # filter: approved|review|rejected|duplicate
     page: int = 1,
     page_size: int = 50,
+    _user: dict = Depends(require_manager),
 ):
     rows = db.get_project_signatures(project_id)
     if status:
@@ -362,7 +388,11 @@ async def list_signatures(
 
 
 @app.get("/projects/{project_id}/signatures/{line_number}")
-async def get_signature(project_id: str, line_number: int):
+async def get_signature(
+    project_id: str,
+    line_number: int,
+    _user: dict = Depends(require_manager),
+):
     rows = db.get_project_signatures(project_id)
     for r in rows:
         if r.line_number == line_number:
@@ -381,6 +411,7 @@ async def review_signature(
     project_id: str,
     line_number: int,
     payload: ReviewPayload,
+    _user: dict = Depends(require_manager),
 ):
     db.update_staff_review(
         project_id=project_id,
@@ -399,6 +430,7 @@ async def process_petition(
     voter_roll:      Optional[str]      = Form(None, description="Path to voter roll CSV on server"),
     voter_roll_file: Optional[UploadFile] = File(None, description="Voter roll CSV file upload"),
     petition:        UploadFile         = File(..., description="Petition photo or PDF"),
+    _user: dict = Depends(require_manager),
 ):
     """Accept a petition photo/PDF and optional voter roll, run the pipeline, save to DB."""
     from .pipeline import Pipeline
@@ -408,9 +440,13 @@ async def process_petition(
     # ── Resolve voter roll ────────────────────────────────────────────────────
     voter_roll_tmp: Optional[Path] = None
     if voter_roll_file and voter_roll_file.filename:
-        suffix = Path(voter_roll_file.filename).suffix or ".csv"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as vr:
-            vr.write(await voter_roll_file.read())
+        voter_upload = await read_validated_upload(
+            voter_roll_file,
+            VOTER_ROLL_SUFFIXES,
+            "voter_roll.csv",
+        )
+        with tempfile.NamedTemporaryFile(suffix=voter_upload.suffix, delete=False) as vr:
+            vr.write(voter_upload.data)
             voter_roll_tmp = Path(vr.name)
         voter_roll_path: Optional[Path] = voter_roll_tmp
     elif voter_roll:
@@ -421,10 +457,11 @@ async def process_petition(
         raise HTTPException(400, "Provide voter_roll (server path) or voter_roll_file (upload)")
 
     # ── Save petition file ────────────────────────────────────────────────────
-    orig_name = petition.filename or "petition"
-    suffix    = Path(orig_name).suffix.lower() or ".pdf"
+    petition_upload = await read_validated_upload(petition, PETITION_SUFFIXES, "petition.pdf")
+    orig_name = petition_upload.filename
+    suffix    = petition_upload.suffix
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await petition.read())
+        tmp.write(petition_upload.data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -448,6 +485,7 @@ async def process_pdf(
     project_id: str,
     voter_roll: str     = Form(..., description="Path to voter roll CSV on server"),
     pdf: UploadFile     = File(...),
+    _user: dict = Depends(require_manager),
 ):
     """Accept a PDF upload, run the pipeline, save to DB."""
     from .pipeline import Pipeline
@@ -456,8 +494,9 @@ async def process_pdf(
     if not voter_roll_path.exists():
         raise HTTPException(400, f"Voter roll not found: {voter_roll}")
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp.write(await pdf.read())
+    pdf_upload = await read_validated_upload(pdf, {".pdf"}, "petition.pdf")
+    with tempfile.NamedTemporaryFile(suffix=pdf_upload.suffix, delete=False) as tmp:
+        tmp.write(pdf_upload.data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -473,6 +512,7 @@ async def process_pdf(
 @app.post("/fraud-scan")
 async def fraud_scan(
     petition: UploadFile = File(..., description="Petition photo or PDF to scan for fraud"),
+    _user: dict = Depends(require_manager),
 ):
     """
     Scan a petition for fraud indicators without a voter roll.
@@ -483,11 +523,12 @@ async def fraud_scan(
     from .matching import normalize_signature
     from .matching.fraud_detector import FraudAnalyzer
 
-    orig_name = petition.filename or "petition"
-    suffix    = Path(orig_name).suffix.lower() or ".pdf"
+    petition_upload = await read_validated_upload(petition, PETITION_SUFFIXES, "petition.pdf")
+    orig_name = petition_upload.filename
+    suffix    = petition_upload.suffix
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await petition.read())
+        tmp.write(petition_upload.data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -552,12 +593,13 @@ async def worker_upload(
 
     worker_id = user["user_id"]
 
-    orig_name = petition.filename or "petition"
-    suffix    = Path(orig_name).suffix.lower() or ".pdf"
+    petition_upload = await read_validated_upload(petition, PETITION_SUFFIXES, "petition.pdf")
+    orig_name = petition_upload.filename
+    suffix    = petition_upload.suffix
     project_id = str(uuid.uuid4())[:8]
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await petition.read())
+        tmp.write(petition_upload.data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -742,7 +784,7 @@ async def update_manual_count(
 
 
 @app.get("/projects/{project_id}/export")
-async def export_csv(project_id: str):
+async def export_csv(project_id: str, _user: dict = Depends(require_manager)):
     """Download all signatures for a project as CSV."""
     rows = db.get_project_signatures(project_id)
     if not rows:
@@ -769,13 +811,16 @@ class AssignWorkerPayload(BaseModel):
 
 
 @app.post("/projects/{project_id}/assign")
-async def assign_project_to_worker(project_id: str, payload: AssignWorkerPayload):
+async def assign_project_to_worker(
+    project_id: str,
+    payload: AssignWorkerPayload,
+    user: dict = Depends(require_admin),
+):
     """Assign a project to a worker (admin+)."""
-    from .auth import get_current_user
     wp = db.assign_project_to_worker(
         worker_id=payload.worker_id,
         project_id=project_id,
-        assigned_by_id=None,
+        assigned_by_id=user["user_id"],
     )
     return {
         "ok": True,
@@ -787,9 +832,14 @@ async def assign_project_to_worker(project_id: str, payload: AssignWorkerPayload
 
 # ── Dev seed endpoint ─────────────────────────────────────────────────────────
 
+def _require_dev_mode() -> None:
+    if not dev_auto_login_enabled():
+        raise HTTPException(403, "Development endpoint is disabled")
+
 @app.post("/seed-demo-data")
 async def seed_demo_data():
     """Create demo users for development. Only works if no users exist."""
+    _require_dev_mode()
     from .auth import hash_password
     from datetime import date, timedelta
 
@@ -837,6 +887,7 @@ async def seed_demo_data():
 @app.post("/fix-dedup-users")
 async def fix_dedup_users():
     """Delete duplicate users — keeps the lowest-id copy of each (full_name, role) pair."""
+    _require_dev_mode()
     from .storage.database import ShiftRow, WorkerProjectRow
     users = db.list_users()
     seen: dict[tuple, int] = {}
@@ -860,6 +911,7 @@ async def fix_dedup_users():
 @app.post("/fix-activate-users")
 async def fix_activate_users():
     """Temporary: activate all users. Remove after use."""
+    _require_dev_mode()
     users = db.list_users()
     deactivated = [u for u in users if not u.is_active]
     for u in deactivated:
@@ -870,6 +922,7 @@ async def fix_activate_users():
 @app.post("/fix-reset-permanent")
 async def fix_reset_permanent():
     """Force-reset permanent account passwords to match hardcoded values."""
+    _require_dev_mode()
     from .auth import hash_password
     results = []
     for u in _PERMANENT_USERS:
@@ -886,6 +939,7 @@ async def fix_reset_permanent():
 @app.post("/fix-reset-boss")
 async def fix_reset_boss():
     """Temporary: reset boss password to password123. Remove after use."""
+    _require_dev_mode()
     from .auth import hash_password
     users = db.list_users()
     boss = next((u for u in users if u.email == "boss@petition.co"), None)

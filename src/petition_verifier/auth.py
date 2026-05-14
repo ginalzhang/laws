@@ -10,12 +10,28 @@ from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production-use-32-char-random-string")
+_DEV_SECRET_KEY = "dev-only-change-me"
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 168  # 7 days
 
 
 bearer = HTTPBearer(auto_error=False)
+
+
+def dev_auto_login_enabled() -> bool:
+    return os.getenv("DEV_AUTO_LOGIN", "").lower() == "true"
+
+
+def _jwt_secret() -> str:
+    if SECRET_KEY:
+        return SECRET_KEY
+    if dev_auto_login_enabled():
+        return _DEV_SECRET_KEY
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="SECRET_KEY is not configured",
+    )
 
 
 def hash_password(password: str) -> str:
@@ -33,12 +49,12 @@ def create_token(user_id: int, role: str) -> str:
         "role": role,
         "exp": expire,
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, _jwt_secret(), algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> dict:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _jwt_secret(), algorithms=[ALGORITHM])
         return payload
     except JWTError as e:
         raise HTTPException(
@@ -53,15 +69,20 @@ def get_current_user(
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_token(credentials.credentials)
-    return {"user_id": int(payload["sub"]), "role": payload["role"]}
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=401, detail="Invalid token subject") from e
+    from .storage import db
+    db_user = db.get_user_by_id(user_id)
+    if not db_user or not db_user.is_active:
+        raise HTTPException(status_code=401, detail="User is inactive or missing")
+    return {"user_id": db_user.id, "role": db_user.role}
 
 
 def require_role(*roles: str):
     def dep(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> dict:
-        if not credentials:
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        payload = decode_token(credentials.credentials)
-        user = {"user_id": int(payload["sub"]), "role": payload["role"]}
+        user = get_current_user(credentials)
         if roles and user["role"] not in roles:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user

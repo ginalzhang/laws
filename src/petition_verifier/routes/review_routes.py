@@ -31,6 +31,7 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -40,10 +41,30 @@ from ..auth import get_current_user
 from ..ingestion.ca_counties import CALIFORNIA_COUNTIES, city_in_county
 from ..storage import db
 from ..storage.database import PacketLineRow
+from ..upload_validation import PETITION_SUFFIXES, read_validated_upload
 
 router = APIRouter(prefix="/review", tags=["review"])
 
 UPLOAD_DIR = Path("packet_uploads")
+
+REVIEWER_ROLES = {"boss", "admin", "field_manager", "evan", "evann", "office_worker"}
+
+
+def _is_reviewer(user: dict) -> bool:
+    return user.get("role") in REVIEWER_ROLES
+
+
+def _ensure_packet_access(packet, user: dict) -> None:
+    if _is_reviewer(user):
+        return
+    if packet.worker_id == user["user_id"]:
+        return
+    raise HTTPException(403, "Cannot access another user's review packet")
+
+
+def _require_reviewer(user: dict) -> None:
+    if not _is_reviewer(user):
+        raise HTTPException(403, "Review action requires staff access")
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -58,18 +79,15 @@ async def upload_packet(
 
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        suffix   = Path(file.filename or "packet.jpg").suffix.lower() or ".jpg"
-        filename = uuid.uuid4().hex + suffix
+        upload = await read_validated_upload(file, PETITION_SUFFIXES, "packet.jpg")
+        filename = uuid.uuid4().hex + upload.suffix
         raw_path = UPLOAD_DIR / filename
 
-        data = await file.read()
-        if not data:
-            raise HTTPException(400, "Uploaded file is empty")
-        raw_path.write_bytes(data)
+        raw_path.write_bytes(upload.data)
 
         packet_id = db.create_packet(
             worker_id=current_user["user_id"],
-            original_name=file.filename or filename,
+            original_name=upload.filename,
             raw_path=str(raw_path),
         )
         bg.add_task(_process_packet, packet_id, raw_path)
@@ -89,7 +107,9 @@ async def upload_packet(
 
 @router.get("/packets")
 async def list_packets(current_user=Depends(get_current_user)):
-    packets = db.list_packets()
+    packets = db.list_packets(
+        worker_id=None if _is_reviewer(current_user) else current_user["user_id"]
+    )
     return [
         {
             "id":               p.id,
@@ -113,6 +133,7 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
     packet, lines = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
+    _ensure_packet_access(packet, current_user)
 
     # Prefer the stored rich result_json if available
     try:
@@ -176,6 +197,7 @@ async def get_packet_image(
     packet, _ = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
+    _ensure_packet_access(packet, current_user)
     path_str = (
         packet.cleaned_path if type == "cleaned" and packet.cleaned_path else packet.raw_path
     )
@@ -198,6 +220,10 @@ async def set_line_action(
     body: ActionBody,
     current_user=Depends(get_current_user),
 ):
+    _require_reviewer(current_user)
+    packet, _ = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
     if body.action not in ("approved", "rejected", "escalated"):
         raise HTTPException(400, "action must be approved, rejected, or escalated")
     db.set_packet_line_action(packet_id, line_no, body.action, current_user["user_id"])
@@ -208,6 +234,10 @@ async def set_line_action(
 
 @router.post("/packets/{packet_id}/approve-all")
 async def approve_all_new(packet_id: int, current_user=Depends(get_current_user)):
+    _require_reviewer(current_user)
+    packet, _ = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
     n = db.approve_all_new_sigs(packet_id, current_user["user_id"])
     return {"approved": n}
 
@@ -227,6 +257,7 @@ class CountyBody(BaseModel):
 async def save_packet_county(
     packet_id: int, body: CountyBody, current_user=Depends(get_current_user)
 ):
+    _require_reviewer(current_user)
     if body.county and body.county not in CALIFORNIA_COUNTIES:
         raise HTTPException(400, f"Unknown county: {body.county}")
     packet, _ = db.get_packet_detail(packet_id)
@@ -246,6 +277,7 @@ class VoterRollBody(BaseModel):
 async def save_voter_roll(
     packet_id: int, body: VoterRollBody, current_user=Depends(get_current_user)
 ):
+    _require_reviewer(current_user)
     packet, _ = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
@@ -255,6 +287,7 @@ async def save_voter_roll(
 
 @router.post("/packets/{packet_id}/voter-match")
 async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)):
+    _require_reviewer(current_user)
     packet, lines = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
@@ -332,6 +365,7 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
 
 @router.post("/packets/{packet_id}/fraud-analysis")
 async def run_fraud_analysis(packet_id: int, current_user=Depends(get_current_user)):
+    _require_reviewer(current_user)
     packet, lines = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
@@ -422,6 +456,10 @@ class DecisionBody(BaseModel):
 async def set_review_decision(
     packet_id: int, line_no: int, body: DecisionBody, current_user=Depends(get_current_user)
 ):
+    _require_reviewer(current_user)
+    packet, _ = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
     if body.decision not in ("confirmed_fraud", "cleared"):
         raise HTTPException(400, "decision must be confirmed_fraud or cleared")
     db.set_line_review_decision(packet_id, line_no, body.decision)
@@ -432,12 +470,13 @@ async def set_review_decision(
 async def export_packet(
     packet_id: int,
     filter: str = "all",  # all | valid | flagged
-    token: str | None = None,
+    token: Optional[str] = None,
     current_user=Depends(get_current_user),
 ):
     packet, lines = db.get_packet_detail(packet_id)
     if not packet:
         raise HTTPException(404, "Packet not found")
+    _ensure_packet_access(packet, current_user)
 
     if filter == "valid":
         rows = [l for l in lines if l.voter_status == "valid" and l.review_decision != "confirmed_fraud"]

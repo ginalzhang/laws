@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import (
-    hash_password, verify_password, create_token, get_current_user
+    dev_auto_login_enabled, hash_password, verify_password, create_token, get_current_user
 )
 from ..storage import db
 
@@ -39,7 +39,7 @@ async def login(payload: LoginRequest):
 @router.get("/dev-token")
 async def dev_token():
     """Return a boss token without credentials. Only works when DEV_AUTO_LOGIN=true in env."""
-    if os.getenv("DEV_AUTO_LOGIN", "").lower() != "true":
+    if not dev_auto_login_enabled():
         raise HTTPException(403, "Dev auto-login is not enabled")
     users = db.list_users()
     boss = next((u for u in users if u.role == "boss"), None)
@@ -63,6 +63,8 @@ class NameLoginRequest(BaseModel):
 
 @router.post("/login-by-name")
 async def login_by_name(payload: NameLoginRequest):
+    if not dev_auto_login_enabled():
+        raise HTTPException(403, "Name login is only available in development")
     user = db.get_user_by_name(payload.full_name)
     if not user:
         raise HTTPException(401, "Name not found — check spelling or ask your manager")
@@ -80,7 +82,9 @@ async def login_by_name(payload: NameLoginRequest):
 
 @router.get("/active-users")
 async def list_active_users():
-    """Public — returns active user names for the login name-selector UI."""
+    """Return active user names for the development name-selector UI."""
+    if not dev_auto_login_enabled():
+        raise HTTPException(403, "Name selector is only available in development")
     role_labels = {
         "field_manager": "Field Manager",
         "evan":          "Field Manager",
@@ -109,7 +113,9 @@ class FMPasswordRequest(BaseModel):
 @router.post("/fm-users")
 async def fm_users(payload: FMPasswordRequest):
     """Verify the FM team password and return the list of field managers."""
-    stored = db.get_setting("fm_password", "seals") or "seals"
+    stored = db.get_setting("fm_password")
+    if not stored:
+        raise HTTPException(403, "Field-manager team login is not configured")
     if payload.password.strip() != stored.strip():
         raise HTTPException(401, "Wrong password")
     users = db.list_users()
@@ -160,7 +166,10 @@ async def change_password(payload: ChangePasswordRequest, user: dict = Depends(g
 
 @router.post("/scan-login")
 async def scan_login(payload: dict):
-    if payload.get("password") != "meow":
+    if not dev_auto_login_enabled():
+        raise HTTPException(403, "Scan login is only available in development")
+    expected = os.getenv("SCAN_LOGIN_PASSWORD", "meow")
+    if payload.get("password") != expected:
         raise HTTPException(401, "Wrong password")
     users = db.list_users()
     boss = next((u for u in users if u.role in ("boss", "admin")), None)

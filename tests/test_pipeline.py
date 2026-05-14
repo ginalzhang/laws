@@ -6,6 +6,7 @@ Skips if fixtures don't exist yet.
 import json
 import pytest
 from pathlib import Path
+from shutil import which
 
 FIXTURES = Path(__file__).parent / "fixtures"
 VOTER_ROLL = FIXTURES / "voter_roll.csv"
@@ -13,8 +14,8 @@ SAMPLE_PDF = FIXTURES / "sample_petition.pdf"
 
 
 @pytest.mark.skipif(
-    not (VOTER_ROLL.exists() and SAMPLE_PDF.exists()),
-    reason="Run tests/fixtures/generate_test_data.py first to create fixtures",
+    not (VOTER_ROLL.exists() and SAMPLE_PDF.exists() and which("pdfinfo")),
+    reason="Run tests/fixtures/generate_test_data.py and install poppler/pdfinfo first",
 )
 def test_pipeline_runs():
     from petition_verifier.pipeline import Pipeline
@@ -36,3 +37,41 @@ def test_pipeline_runs():
     # JSON serializable
     data = json.loads(result.model_dump_json())
     assert data["project_id"] == "test-001"
+
+
+def test_high_confidence_match_without_signature_needs_review():
+    from petition_verifier.models import ExtractedSignature, VoterMatch, VerificationStatus
+    from petition_verifier.pipeline import Pipeline
+
+    class FakeProcessor:
+        def extract(self, _path):
+            return [
+                ExtractedSignature(
+                    line_number=1,
+                    page=1,
+                    raw_name="Jane Smith",
+                    raw_address="123 Main St",
+                    signature_present=False,
+                )
+            ]
+
+    class FakeMatcher:
+        def match(self, _normalized):
+            return VoterMatch(
+                voter_id="V001",
+                voter_name="Jane Smith",
+                voter_address="123 Main St",
+                confidence=99,
+                name_score=100,
+                address_score=98,
+            )
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._processor = FakeProcessor()
+    pipeline._matcher = FakeMatcher()
+
+    result = pipeline.process("petition.pdf", project_id="test-missing-signature")
+
+    assert result.approved == 0
+    assert result.review == 1
+    assert result.signatures[0].status == VerificationStatus.REVIEW

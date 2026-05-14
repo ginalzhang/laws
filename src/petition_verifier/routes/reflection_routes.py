@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/reflections", tags=["reflections"])
 
 
 class ReflectionPayload(BaseModel):
-    shift_id: int | None = None
+    shift_id: Optional[int] = None
     sigs_reported: int
     hours_worked: float
     hit_goal: bool
