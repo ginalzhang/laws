@@ -24,7 +24,11 @@ from rich.table import Table
 load_dotenv()
 
 app     = typer.Typer(name="pvfy", help="Petition signature verification pipeline")
+admin_app = typer.Typer(help="Admin user management")
+app.add_typer(admin_app, name="admin")
 console = Console()
+
+ADMIN_ROLES = {"boss", "admin", "field_manager", "worker", "petitioner", "office_worker", "evan", "evann"}
 
 
 def _require_voter_roll() -> Path:
@@ -215,6 +219,61 @@ def import_voters(
         table.add_column(col, style="cyan")
     for _, row in df.head(5).iterrows():
         table.add_row(*[str(row[c]) for c in df.columns[:8]])
+    console.print(table)
+
+
+@admin_app.command("create-user")
+def admin_create_user(
+    email: str = typer.Option(..., "--email", prompt=True),
+    full_name: str = typer.Option(..., "--full-name", prompt=True),
+    role: str = typer.Option("boss", "--role"),
+    password: Optional[str] = typer.Option(
+        None,
+        "--password",
+        prompt=True,
+        hide_input=True,
+        confirmation_prompt=True,
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing to the database"),
+):
+    """Create an admin or workforce user in the configured database."""
+    if role not in ADMIN_ROLES:
+        console.print(f"[red]Invalid role:[/red] {role}. Expected one of: {', '.join(sorted(ADMIN_ROLES))}")
+        raise typer.Exit(1)
+    if not password or len(password) < 12:
+        console.print("[red]Password must be at least 12 characters.[/red]")
+        raise typer.Exit(1)
+
+    from ..auth import hash_password
+    from ..storage import Database
+
+    database = Database()
+    existing = database.get_user_by_email(email)
+    if existing:
+        console.print(f"[red]User already exists:[/red] {email}")
+        raise typer.Exit(1)
+    if dry_run:
+        console.print(f"[green]Dry run OK:[/green] would create {email} as {role}")
+        return
+    user = database.create_user(email, hash_password(password), role, full_name)
+    console.print(f"[green]Created user[/green] id={user.id} email={user.email} role={user.role}")
+
+
+@admin_app.command("list-users")
+def admin_list_users(role: Optional[str] = typer.Option(None, "--role")):
+    """List users for login migration/audit checks."""
+    from ..storage import Database
+
+    database = Database()
+    users = database.list_users(role=role)
+    table = Table(title="Users")
+    table.add_column("ID", justify="right")
+    table.add_column("Email")
+    table.add_column("Name")
+    table.add_column("Role")
+    table.add_column("Active")
+    for user in users:
+        table.add_row(str(user.id), user.email, user.full_name, user.role, "yes" if user.is_active else "no")
     console.print(table)
 
 

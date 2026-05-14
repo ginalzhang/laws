@@ -31,10 +31,18 @@ from ..models import ProjectResult, VerificationResult, VerificationStatus
 from ..verification_policy import packet_line_bulk_approvable
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db")
-# Render gives postgres:// but SQLAlchemy 2.x requires postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+def normalize_database_url(url: str) -> str:
+    # Render gives postgres:// but SQLAlchemy 2.x requires postgresql://
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
+def current_database_url() -> str:
+    return normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db"))
+
+
+DATABASE_URL = current_database_url()
 
 
 class Base(DeclarativeBase):
@@ -126,6 +134,19 @@ class UserRow(Base):
     is_active     = Column(Boolean, default=True, server_default="true")
     created_at    = Column(DateTime, default=datetime.utcnow)
     team_id       = Column(Integer, ForeignKey("teams.id"), nullable=True)
+
+
+class RefreshTokenRow(Base):
+    __tablename__ = "refresh_tokens"
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    user_id     = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash  = Column(String, unique=True, nullable=False)
+    expires_at  = Column(DateTime, nullable=False)
+    revoked_at  = Column(DateTime, nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+    user_agent  = Column(String, default="")
+    ip_address  = Column(String, default="")
 
 
 class ShiftRow(Base):
@@ -308,7 +329,8 @@ class PacketLineRow(Base):
     packet           = relationship("PacketRow", back_populates="lines")
 
 
-def init_db(url: str = DATABASE_URL) -> sessionmaker:
+def init_db(url: Optional[str] = None) -> sessionmaker:
+    url = normalize_database_url(url) if url else current_database_url()
     is_postgres = url.startswith("postgresql")
     engine = create_engine(
         url,
@@ -323,7 +345,7 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
 
 
 class Database:
-    def __init__(self, url: str = DATABASE_URL):
+    def __init__(self, url: Optional[str] = None):
         self._Session = init_db(url)
 
     # ── Existing petition methods ─────────────────────────────────────────────
@@ -600,6 +622,49 @@ class Database:
             if user:
                 for k, v in kwargs.items():
                     setattr(user, k, v)
+                session.commit()
+
+    def create_refresh_token(
+        self,
+        user_id: int,
+        token_hash: str,
+        expires_at: datetime,
+        user_agent: str = "",
+        ip_address: str = "",
+    ) -> RefreshTokenRow:
+        with self._Session() as session:
+            row = RefreshTokenRow(
+                user_id=user_id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                user_agent=user_agent[:255],
+                ip_address=ip_address[:64],
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            session.expunge(row)
+            return row
+
+    def get_refresh_token(self, token_hash: str) -> Optional[RefreshTokenRow]:
+        with self._Session() as session:
+            row = session.query(RefreshTokenRow).filter_by(token_hash=token_hash).first()
+            if row:
+                session.expunge(row)
+            return row
+
+    def mark_refresh_token_used(self, token_id: int) -> None:
+        with self._Session() as session:
+            row = session.query(RefreshTokenRow).filter_by(id=token_id).first()
+            if row:
+                row.last_used_at = datetime.utcnow()
+                session.commit()
+
+    def revoke_refresh_token(self, token_hash: str) -> None:
+        with self._Session() as session:
+            row = session.query(RefreshTokenRow).filter_by(token_hash=token_hash).first()
+            if row and not row.revoked_at:
+                row.revoked_at = datetime.utcnow()
                 session.commit()
 
     # ── Shift methods ─────────────────────────────────────────────────────────

@@ -5,6 +5,9 @@ BASE_URL ?= http://$(HOST):$(PORT)
 SECRET_KEY ?= dev-local-secret
 DATABASE_URL ?= sqlite:///./petition_verifier.db
 DEV_AUTO_LOGIN ?= true
+BOOTSTRAP_ADMIN_EMAIL ?= admin@app.local
+BOOTSTRAP_ADMIN_PASSWORD ?= dev-local-admin-password
+BOOTSTRAP_ADMIN_NAME ?= Local Admin
 
 .PHONY: setup compile test-fast check-system-deps fixtures test db-upgrade db-sql web-install web-generate-api web-build web-test web-e2e run smoke-local
 
@@ -51,14 +54,14 @@ web-e2e:
 
 run:
 	DATABASE_URL=$(DATABASE_URL) PYTHONPATH=src $(PYTHON) -m alembic upgrade head
-	DATABASE_URL=$(DATABASE_URL) SECRET_KEY=$(SECRET_KEY) DEV_AUTO_LOGIN=$(DEV_AUTO_LOGIN) PYTHONPATH=src $(PYTHON) -m uvicorn petition_verifier.api:app --host $(HOST) --port $(PORT)
+	DATABASE_URL=$(DATABASE_URL) SECRET_KEY=$(SECRET_KEY) DEV_AUTO_LOGIN=$(DEV_AUTO_LOGIN) BOOTSTRAP_ADMIN_EMAIL=$(BOOTSTRAP_ADMIN_EMAIL) BOOTSTRAP_ADMIN_PASSWORD=$(BOOTSTRAP_ADMIN_PASSWORD) BOOTSTRAP_ADMIN_NAME="$(BOOTSTRAP_ADMIN_NAME)" PYTHONPATH=src $(PYTHON) -m uvicorn petition_verifier.api:app --host $(HOST) --port $(PORT)
 
 smoke-local:
 	curl -sf "$(BASE_URL)/health"
 	curl -sf "$(BASE_URL)/auth/active-users"
 	TOKEN=$$(curl -sf -X POST "$(BASE_URL)/auth/login" \
 		-H "Content-Type: application/json" \
-		-d '{"email":"arianafan2000@app.local","password":"arianafan2000"}' \
+		-d '{"email":"$(BOOTSTRAP_ADMIN_EMAIL)","password":"$(BOOTSTRAP_ADMIN_PASSWORD)"}' \
 		| $(PYTHON) -c "import sys,json; print(json.load(sys.stdin)['access_token'])"); \
 	curl -sf "$(BASE_URL)/review/packets" -H "Authorization: Bearer $$TOKEN"; \
 	curl -sf "$(BASE_URL)/projects" -H "Authorization: Bearer $$TOKEN"; \

@@ -37,17 +37,29 @@ function token(): string {
   return window.localStorage.getItem('pv_token') ?? '';
 }
 
+function cookie(name: string): string {
+  return document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=') ?? '';
+}
+
 function jsonHeaders(): HeadersInit {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   const bearer = token();
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  const csrf = cookie('pv_csrf');
+  if (csrf) headers['X-CSRF-Token'] = decodeURIComponent(csrf);
   return headers;
 }
 
 async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(jsonHeaders());
   new Headers(init.headers).forEach((value, key) => headers.set(key, value));
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'same-origin' });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = typeof body.detail === 'string' ? body.detail : `HTTP ${response.status}`;
@@ -59,6 +71,7 @@ async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 async function apiBlob(path: string): Promise<Blob> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: jsonHeaders(),
+    credentials: 'same-origin',
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -67,7 +80,7 @@ async function apiBlob(path: string): Promise<Blob> {
 }
 
 export const api = {
-  hasLegacyToken: () => Boolean(token()),
+  hasSession: () => Boolean(token() || cookie('pv_csrf')),
   listPackets: () => apiJson<PacketList>('/review/packets'),
   getPacket: (packetId: number) => apiJson<PacketDetail>(`/review/packets/${packetId}`),
   counties: () => apiJson<string[]>('/review/counties'),

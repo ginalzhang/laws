@@ -69,7 +69,7 @@ make smoke-local
 - Local DB defaults to `sqlite:///./petition_verifier.db`.
 - Review packet uploads use `packet_uploads/` relative to the process working directory.
 - OCR behavior changes with `OCR_BACKEND`, `ANTHROPIC_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, and `REDUCTO_API_KEY`.
-- Startup creates/updates permanent demo accounts in `api.py`.
+- Startup can create one boss account from `BOOTSTRAP_ADMIN_*`; additional users should be created with `pvfy admin create-user`.
 - Some auth/dev shortcuts and maintenance endpoints are intentionally present today; document behavior before changing it.
 - `pyproject.toml` is the local source of truth. Use `pip install -e '.[dev]'` for normal work and add `.[vision]` when changing Google Vision or field-vision OCR paths.
 - `requirements.txt` is a legacy pinned snapshot; `requirements-deploy.txt` is for Render.

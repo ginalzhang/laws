@@ -20,7 +20,7 @@ Routes are split between legacy handlers in `src/petition_verifier/api.py` and m
 ## Mounted Routers
 | Prefix | File | Notes |
 | --- | --- | --- |
-| `/auth` | `routes/auth_routes.py` | login, dev-token, scan-login, active users, FM helpers, current user |
+| `/auth` | `routes/auth_routes.py` | login, refresh, logout, dev-token, scan-login, active users, FM helpers, current user |
 | `/workers` | `routes/worker_routes.py` | worker CRUD, wage, assignments, manual sigs, activate/deactivate |
 | `/shifts` | `routes/shift_routes.py` | clock-in/out, manual shifts, approval, notes, deletion |
 | `/schedule` | `routes/schedule_routes.py` | schedule requests |
@@ -43,4 +43,4 @@ Routes are split between legacy handlers in `src/petition_verifier/api.py` and m
 - `web/`: React review queue milestone calling `/review/*`; it keeps current bearer-token compatibility and does not replace vanilla routes yet.
 
 ## Auth Notes
-Current auth behavior is mixed. Some endpoints use bearer auth through `get_current_user`, some are public, and some maintenance/demo endpoints are unauthenticated. Treat auth changes as product/security changes, not cleanup.
+Auth accepts legacy bearer tokens and same-origin cookies during transition. Cookie-authenticated unsafe methods require `X-CSRF-Token` matching `pv_csrf`. Some endpoints are still public or development-only; treat further auth tightening as product/security work, not cleanup.

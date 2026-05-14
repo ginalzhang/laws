@@ -26,7 +26,7 @@ describe('Review queue app', () => {
 
   test('shows a session warning without the legacy token', () => {
     renderApp();
-    expect(screen.getByText('No active session token found.')).toBeInTheDocument();
+    expect(screen.getByText('No active session found.')).toBeInTheDocument();
   });
 
   test('renders packet detail and review rows from the API', async () => {

@@ -166,6 +166,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh */
+        post: operations["refresh_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -1660,7 +1677,7 @@ export interface paths {
         put?: never;
         /**
          * Fix Reset Permanent
-         * @description Force-reset permanent account passwords to match hardcoded values.
+         * @description Deprecated: permanent hardcoded accounts were replaced by bootstrap/admin CLI.
          */
         post: operations["fix_reset_permanent_fix_reset_permanent_post"];
         delete?: never;
@@ -2475,6 +2492,26 @@ export interface operations {
         };
     };
     logout_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    refresh_auth_refresh_post: {
         parameters: {
             query?: never;
             header?: never;

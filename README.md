@@ -60,6 +60,20 @@ Review migration SQL before applying to production:
 make db-sql
 ```
 
+## Admin Bootstrap
+Startup can create one boss account from `BOOTSTRAP_ADMIN_EMAIL`,
+`BOOTSTRAP_ADMIN_PASSWORD`, and `BOOTSTRAP_ADMIN_NAME`. Existing accounts are
+not reset.
+
+Create users explicitly with:
+```bash
+pvfy admin create-user --email admin@example.com --full-name "Admin User" --role boss
+pvfy admin list-users
+```
+
+Login now sets httpOnly access/refresh cookies while still returning the legacy
+bearer token for existing pages during the transition.
+
 ## Where To Change Things
 | Area | Start here |
 | --- | --- |

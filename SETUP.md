@@ -164,6 +164,28 @@ make db-sql
 
 `make run` applies migrations before starting FastAPI.
 
+## Admin users
+
+For local development, `make run` creates a one-time boss account from the
+`BOOTSTRAP_ADMIN_*` defaults in the `Makefile`. For other environments, set:
+
+```bash
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=long-secure-password
+BOOTSTRAP_ADMIN_NAME="Admin User"
+```
+
+Or create users explicitly:
+
+```bash
+pvfy admin create-user --email admin@example.com --full-name "Admin User" --role boss
+pvfy admin list-users
+```
+
+Login returns the legacy bearer token and also sets `pv_access`, `pv_refresh`,
+and `pv_csrf` cookies. Existing bearer-token pages keep working during the
+transition.
+
 Regenerate fixtures only when intentionally updating `tests/fixtures/`:
 ```bash
 make fixtures

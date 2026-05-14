@@ -55,21 +55,10 @@ from .upload_validation import PETITION_SUFFIXES, VOTER_ROLL_SUFFIXES, read_vali
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
-# ── Development-only bootstrap accounts ──────────────────────────────────────
-_PERMANENT_USERS = [
-    {"email": "arianafan2000@app.local", "password": "arianafan2000", "role": "boss", "full_name": "arianafan2000"},
-    {"email": "evan@app.local",          "password": "evan",          "role": "evan", "full_name": "evann"},
-]
-
 @app.on_event("startup")
-async def ensure_dev_users():
+async def ensure_dev_settings():
     if not dev_auto_login_enabled():
         return
-    from .auth import hash_password
-    for u in _PERMANENT_USERS:
-        existing = db.get_user_by_email(u["email"])
-        if not existing:
-            db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
     # Seed default FM team password only for explicit development mode.
     if not db.get_setting("fm_password"):
         db.set_setting("fm_password", "seals")
@@ -925,19 +914,9 @@ async def fix_activate_users():
 
 @app.post("/fix-reset-permanent")
 async def fix_reset_permanent():
-    """Force-reset permanent account passwords to match hardcoded values."""
+    """Deprecated: permanent hardcoded accounts were replaced by bootstrap/admin CLI."""
     _require_dev_mode()
-    from .auth import hash_password
-    results = []
-    for u in _PERMANENT_USERS:
-        user = db.get_user_by_email(u["email"])
-        if not user:
-            db.create_user(u["email"], hash_password(u["password"]), u["role"], u["full_name"])
-            results.append(f"created {u['email']}")
-        else:
-            db.update_user(user.id, password_hash=hash_password(u["password"]), is_active=True)
-            results.append(f"reset {u['email']}")
-    return {"ok": True, "results": results}
+    raise HTTPException(410, "Permanent hardcoded accounts were replaced by BOOTSTRAP_ADMIN_* and pvfy admin create-user")
 
 
 @app.post("/fix-reset-boss")

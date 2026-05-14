@@ -2,12 +2,22 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from ..auth import (
-    dev_auto_login_enabled, hash_password, verify_password, create_token, get_current_user
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    create_csrf_token,
+    create_refresh_token_value,
+    create_token,
+    dev_auto_login_enabled,
+    get_current_user,
+    hash_password,
+    hash_refresh_token,
+    validate_csrf_request,
+    verify_password,
 )
 from ..storage import db
 
@@ -19,16 +29,59 @@ class LoginRequest(BaseModel):
     password: str
 
 
-@router.post("/login")
-async def login(payload: LoginRequest):
-    user = db.get_user_by_email(payload.email)
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(401, "Invalid email or password")
-    if not user.is_active:
-        raise HTTPException(403, "Account is deactivated")
-    token = create_token(user.id, user.role)
+def _cookie_secure(request: Request) -> bool:
+    host = request.url.hostname or ""
+    local_hosts = {"localhost", "127.0.0.1", "testserver"}
+    return host not in local_hosts and not dev_auto_login_enabled()
+
+
+def _set_cookie(
+    response: Response,
+    key: str,
+    value: str,
+    max_age: int,
+    *,
+    request: Request,
+    http_only: bool = True,
+) -> None:
+    response.set_cookie(
+        key,
+        value,
+        max_age=max_age,
+        httponly=http_only,
+        secure=_cookie_secure(request),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_session_cookies(response: Response, request: Request) -> None:
+    secure = _cookie_secure(request)
+    for name in ("pv_access", "pv_refresh", "pv_csrf"):
+        response.delete_cookie(name, path="/", secure=secure, samesite="lax")
+
+
+def _issue_session(response: Response, request: Request, user) -> str:
+    access_token = create_token(user.id, user.role)
+    refresh_token = create_refresh_token_value()
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.create_refresh_token(
+        user_id=user.id,
+        token_hash=hash_refresh_token(refresh_token),
+        expires_at=expires_at,
+        user_agent=request.headers.get("user-agent", ""),
+        ip_address=request.client.host if request.client else "",
+    )
+    csrf = create_csrf_token()
+    _set_cookie(response, "pv_access", access_token, 15 * 60, request=request)
+    _set_cookie(response, "pv_refresh", refresh_token, REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60, request=request)
+    _set_cookie(response, "pv_csrf", csrf, REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60, request=request, http_only=False)
+    return access_token
+
+
+def _legacy_login_body(user, access_token: str) -> dict:
     return {
-        "access_token": token,
+        "access_token": access_token,
         "token_type": "bearer",
         "role": user.role,
         "user_id": user.id,
@@ -36,8 +89,19 @@ async def login(payload: LoginRequest):
     }
 
 
+@router.post("/login")
+async def login(payload: LoginRequest, request: Request, response: Response):
+    user = db.get_user_by_email(payload.email)
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid email or password")
+    if not user.is_active:
+        raise HTTPException(403, "Account is deactivated")
+    token = _issue_session(response, request, user)
+    return _legacy_login_body(user, token)
+
+
 @router.get("/dev-token")
-async def dev_token():
+async def dev_token(request: Request, response: Response):
     """Return a boss token without credentials. Only works when DEV_AUTO_LOGIN=true in env."""
     if not dev_auto_login_enabled():
         raise HTTPException(403, "Dev auto-login is not enabled")
@@ -47,14 +111,8 @@ async def dev_token():
         boss = next((u for u in users if u.role == "admin"), None)
     if not boss:
         raise HTTPException(404, "No boss/admin user found — run /seed-demo-data first")
-    token = create_token(boss.id, boss.role)
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "role": boss.role,
-        "user_id": boss.id,
-        "full_name": boss.full_name,
-    }
+    token = _issue_session(response, request, boss)
+    return _legacy_login_body(boss, token)
 
 
 class NameLoginRequest(BaseModel):
@@ -62,7 +120,7 @@ class NameLoginRequest(BaseModel):
 
 
 @router.post("/login-by-name")
-async def login_by_name(payload: NameLoginRequest):
+async def login_by_name(payload: NameLoginRequest, request: Request, response: Response):
     if not dev_auto_login_enabled():
         raise HTTPException(403, "Name login is only available in development")
     user = db.get_user_by_name(payload.full_name)
@@ -70,14 +128,8 @@ async def login_by_name(payload: NameLoginRequest):
         raise HTTPException(401, "Name not found — check spelling or ask your manager")
     if not user.is_active:
         raise HTTPException(403, "Account is deactivated")
-    token = create_token(user.id, user.role)
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "role": user.role,
-        "user_id": user.id,
-        "full_name": user.full_name,
-    }
+    token = _issue_session(response, request, user)
+    return _legacy_login_body(user, token)
 
 
 @router.get("/active-users")
@@ -165,7 +217,7 @@ async def change_password(payload: ChangePasswordRequest, user: dict = Depends(g
 
 
 @router.post("/scan-login")
-async def scan_login(payload: dict):
+async def scan_login(payload: dict, request: Request, response: Response):
     if not dev_auto_login_enabled():
         raise HTTPException(403, "Scan login is only available in development")
     expected = os.getenv("SCAN_LOGIN_PASSWORD", "meow")
@@ -175,13 +227,36 @@ async def scan_login(payload: dict):
     boss = next((u for u in users if u.role in ("boss", "admin")), None)
     if not boss:
         raise HTTPException(404, "No admin user found — run seed first")
-    token = create_token(boss.id, boss.role)
-    return {"access_token": token, "token_type": "bearer", "role": boss.role, "user_id": boss.id, "full_name": boss.full_name}
+    token = _issue_session(response, request, boss)
+    return _legacy_login_body(boss, token)
 
 
 @router.post("/logout")
-async def logout():
-    return {"ok": True, "message": "Token invalidated client-side"}
+async def logout(request: Request, response: Response):
+    refresh_token = request.cookies.get("pv_refresh")
+    if refresh_token:
+        validate_csrf_request(request)
+        db.revoke_refresh_token(hash_refresh_token(refresh_token))
+    _clear_session_cookies(response, request)
+    return {"ok": True, "message": "Session ended"}
+
+
+@router.post("/refresh")
+async def refresh(request: Request, response: Response):
+    refresh_token = request.cookies.get("pv_refresh")
+    if not refresh_token:
+        raise HTTPException(401, "Refresh token is missing")
+    validate_csrf_request(request)
+    token_hash = hash_refresh_token(refresh_token)
+    row = db.get_refresh_token(token_hash)
+    if not row or row.revoked_at or row.expires_at <= datetime.utcnow():
+        raise HTTPException(401, "Refresh token is invalid or expired")
+    user = db.get_user_by_id(row.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "User is inactive or missing")
+    db.revoke_refresh_token(token_hash)
+    token = _issue_session(response, request, user)
+    return _legacy_login_body(user, token)
 
 
 @router.get("/me")

@@ -2,7 +2,7 @@
 
 The production frontend is still the plain static HTML/CSS/JS in `ui/`. FastAPI serves entry pages from `api.py` and static assets from `/static`.
 
-A React/Vite milestone app now lives in `web/` for the review queue only. It is served at `/app/review` after `make web-build`, uses the existing bearer token in `localStorage`, and does not replace any vanilla page yet.
+A React/Vite milestone app now lives in `web/` for the review queue only. It is served at `/app/review` after `make web-build`, accepts the existing bearer token in `localStorage` or the new same-origin cookies, and does not replace any vanilla page yet.
 
 ## Entry Pages
 | URL | File | Primary role |
@@ -17,7 +17,8 @@ A React/Vite milestone app now lives in `web/` for the review queue only. It is 
 | `/app/review` | `web/` build output | React review queue milestone |
 
 ## State And Auth
-- Auth tokens are stored in `localStorage` under `pv_token`.
+- Legacy auth tokens are stored in `localStorage` under `pv_token`.
+- New login responses also set `pv_access`, `pv_refresh`, and `pv_csrf` cookies. Browser code should send `credentials: "same-origin"` and include `X-CSRF-Token` from `pv_csrf` for unsafe cookie-authenticated requests.
 - Common localStorage keys: `pv_token`, `pv_role`, `pv_user_id`, `pv_full_name`, and sometimes `pv_name`.
 - Session-only UI counters and install state use `sessionStorage`, especially `pv_sig_count` and `pv_install_dismissed`.
 - Most authenticated pages add `Authorization: Bearer <token>` manually inside local `api()` helpers.

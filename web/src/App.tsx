@@ -529,11 +529,11 @@ function HeaderActions({ packet }: { packet?: PacketDetail }) {
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const hasToken = api.hasLegacyToken();
+  const hasSession = api.hasSession();
   const packets = useQuery({
     queryKey: ['packets'],
     queryFn: api.listPackets,
-    enabled: hasToken,
+    enabled: hasSession,
   });
 
   useEffect(() => {
@@ -545,7 +545,7 @@ export function App() {
   const packet = useQuery({
     queryKey: ['packet', selectedId],
     queryFn: () => api.getPacket(selectedId as number),
-    enabled: hasToken && selectedId != null,
+    enabled: hasSession && selectedId != null,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === 'processing' || status === 'pending' ? 3000 : false;
@@ -582,8 +582,8 @@ export function App() {
             <h2 className="section-label">Packets</h2>
             <span className="text-xs text-muted">{packets.data?.length ?? 0}</span>
           </div>
-          {!hasToken ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">No active session token found.</div>
+          {!hasSession ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">No active session found.</div>
           ) : null}
           {packets.isLoading ? <div className="rounded-lg border border-line bg-white p-3 text-sm text-muted">Loading packets</div> : null}
           {packets.isError ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Failed to load packets</div> : null}

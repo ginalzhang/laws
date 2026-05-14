@@ -23,5 +23,6 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path):
     assert "projects" in tables
     assert "signatures" in tables
     assert "users" in tables
+    assert "refresh_tokens" in tables
     assert "review_packets" in tables
     assert "review_packet_lines" in tables

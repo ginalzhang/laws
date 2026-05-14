@@ -54,7 +54,7 @@ make fixtures
 ## Local Server
 ```bash
 DATABASE_URL=sqlite:///./petition_verifier.db PYTHONPATH=src python -m alembic upgrade head
-SECRET_KEY=dev-local-secret DEV_AUTO_LOGIN=true PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
+SECRET_KEY=dev-local-secret DEV_AUTO_LOGIN=true BOOTSTRAP_ADMIN_EMAIL=admin@app.local BOOTSTRAP_ADMIN_PASSWORD=dev-local-admin-password PYTHONPATH=src python -m uvicorn petition_verifier.api:app --host 0.0.0.0 --port 8000
 ```
 
 Equivalent:

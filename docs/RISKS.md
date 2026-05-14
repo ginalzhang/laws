@@ -3,10 +3,12 @@
 This file documents current behavior for future agents. Do not treat these notes as approval to expand risky patterns.
 
 ## Security/Auth
-- `api.py` recreates permanent startup accounts and resets their passwords on every startup.
-- `auth_routes.py` includes passwordless name login, a dev token path gated by `DEV_AUTO_LOGIN=true`, field-manager password helpers, and scan login.
+- Login sets short-lived access and long-lived refresh tokens in cookies while still returning a legacy bearer token during transition.
+- Unsafe cookie-authenticated requests require `X-CSRF-Token` matching the `pv_csrf` cookie.
+- Startup can create one boss account from `BOOTSTRAP_ADMIN_*`; it never resets existing passwords.
+- `auth_routes.py` still includes passwordless name login, a dev token path gated by `DEV_AUTO_LOGIN=true`, field-manager password helpers, and scan login.
 - Several app-level endpoints in `api.py` are public or have unclear role checks, including project browsing/processing, fraud scan, seed/demo, and fix endpoints.
-- CI currently logs in with the hardcoded startup boss account.
+- Admin users can be created with `pvfy admin create-user`; use `pvfy admin list-users` before auth cutovers.
 
 Changing any of this is a product/security decision. If a task touches auth, document the intended access model before editing.
 
