@@ -1,0 +1,15 @@
+{
+  "description": "Hand-labeled OCR eval scaffold. Replace synthetic rows with real sheet labels as real circulator sheets are collected.",
+  "sheets": [
+    {"sheet_id": "eval-sheet-001", "image_path": "", "rows": [{"line_number": 1, "name": "Reggie Ellison", "address": "123 Oak Ave, Pasadena, 91101"}]},
+    {"sheet_id": "eval-sheet-002", "image_path": "", "rows": [{"line_number": 1, "name": "Jaime D Wone", "address": "45 Pine St, Los Angeles, 90001"}]},
+    {"sheet_id": "eval-sheet-003", "image_path": "", "rows": [{"line_number": 1, "name": "Maria Lopez", "address": "7 Cedar Rd, Long Beach, 90802"}]},
+    {"sheet_id": "eval-sheet-004", "image_path": "", "rows": [{"line_number": 1, "name": "Anthony Nguyen", "address": "81 Palm Dr, Anaheim, 92805"}]},
+    {"sheet_id": "eval-sheet-005", "image_path": "", "rows": [{"line_number": 1, "name": "Denise Carter", "address": "910 Maple Way, Oakland, 94607"}]},
+    {"sheet_id": "eval-sheet-006", "image_path": "", "rows": [{"line_number": 1, "name": "Priya Shah", "address": "224 Mission St, San Francisco, 94105"}]},
+    {"sheet_id": "eval-sheet-007", "image_path": "", "rows": [{"line_number": 1, "name": "Omar Garcia", "address": "19 River Ln, Sacramento, 95814"}]},
+    {"sheet_id": "eval-sheet-008", "image_path": "", "rows": [{"line_number": 1, "name": "Linda Brooks", "address": "502 Hill St, San Diego, 92101"}]},
+    {"sheet_id": "eval-sheet-009", "image_path": "", "rows": [{"line_number": 1, "name": "Marcus Reed", "address": "33 Valley Blvd, Fresno, 93721"}]},
+    {"sheet_id": "eval-sheet-010", "image_path": "", "rows": [{"line_number": 1, "name": "Evelyn Kim", "address": "68 Garden Ave, San Jose, 95112"}]}
+  ]
+}

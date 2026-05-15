@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 from PIL import Image
 
 from petition_verifier.extraction import extract_row_ensemble
-from petition_verifier.extraction.ensemble import _validate
+from petition_verifier.extraction.ensemble import _validate, consensus_from_extractions
 
 
 def _fake_response(payload: dict) -> SimpleNamespace:
@@ -70,6 +70,7 @@ def test_pipeline_returns_reconciled_fields():
     assert result["zip_code"] == "91101"
     assert result["disagreements"] == []
     assert result["validation_flags"] == []
+    assert result["unreliable_fields"] == ["address"]
     assert result["extractions"]["haiku"] == haiku
     assert result["extractions"]["sonnet"] == sonnet
     assert len(client.calls) == 3
@@ -183,3 +184,46 @@ def test_pipeline_uses_prompt_caching():
         system = call["system"]
         assert isinstance(system, list)
         assert system[0].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_consensus_from_extractions_marks_disagreements_unreliable():
+    haiku = {
+        "name": "Reggie Ellison", "name_confidence": 84,
+        "address": "123 Oak Ave", "address_confidence": 82,
+        "city": "Pasadena", "city_confidence": 80,
+        "zip_code": "91101", "zip_confidence": 90,
+    }
+    sonnet = {
+        "name": "Boyce Shelton", "name_confidence": 86,
+        "address": "123 Oak Ave", "address_confidence": 80,
+        "city": "Pasadena", "city_confidence": 80,
+        "zip_code": "91101", "zip_confidence": 90,
+    }
+
+    consensus = consensus_from_extractions(haiku, sonnet)
+
+    assert consensus["name"] == ""
+    assert consensus["address"] == "123 Oak Ave"
+    assert consensus["city"] == "Pasadena"
+    assert consensus["zip_code"] == "91101"
+    assert consensus["unreliable_fields"] == ["name"]
+
+
+def test_consensus_from_extractions_requires_minimum_confidence():
+    haiku = {
+        "name": "Jane Doe", "name_confidence": 45,
+        "address": "1 Main St", "address_confidence": 80,
+        "city": "LA", "city_confidence": 80,
+        "zip_code": "90001", "zip_confidence": 80,
+    }
+    sonnet = {
+        "name": "Jane Doe", "name_confidence": 85,
+        "address": "1 Main St", "address_confidence": 80,
+        "city": "LA", "city_confidence": 80,
+        "zip_code": "90001", "zip_confidence": 80,
+    }
+
+    consensus = consensus_from_extractions(haiku, sonnet)
+
+    assert consensus["name"] == ""
+    assert consensus["unreliable_fields"] == ["name"]

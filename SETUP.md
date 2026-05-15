@@ -99,6 +99,13 @@ Staff only needs to review the yellow rows — typically 20-30% of submissions.
 Review packet uploads also store per-row image crops under `packet_uploads/row_crops/`
 so staff can compare OCR text with the source handwriting inline.
 
+Consensus extraction is feature-flagged while the eval set is expanded:
+
+```bash
+# In .env, only after testing on labeled sheets:
+EXTRACTION_PIPELINE=consensus
+```
+
 ## Swap to Reducto OCR (when ready)
 
 1. Add your API key to `.env`:

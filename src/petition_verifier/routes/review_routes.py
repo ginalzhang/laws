@@ -161,6 +161,85 @@ def _save_row_crops(preprocessed, packet_id: int, raw_path: Path, row_count: int
     return crop_paths
 
 
+def _consensus_pipeline_enabled() -> bool:
+    return os.getenv("EXTRACTION_PIPELINE", "").strip().lower() == "consensus"
+
+
+def _merge_unique_fields(existing: list[str], additions: list[str]) -> list[str]:
+    merged = list(existing)
+    for field in additions:
+        if field not in merged:
+            merged.append(field)
+    return merged
+
+
+def _address_from_consensus(consensus: dict) -> str:
+    parts = [
+        consensus.get("address") or "",
+        consensus.get("city") or "",
+        consensus.get("zip_code") or "",
+    ]
+    return ", ".join(part.strip() for part in parts if part and part.strip())
+
+
+def _apply_consensus_to_signatures(
+    extracted_sigs: list,
+    crop_paths: dict[int, str],
+    *,
+    extractor=None,
+) -> None:
+    """Mutate signatures with strict two-model consensus metadata.
+
+    The consensus pipeline is feature-flagged because it can call external
+    vision APIs. Disagreed fields are marked low-confidence instead of choosing
+    a plausible-looking value.
+    """
+    if extractor is None:
+        from ..extraction import extract_row_ensemble
+
+        extractor = extract_row_ensemble
+
+    from PIL import Image
+
+    for index, sig in enumerate(extracted_sigs, start=1):
+        crop_path = crop_paths.get(index)
+        if not crop_path:
+            sig.low_confidence_fields = _merge_unique_fields(
+                getattr(sig, "low_confidence_fields", []),
+                ["name", "address"],
+            )
+            continue
+        try:
+            with Image.open(crop_path) as crop:
+                result = extractor(crop.convert("RGB"), county="")
+        except Exception as exc:
+            print(
+                f"[_process_packet] consensus extraction failed on row {index}: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            sig.low_confidence_fields = _merge_unique_fields(
+                getattr(sig, "low_confidence_fields", []),
+                ["name", "address"],
+            )
+            continue
+
+        consensus = result.get("consensus") or result
+        unreliable = _normalise_low_confidence_fields(
+            result.get("unreliable_fields") or consensus.get("unreliable_fields") or []
+        )
+        if "name" not in unreliable and consensus.get("name"):
+            sig.raw_name = str(consensus["name"]).strip()
+        if "address" not in unreliable:
+            agreed_address = _address_from_consensus(consensus)
+            if agreed_address:
+                sig.raw_address = agreed_address
+        sig.low_confidence_fields = _merge_unique_fields(
+            getattr(sig, "low_confidence_fields", []),
+            unreliable,
+        )
+
+
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @router.post("/upload")
@@ -976,6 +1055,11 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
                     flush=True,
                 )
 
+    row_count = max(7, len(extracted_sigs))
+    crop_paths = _save_row_crops(preprocessed, packet_id, raw_path, row_count)
+    if _consensus_pipeline_enabled() and extracted_sigs:
+        _apply_consensus_to_signatures(extracted_sigs, crop_paths)
+
     # ── Convert ExtractedSignature → page_rows ────────────────────────────────
     _zip_re = _re.compile(r"^\d{5}$")
 
@@ -1019,8 +1103,6 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
         if i not in filled:
             page_rows.append(_blank_row(i))
     page_rows.sort(key=lambda r: r["row_number"])
-    row_count = max((r["row_number"] for r in page_rows), default=7)
-    crop_paths = _save_row_crops(preprocessed, packet_id, raw_path, row_count)
     for r in page_rows:
         r["crop_path"] = crop_paths.get(r["row_number"], "")
 

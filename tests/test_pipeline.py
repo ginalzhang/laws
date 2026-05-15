@@ -112,3 +112,57 @@ def test_review_packet_low_confidence_fields_fall_back_from_row_confidence(monke
     assert _low_confidence_fields_for_sig(low) == ["name", "address"]
     assert _low_confidence_fields_for_sig(high) == []
     assert _low_confidence_fields_for_sig(explicit) == ["name", "address"]
+
+
+def test_consensus_pipeline_marks_disagreed_fields_low_confidence(tmp_path):
+    from PIL import Image
+
+    from petition_verifier.models import ExtractedSignature
+    from petition_verifier.routes.review_routes import _apply_consensus_to_signatures
+
+    crop_path = tmp_path / "row-1.jpg"
+    Image.new("RGB", (240, 60), "white").save(crop_path)
+    sig = ExtractedSignature(
+        line_number=1,
+        page=1,
+        raw_name="Boyce Shelton",
+        raw_address="123 Oak Ave",
+        signature_present=True,
+        ocr_confidence=0.95,
+    )
+
+    def fake_extractor(_crop, county=""):
+        return {
+            "consensus": {
+                "name": "",
+                "address": "123 Oak Ave",
+                "city": "Pasadena",
+                "zip_code": "91101",
+                "unreliable_fields": ["name"],
+            },
+            "unreliable_fields": ["name"],
+        }
+
+    _apply_consensus_to_signatures([sig], {1: str(crop_path)}, extractor=fake_extractor)
+
+    assert sig.raw_name == "Boyce Shelton"
+    assert sig.raw_address == "123 Oak Ave, Pasadena, 91101"
+    assert sig.low_confidence_fields == ["name"]
+
+
+def test_consensus_pipeline_fails_closed_when_crop_missing():
+    from petition_verifier.models import ExtractedSignature
+    from petition_verifier.routes.review_routes import _apply_consensus_to_signatures
+
+    sig = ExtractedSignature(
+        line_number=1,
+        page=1,
+        raw_name="Reggie Ellison",
+        raw_address="123 Oak Ave",
+        signature_present=True,
+        ocr_confidence=0.95,
+    )
+
+    _apply_consensus_to_signatures([sig], {}, extractor=lambda *_args, **_kwargs: {})
+
+    assert sig.low_confidence_fields == ["name", "address"]

@@ -46,6 +46,18 @@ RECONCILE_MODEL = "claude-sonnet-4-6"
 
 # CA zip range: 90000-96199
 _CA_ZIP_RE = re.compile(r"^(9[0-5]\d{3}|96[01]\d{2})$")
+_FIELD_VALUE_KEYS = {
+    "name": "name",
+    "address": "address",
+    "city": "city",
+    "zip": "zip_code",
+}
+_FIELD_CONFIDENCE_KEYS = {
+    "name": "name_confidence",
+    "address": "address_confidence",
+    "city": "city_confidence",
+    "zip": "zip_confidence",
+}
 
 
 # ── JSON Schemas for structured outputs ───────────────────────────────────────
@@ -282,6 +294,57 @@ def _validate(reconciled: dict[str, Any], county: str = "") -> list[str]:
     return flags
 
 
+# ── Strict consensus gate ────────────────────────────────────────────────────
+
+def _normalise_for_compare(value: str, *, field: str) -> str:
+    value = (value or "").strip().lower()
+    if field == "zip":
+        return re.sub(r"\D", "", value)
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _field_agrees(extraction_a: dict[str, Any], extraction_b: dict[str, Any], field: str) -> bool:
+    value_key = _FIELD_VALUE_KEYS[field]
+    left = _normalise_for_compare(str(extraction_a.get(value_key) or ""), field=field)
+    right = _normalise_for_compare(str(extraction_b.get(value_key) or ""), field=field)
+    return bool(left and right and left == right)
+
+
+def consensus_from_extractions(
+    extraction_a: dict[str, Any],
+    extraction_b: dict[str, Any],
+    *,
+    min_confidence: int = 50,
+) -> dict[str, Any]:
+    """Require two extraction agents to agree field-by-field.
+
+    Disagreements are returned as unreliable fields instead of being reconciled
+    into a plausible-looking final value. The caller may still retain raw OCR
+    values for audit/debug, but UI code must hide unreliable fields.
+    """
+    consensus: dict[str, Any] = {
+        "name": "",
+        "address": "",
+        "city": "",
+        "zip_code": "",
+        "unreliable_fields": [],
+    }
+    for field, value_key in _FIELD_VALUE_KEYS.items():
+        conf_key = _FIELD_CONFIDENCE_KEYS[field]
+        left_conf = int(extraction_a.get(conf_key) or 0)
+        right_conf = int(extraction_b.get(conf_key) or 0)
+        if (
+            _field_agrees(extraction_a, extraction_b, field)
+            and left_conf >= min_confidence
+            and right_conf >= min_confidence
+        ):
+            consensus[value_key] = (extraction_a.get(value_key) or extraction_b.get(value_key) or "").strip()
+        else:
+            consensus["unreliable_fields"].append(field)
+    return consensus
+
+
 # ── Conductor (orchestrates the whole pipeline) ──────────────────────────────
 
 async def _extract_row_async(
@@ -305,12 +368,15 @@ async def _extract_row_async(
 
     reconciled = await _call_reconcile(client, extraction_a, extraction_b)
     flags = _validate(reconciled, county)
+    consensus = consensus_from_extractions(extraction_a, extraction_b)
 
     return {
         "name": reconciled.get("name", ""),
         "address": reconciled.get("address", ""),
         "city": reconciled.get("city", ""),
         "zip_code": reconciled.get("zip_code", ""),
+        "consensus": consensus,
+        "unreliable_fields": consensus["unreliable_fields"],
         "extractions": {"haiku": extraction_a, "sonnet": extraction_b},
         "disagreements": reconciled.get("disagreements", []),
         "validation_flags": flags,

@@ -26,6 +26,7 @@ Changing any of this is a product/security decision. If a task touches auth, doc
 - `OCR_BACKEND=reducto` needs `REDUCTO_API_KEY`.
 - Review packet processing has additional Claude/Google Vision fallback behavior controlled by available keys.
 - `OCR_CONFIDENCE_THRESHOLD` defaults to `0.85`; review-packet fields below the threshold are hidden as unreadable and require explicit review/override before approval.
+- `EXTRACTION_PIPELINE=consensus` is opt-in and marks row-crop fields unreliable unless two extraction agents agree; keep it off until the labeled eval set is representative.
 - Startup performs an Anthropic connectivity check if `ANTHROPIC_API_KEY` is set.
 
 ## Dependency Gotchas
