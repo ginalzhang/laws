@@ -490,12 +490,7 @@ async function submitPetition(e) {
     fd.append('petition', file);
     fd.append('voter_roll_file', voterRoll);
     if (county) fd.append('county', county);
-    const res = await fetch(`${API}/process`, { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || res.statusText);
-    }
-    return res.json();
+    return apiFetch('/process', { method: 'POST', body: fd });
   }
 
   // Fire all requests in parallel
@@ -691,12 +686,7 @@ async function runFraudScan() {
     setFItem(idx, 'running', '⏳', 'Scanning…');
     const fd = new FormData();
     fd.append('petition', file);
-    const res = await fetch(`${API}/fraud-scan`, { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || res.statusText);
-    }
-    return res.json();
+    return apiFetch('/fraud-scan', { method: 'POST', body: fd });
   }
 
   const results = await Promise.allSettled(files.map((f, i) => scanOne(f, i)));
@@ -829,9 +819,14 @@ function exportCsv() {
 // ── Util ──────────────────────────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
   const isJson = opts.body && typeof opts.body === 'string';
+  const headers = { ...(opts.headers || {}) };
+  const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === 'content-type');
+  if (isJson && !hasContentType) headers['Content-Type'] = 'application/json';
+  const token = localStorage.getItem('pv_token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(API + path, {
-    headers: isJson ? { 'Content-Type': 'application/json' } : {},
     ...opts,
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

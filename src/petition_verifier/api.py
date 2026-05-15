@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import os
 import tempfile
 import uuid
@@ -27,13 +26,13 @@ load_dotenv()
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .storage import db
 from .storage.database import check_schema_current
-from .auth import get_current_user
+from .auth import get_current_user, require_admin, require_private_owner_for_target
 from .routes.auth_routes import router as auth_router
 from .routes.worker_routes import router as worker_router
 from .routes.shift_routes import router as shift_router
@@ -271,7 +270,7 @@ async def react_review_app(path: str = ""):
 
 
 @app.get("/projects")
-async def list_projects():
+async def list_projects(_user: dict = Depends(require_admin)):
     rows = db.list_projects()
     return [
         {
@@ -295,6 +294,7 @@ async def list_signatures(
     status: Optional[str] = None,   # filter: approved|review|rejected|duplicate
     page: int = 1,
     page_size: int = 50,
+    _user: dict = Depends(require_admin),
 ):
     rows = db.get_project_signatures(project_id)
     if status:
@@ -311,7 +311,11 @@ async def list_signatures(
 
 
 @app.get("/projects/{project_id}/signatures/{line_number}")
-async def get_signature(project_id: str, line_number: int):
+async def get_signature(
+    project_id: str,
+    line_number: int,
+    _user: dict = Depends(require_admin),
+):
     rows = db.get_project_signatures(project_id)
     for r in rows:
         if r.line_number == line_number:
@@ -330,6 +334,7 @@ async def review_signature(
     project_id: str,
     line_number: int,
     payload: ReviewPayload,
+    _user: dict = Depends(require_admin),
 ):
     db.update_staff_review(
         project_id=project_id,
@@ -348,6 +353,7 @@ async def process_petition(
     voter_roll:      Optional[str]      = Form(None, description="Path to voter roll CSV on server"),
     voter_roll_file: Optional[UploadFile] = File(None, description="Voter roll CSV file upload"),
     petition:        UploadFile         = File(..., description="Petition photo or PDF"),
+    _user:           dict               = Depends(require_admin),
 ):
     """Accept a petition photo/PDF and optional voter roll, run the pipeline, save to DB."""
     from .pipeline import Pipeline
@@ -397,6 +403,7 @@ async def process_pdf(
     project_id: str,
     voter_roll: str     = Form(..., description="Path to voter roll CSV on server"),
     pdf: UploadFile     = File(...),
+    _user: dict         = Depends(require_admin),
 ):
     """Accept a PDF upload, run the pipeline, save to DB."""
     from .pipeline import Pipeline
@@ -422,6 +429,7 @@ async def process_pdf(
 @app.post("/fraud-scan")
 async def fraud_scan(
     petition: UploadFile = File(..., description="Petition photo or PDF to scan for fraud"),
+    _user: dict = Depends(require_admin),
 ):
     """
     Scan a petition for fraud indicators without a voter roll.
@@ -682,13 +690,13 @@ async def update_manual_count(
             project_id=project_id,
             count=payload.count,
         )
-    except ValueError:
-        raise HTTPException(404, "Project not assigned to you")
+    except ValueError as exc:
+        raise HTTPException(404, "Project not assigned to you") from exc
     return {"ok": True, "project_id": project_id, "manual_sig_count": payload.count}
 
 
 @app.get("/projects/{project_id}/export")
-async def export_csv(project_id: str):
+async def export_csv(project_id: str, _user: dict = Depends(require_admin)):
     """Download all signatures for a project as CSV."""
     rows = db.get_project_signatures(project_id)
     if not rows:
@@ -715,13 +723,20 @@ class AssignWorkerPayload(BaseModel):
 
 
 @app.post("/projects/{project_id}/assign")
-async def assign_project_to_worker(project_id: str, payload: AssignWorkerPayload):
+async def assign_project_to_worker(
+    project_id: str,
+    payload: AssignWorkerPayload,
+    user: dict = Depends(require_admin),
+):
     """Assign a project to a worker (admin+)."""
-    from .auth import get_current_user
+    worker = db.get_user_by_id(payload.worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     wp = db.assign_project_to_worker(
         worker_id=payload.worker_id,
         project_id=project_id,
-        assigned_by_id=None,
+        assigned_by_id=user["user_id"],
     )
     return {
         "ok": True,
@@ -736,8 +751,9 @@ async def assign_project_to_worker(project_id: str, payload: AssignWorkerPayload
 @app.post("/seed-demo-data")
 async def seed_demo_data():
     """Create demo users for development. Only works if explicitly enabled."""
-    from .auth import hash_password
     from datetime import date, timedelta
+
+    from .auth import hash_password
 
     if os.getenv("PVFY_ENABLE_DEMO_SEED", "").lower() != "true":
         raise HTTPException(404, "Not found")
@@ -751,9 +767,9 @@ async def seed_demo_data():
         raise HTTPException(400, "PVFY_DEMO_PASSWORD must be set to at least 8 characters.")
     pw = hash_password(demo_password)
 
-    boss = db.create_user("boss@petition.co", pw, "boss", "Jordan Boss", "+1-555-0100", 35.0)
-    admin1 = db.create_user("admin1@petition.co", pw, "admin", "Alex Admin", "+1-555-0101", 28.0)
-    admin2 = db.create_user("admin2@petition.co", pw, "admin", "Morgan Admin", "+1-555-0102", 28.0)
+    db.create_user("boss@petition.co", pw, "boss", "Jordan Boss", "+1-555-0100", 35.0)
+    db.create_user("admin1@petition.co", pw, "admin", "Alex Admin", "+1-555-0101", 28.0)
+    db.create_user("admin2@petition.co", pw, "admin", "Morgan Admin", "+1-555-0102", 28.0)
 
     wages = [22.0, 24.0, 25.0, 26.0, 28.0]
     workers = []

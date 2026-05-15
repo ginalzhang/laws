@@ -47,12 +47,15 @@ export type SignatureRow = {
 export type ReviewPayload = components["schemas"]["ReviewPayload"];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+
+  const token = localStorage.getItem("pv_token");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
     ...init,
+    headers,
   });
 
   if (!response.ok) {

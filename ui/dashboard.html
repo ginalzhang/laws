@@ -780,7 +780,11 @@
   let _name  = localStorage.getItem('pv_name')  || '';
 
   async function api(path, opts = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    const headers = { ...(opts.headers || {}) };
+    const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === 'content-type');
+    if (!(opts.body instanceof FormData) && !hasContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
     if (_token) headers['Authorization'] = 'Bearer ' + _token;
     const r = await fetch(path, { ...opts, headers });
     if (r.status === 401) { doLogout(); return; }
@@ -1671,7 +1675,7 @@
   async function loadPetitions() {
     try {
       const [projects, workers] = await Promise.all([
-        fetch('/projects').then(r => r.json()),
+        api('/projects'),
         api('/workers'),
       ]);
 
@@ -1713,9 +1717,8 @@
     if (!projectId || !workerId) { alert('Select project and worker'); return; }
     const msgEl = document.getElementById('assignMsg');
     try {
-      await fetch(`/projects/${projectId}/assign`, {
+      await api(`/projects/${projectId}/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ worker_id: workerId }),
       });
       msgEl.style.color = '#2e7d32';
@@ -1873,16 +1876,10 @@
     try {
       const fd = new FormData();
       fd.append('petition', file, file.name);
-      const res = await fetch('/fraud-scan', {
+      const data = await api('/fraud-scan', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
         body: fd,
       });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detail || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
       renderFraudScanResults(data, file.name);
     } catch(err) {
       showToast('Scan failed: ' + err.message, '#c62828');
