@@ -21,7 +21,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import pytesseract
 from pdf2image import convert_from_path
@@ -29,7 +28,6 @@ from PIL import Image
 
 from ..models import BoundingBox, ExtractedSignature
 from .pdf_processor import BasePDFProcessor
-
 
 # ── tunables ─────────────────────────────────────────────────────────────────
 DPI            = 400    # higher DPI = better handwriting recognition
@@ -196,7 +194,7 @@ def _detect_column_bands(rows: list[_Row], page_width: int) -> dict[str, tuple[f
     return DEFAULT_BANDS
 
 
-def _sig_present(row: _Row, band: tuple[float, float], page_width: int) -> tuple[bool, Optional[BoundingBox]]:
+def _sig_present(row: _Row, band: tuple[float, float], page_width: int) -> tuple[bool, BoundingBox | None]:
     lo = int(band[0] * page_width)
     hi = int(band[1] * page_width)
     words_in_sig = [w for w in row.words if lo <= w.cx < hi]
@@ -215,6 +213,17 @@ def _is_header_row(row: _Row) -> bool:
     text = " ".join(w.text.lower() for w in row.words)
     hits = sum(1 for hw in {"name","address","date","signature","city","zip","state"} if hw in text)
     return hits >= 3
+
+
+def _first_header_bottom(rows: list[_Row]) -> int | None:
+    for row in rows[:8]:
+        if _is_header_row(row):
+            return row.bottom
+    return None
+
+
+def _strip_leading_line_number(text: str) -> str:
+    return re.sub(r"^\s*\d+\s+", "", text).strip()
 
 
 # ── Block-format helpers ──────────────────────────────────────────────────────
@@ -399,12 +408,17 @@ class TesseractProcessor(BasePDFProcessor):
             else:
                 rows  = _cluster_rows(words)
                 bands = _detect_column_bands(rows, page_width)
+                header_bottom = _first_header_bottom(rows)
                 page_sigs = []
 
                 for row in rows:
                     if _is_header_row(row):
                         continue
-                    name_text    = row.text_in_band(bands["name"],    page_width)
+                    if header_bottom is not None and row.top <= header_bottom:
+                        continue
+                    name_text    = _strip_leading_line_number(
+                        row.text_in_band(bands["name"], page_width)
+                    )
                     address_text = row.text_in_band(bands["address"], page_width)
                     date_text    = row.text_in_band(bands["date"],    page_width)
                     sig_present, sig_bbox = _sig_present(row, bands["sig"], page_width)
@@ -414,7 +428,7 @@ class TesseractProcessor(BasePDFProcessor):
                         continue
                     avg_conf = sum(w.conf for w in row.words) / len(row.words)
                     page_sigs.append(ExtractedSignature(
-                        line_number=line_counter,
+                        line_number=line_counter + len(page_sigs),
                         page=page_num,
                         raw_name=name_text,
                         raw_address=address_text,
@@ -423,7 +437,6 @@ class TesseractProcessor(BasePDFProcessor):
                         signature_bbox=sig_bbox,
                         ocr_confidence=round(avg_conf, 1),
                     ))
-                    line_counter += 1
 
             line_counter += len(page_sigs)
             all_sigs.extend(page_sigs)
