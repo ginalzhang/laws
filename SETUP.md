@@ -57,6 +57,18 @@ migrations after the baseline, roll back the most recent schema change with
 `pvfy db downgrade`, then redeploy the previous app version. Do not downgrade
 below the baseline; restore from backup instead.
 
+## Admin users
+
+After migrating the database, create login users from the CLI:
+
+```bash
+pvfy admin create-user manager@example.com field_manager --full-name "Manager Name"
+```
+
+The command prompts for a password unless `--password` or `PVFY_ADMIN_PASSWORD`
+is provided. Supported roles are `boss`, `admin`, `field_manager`, `worker`,
+`petitioner`, and `office_worker`.
+
 ## Voter roll CSV format
 
 Required columns (case-insensitive):

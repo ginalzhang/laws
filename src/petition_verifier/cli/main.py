@@ -1,3 +1,4 @@
+# ruff: noqa: UP045
 """
 CLI entry point — pvfy
 
@@ -11,13 +12,11 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
 import typer
 from dotenv import load_dotenv
-from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 
@@ -26,8 +25,19 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 app     = typer.Typer(name="pvfy", help="Petition signature verification pipeline")
 db_app  = typer.Typer(help="Database migration commands")
+admin_app = typer.Typer(help="Admin user commands")
 console = Console()
 app.add_typer(db_app, name="db")
+app.add_typer(admin_app, name="admin")
+
+VALID_USER_ROLES = {
+    "boss",
+    "admin",
+    "field_manager",
+    "worker",
+    "petitioner",
+    "office_worker",
+}
 
 
 def _require_voter_roll() -> Path:
@@ -55,6 +65,7 @@ def db_upgrade(
 ) -> None:
     """Apply database migrations."""
     from alembic import command
+
     from ..storage.database import has_unversioned_application_schema
 
     if revision == "head" and has_unversioned_application_schema():
@@ -94,8 +105,10 @@ def db_downgrade(
     revision: str = typer.Argument("-1", help="Alembic revision to downgrade to"),
 ) -> None:
     """Roll back database migrations."""
-    from alembic import command
     from alembic.migration import MigrationContext
+
+    from alembic import command
+
     from ..storage.database import create_database_engine
 
     with create_database_engine().connect() as conn:
@@ -108,6 +121,59 @@ def db_downgrade(
         raise typer.Exit(1)
 
     command.downgrade(_alembic_config(), revision)
+
+
+@admin_app.command("create-user")
+def admin_create_user(
+    email: str = typer.Argument(..., help="User email used for login"),
+    role: str = typer.Argument(..., help="Role to assign"),
+    full_name: Optional[str] = typer.Option(None, "--full-name", "-n"),
+    phone: str = typer.Option("", "--phone"),
+    hourly_wage: float = typer.Option(25.0, "--hourly-wage"),
+    password: Optional[str] = typer.Option(
+        None,
+        "--password",
+        envvar="PVFY_ADMIN_PASSWORD",
+        help="Initial password. If omitted, prompts securely.",
+    ),
+) -> None:
+    """Create a login user after the database has been migrated."""
+    from ..auth import hash_password
+    from ..storage import Database
+    from ..storage.database import check_schema_current
+
+    normalized_email = email.strip().lower()
+    normalized_role = role.strip().lower()
+    if normalized_role not in VALID_USER_ROLES:
+        allowed = ", ".join(sorted(VALID_USER_ROLES))
+        console.print(f"[red]Error:[/red] Invalid role '{role}'. Allowed roles: {allowed}.")
+        raise typer.Exit(1)
+    if not normalized_email:
+        console.print("[red]Error:[/red] Email is required.")
+        raise typer.Exit(1)
+
+    if password is None:
+        password = typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+    if len(password) < 6:
+        console.print("[red]Error:[/red] Password must be at least 6 characters.")
+        raise typer.Exit(1)
+
+    check_schema_current()
+    db = Database()
+    existing = db.get_user_by_email(normalized_email)
+    if existing:
+        console.print(f"[red]Error:[/red] User already exists: {normalized_email}")
+        raise typer.Exit(1)
+
+    user = db.create_user(
+        email=normalized_email,
+        password_hash=hash_password(password),
+        role=normalized_role,
+        full_name=full_name or normalized_email.split("@", maxsplit=1)[0],
+        phone=phone,
+        hourly_wage=hourly_wage,
+    )
+    console.print(f"[green]Created user {user.email}[/green] ({user.role})")
 
 
 @app.command()
@@ -284,7 +350,7 @@ def import_voters(
         raise typer.Exit(1)
 
     console.print(f"[green]✓ Voter roll looks good.[/green] Columns: {list(df.columns)}")
-    console.print(f"\nFirst 5 rows:")
+    console.print("\nFirst 5 rows:")
     table = Table(show_header=True)
     for col in df.columns[:8]:  # cap at 8 cols for readability
         table.add_column(col, style="cyan")
