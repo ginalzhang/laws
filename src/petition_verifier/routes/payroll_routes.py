@@ -8,10 +8,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_boss, require_worker
+from ..auth import (
+    filter_private_owner_records,
+    get_current_user,
+    is_private_owner_actor,
+    is_private_owner_record,
+    require_boss,
+    require_private_owner_for_target,
+    require_worker,
+)
+from ..payroll.calculator import calculate_pay_for_period
 from ..storage import db
 from ..storage.database import PayrollRecordRow
-from ..payroll.calculator import calculate_pay_for_period
 
 router = APIRouter()
 
@@ -94,6 +102,7 @@ async def payroll_preview(
     worker = db.get_user_by_id(target_worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
 
     # Use most recent open pay period if none specified
     if pay_period_id:
@@ -131,7 +140,17 @@ async def list_payroll_records(
 ):
     if user["role"] == "worker":
         worker_id = user["user_id"]
+    if worker_id is not None:
+        worker = db.get_user_by_id(worker_id)
+        if not worker:
+            raise HTTPException(404, "Worker not found")
+        require_private_owner_for_target(worker, user)
     records = db.get_payroll_records(worker_id=worker_id, pay_period_id=pay_period_id)
+    if worker_id is None and not is_private_owner_actor(user):
+        records = [
+            record for record in records
+            if not is_private_owner_record(db.get_user_by_id(record.worker_id))
+        ]
     return [_record_to_dict(r) for r in records]
 
 
@@ -162,7 +181,7 @@ async def run_payroll(pay_period_id: int, user: dict = Depends(require_boss)):
     if not pay_period:
         raise HTTPException(404, "Pay period not found")
 
-    workers = db.list_users()
+    workers = filter_private_owner_records(db.list_users())
     results = []
     for worker in workers:
         if not worker.is_active:

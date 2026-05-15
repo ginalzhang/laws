@@ -80,6 +80,9 @@ code. To recreate it after a database wipe, set `PVFY_OWNER_EMAIL` and
 `PVFY_OWNER_PASSWORD` before startup; the app will create that account with the
 `boss` role if it is missing. Optional env var: `PVFY_OWNER_NAME`.
 
+Demo seed data is disabled unless `PVFY_ENABLE_DEMO_SEED=true` is set. When
+enabled, it also requires `PVFY_DEMO_PASSWORD`.
+
 ## Voter roll CSV format
 
 Required columns (case-insensitive):

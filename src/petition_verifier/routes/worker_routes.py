@@ -1,13 +1,23 @@
 """Worker CRUD and stats routes."""
 from __future__ import annotations
 
-from datetime import datetime, date
-from typing import Optional  # noqa: F401 already used
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_boss, require_manager
+from ..auth import (
+    filter_private_owner_records,
+    get_current_user,
+    is_owner_email,
+    is_private_owner_record,
+    normalize_email,
+    require_admin,
+    require_boss,
+    require_manager,
+    require_private_owner_for_target,
+)
 from ..storage import db
 from ..storage.database import UserRow
 
@@ -94,6 +104,17 @@ def _user_to_dict(user: UserRow, include_stats: bool = False) -> dict:
 
 
 VALID_ROLES = ("boss", "admin", "worker", "field_manager", "petitioner", "office_worker")
+FIELD_MANAGER_CREATABLE_ROLES = {"worker", "petitioner"}
+ADMIN_CREATABLE_ROLES = {"admin", "worker", "field_manager", "petitioner", "office_worker"}
+
+
+def _ensure_role_can_be_assigned(actor: dict, role: str) -> None:
+    actor_role = actor["role"]
+    if actor_role == "field_manager" and role not in FIELD_MANAGER_CREATABLE_ROLES:
+        raise HTTPException(403, "Field managers can only create or edit worker roles")
+    if actor_role == "admin" and role not in ADMIN_CREATABLE_ROLES:
+        raise HTTPException(403, "Admins cannot create or edit boss users")
+
 
 class CreateWorkerRequest(BaseModel):
     email: str = ""
@@ -110,7 +131,7 @@ class UpdateWageRequest(BaseModel):
 
 @router.get("")
 async def list_workers(user: dict = Depends(require_manager)):
-    users = db.list_users()
+    users = filter_private_owner_records(db.list_users())
     if user["role"] == "field_manager":
         users = [u for u in users if u.role not in ("boss", "admin", "office_worker")]
     today_start   = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -128,11 +149,15 @@ async def list_workers(user: dict = Depends(require_manager)):
 @router.post("")
 async def create_worker(payload: CreateWorkerRequest, user: dict = Depends(require_manager)):
     import uuid as _uuid
+
     from ..auth import hash_password
     if payload.role not in VALID_ROLES:
         raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}")
+    _ensure_role_can_be_assigned(user, payload.role)
     # Auto-generate email and password if not provided
-    email = payload.email.strip() or f"worker_{_uuid.uuid4().hex[:8]}@local"
+    email = normalize_email(payload.email) or f"worker_{_uuid.uuid4().hex[:8]}@local"
+    if is_owner_email(email):
+        raise HTTPException(403, "Cannot create private owner account")
     existing = db.get_user_by_email(email)
     if existing:
         raise HTTPException(409, "Email already registered")
@@ -150,12 +175,13 @@ async def create_worker(payload: CreateWorkerRequest, user: dict = Depends(requi
 
 @router.get("/{worker_id}")
 async def get_worker(worker_id: int, user: dict = Depends(get_current_user)):
-    # Workers can only see their own detail
-    if user["role"] == "worker" and user["user_id"] != worker_id:
-        raise HTTPException(403, "Cannot view other workers")
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
+    # Workers can only see their own detail
+    if user["role"] == "worker" and user["user_id"] != worker_id:
+        raise HTTPException(403, "Cannot view other workers")
     return _user_to_dict(worker, include_stats=True)
 
 
@@ -168,6 +194,7 @@ async def update_wage(
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     if payload.hourly_wage <= 0:
         raise HTTPException(400, "Wage must be positive")
     db.update_user_wage(worker_id, payload.hourly_wage)
@@ -176,6 +203,10 @@ async def update_wage(
 
 @router.get("/{worker_id}/projects")
 async def get_worker_projects(worker_id: int, user: dict = Depends(get_current_user)):
+    worker = db.get_user_by_id(worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     if user["role"] == "worker" and user["user_id"] != worker_id:
         raise HTTPException(403, "Cannot view other workers")
     wps = db.get_worker_projects(worker_id)
@@ -210,14 +241,15 @@ async def add_manual_sigs(
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     if payload.sig_count < 1:
         raise HTTPException(400, "sig_count must be at least 1")
     sig_date = None
     if payload.date:
         try:
             sig_date = datetime.fromisoformat(payload.date)
-        except ValueError:
-            raise HTTPException(400, "Invalid date format — use YYYY-MM-DD")
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid date format — use YYYY-MM-DD") from exc
     project_id = db.create_manual_sig_entry(worker_id, payload.sig_count, payload.notes, sig_date=sig_date)
     return {"ok": True, "project_id": project_id, "sig_count": payload.sig_count, "date": payload.date or datetime.utcnow().date().isoformat()}
 
@@ -227,30 +259,47 @@ class UpdateWorkerRequest(BaseModel):
     phone: str = ""
     email: str = ""
     role: str = ""
-    hourly_wage: Optional[float] = None
+    hourly_wage: Optional[float] = None  # noqa: UP045
 
 
 @router.patch("/{worker_id}")
-async def update_worker(worker_id: int, payload: UpdateWorkerRequest):
+async def update_worker(
+    worker_id: int,
+    payload: UpdateWorkerRequest,
+    user: dict = Depends(require_manager),
+):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     updates = {}
-    if payload.full_name.strip(): updates["full_name"] = payload.full_name.strip()
-    if payload.phone.strip() or payload.phone == "": updates["phone"] = payload.phone.strip()
-    if payload.email.strip(): updates["email"] = payload.email.strip()
-    if payload.role and payload.role in VALID_ROLES: updates["role"] = payload.role
-    if payload.hourly_wage is not None and payload.hourly_wage > 0: updates["hourly_wage"] = payload.hourly_wage
+    if payload.full_name.strip():
+        updates["full_name"] = payload.full_name.strip()
+    if payload.phone.strip() or payload.phone == "":
+        updates["phone"] = payload.phone.strip()
+    if payload.email.strip():
+        email = normalize_email(payload.email)
+        if is_private_owner_record(worker) and not is_owner_email(email):
+            raise HTTPException(400, "Private owner email is managed by PVFY_OWNER_EMAIL")
+        if not is_private_owner_record(worker) and is_owner_email(email):
+            raise HTTPException(403, "Cannot assign private owner email")
+        updates["email"] = email
+    if payload.role and payload.role in VALID_ROLES:
+        _ensure_role_can_be_assigned(user, payload.role)
+        updates["role"] = payload.role
+    if payload.hourly_wage is not None and payload.hourly_wage > 0:
+        updates["hourly_wage"] = payload.hourly_wage
     if updates:
         db.update_user(worker_id, **updates)
     return _user_to_dict(db.get_user_by_id(worker_id))
 
 
 @router.delete("/{worker_id}")
-async def delete_worker(worker_id: int):
+async def delete_worker(worker_id: int, user: dict = Depends(require_manager)):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     db.update_user(worker_id, is_active=False)
     return {"ok": True}
 
@@ -260,6 +309,7 @@ async def deactivate_worker(worker_id: int, user: dict = Depends(require_manager
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     db.update_user(worker_id, is_active=False)
     return {"ok": True}
 
@@ -269,5 +319,6 @@ async def activate_worker(worker_id: int, user: dict = Depends(require_admin)):
     worker = db.get_user_by_id(worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     db.update_user(worker_id, is_active=True)
     return {"ok": True}

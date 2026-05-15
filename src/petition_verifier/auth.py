@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production-use-32-char-random-string")
 ALGORITHM = "HS256"
@@ -24,6 +24,47 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def get_owner_email() -> str:
+    return normalize_email(os.getenv("PVFY_OWNER_EMAIL"))
+
+
+def is_owner_email(email: str | None) -> bool:
+    owner_email = get_owner_email()
+    return bool(owner_email and normalize_email(email) == owner_email)
+
+
+def is_private_owner_record(user: object | None) -> bool:
+    return bool(user and is_owner_email(getattr(user, "email", "")))
+
+
+def is_private_owner_actor(user: dict) -> bool:
+    if is_owner_email(user.get("email")):
+        return True
+    owner_email = get_owner_email()
+    if not owner_email:
+        return False
+    try:
+        user_id = int(user["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    from .storage import db
+
+    return is_private_owner_record(db.get_user_by_id(user_id))
+
+
+def filter_private_owner_records(users: list) -> list:
+    return [user for user in users if not is_private_owner_record(user)]
+
+
+def require_private_owner_for_target(target_user: object | None, actor: dict) -> None:
+    if is_private_owner_record(target_user) and not is_private_owner_actor(actor):
+        raise HTTPException(status_code=404, detail="Worker not found")
 
 
 def create_token(user_id: int, role: str) -> str:
@@ -48,7 +89,7 @@ def decode_token(token: str) -> dict:
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),  # noqa: UP045
 ) -> dict:
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -57,7 +98,9 @@ def get_current_user(
 
 
 def require_role(*roles: str):
-    def dep(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> dict:
+    def dep(
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),  # noqa: UP045
+    ) -> dict:
         if not credentials:
             raise HTTPException(status_code=401, detail="Not authenticated")
         payload = decode_token(credentials.credentials)

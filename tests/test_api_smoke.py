@@ -10,9 +10,10 @@ import os
 import sys
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
+
+from alembic import command
 
 
 @pytest.fixture(scope="module")
@@ -76,3 +77,8 @@ class TestAuthGate:
         # Either 401 (unauth) or 200 if endpoint is intentionally public.
         # Document which one — both are valid app choices, but it must not 500.
         assert r.status_code != 500, f"projects list crashed: {r.text[:200]}"
+
+    async def test_demo_seed_endpoint_disabled_by_default(self, client):
+        r = await client.post("/seed-demo-data")
+
+        assert r.status_code == 404

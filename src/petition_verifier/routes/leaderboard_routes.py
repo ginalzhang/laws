@@ -1,14 +1,12 @@
 """Leaderboard routes."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends
 
-from ..auth import require_worker
+from ..auth import filter_private_owner_records, require_worker
 from ..storage import db
-from ..payroll.calculator import calculate_shift_bonus
 
 router = APIRouter()
 
@@ -35,7 +33,7 @@ async def leaderboard(
     pay_period_id: Optional[int] = None,
     user: dict = Depends(require_worker),
 ):
-    workers = db.list_users()
+    workers = filter_private_owner_records(db.list_users())
     entries = []
 
     # Bulk fetch everything in a few queries instead of N×M

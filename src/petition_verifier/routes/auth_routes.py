@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import (
-    hash_password, verify_password, create_token, get_current_user
+    create_token,
+    filter_private_owner_records,
+    get_current_user,
+    hash_password,
+    verify_password,
 )
 from ..storage import db
 
@@ -41,7 +45,7 @@ async def dev_token():
     """Return a boss token without credentials. Only works when DEV_AUTO_LOGIN=true in env."""
     if os.getenv("DEV_AUTO_LOGIN", "").lower() != "true":
         raise HTTPException(403, "Dev auto-login is not enabled")
-    users = db.list_users()
+    users = filter_private_owner_records(db.list_users())
     boss = next((u for u in users if u.role == "boss"), None)
     if not boss:
         boss = next((u for u in users if u.role == "admin"), None)

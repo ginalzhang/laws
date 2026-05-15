@@ -273,10 +273,15 @@
   <div id="loginOverlay" style="display:none;position:fixed;inset:0;background:#1a1a2e;z-index:999;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:14px;padding:40px 36px;width:340px;box-shadow:0 8px 40px rgba(0,0,0,.4);">
       <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:6px;color:#1a1a2e">Petition Verifier</h2>
-      <p style="font-size:.82rem;color:#888;margin-bottom:24px">Who are you?</p>
+      <p style="font-size:.82rem;color:#888;margin-bottom:24px">Sign in to continue</p>
       <div style="margin-bottom:20px">
-        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Your name</label>
-        <input id="loginUsername" type="text" placeholder="e.g. evan"
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Email</label>
+        <input id="loginEmail" type="email" autocomplete="username"
+          style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:5px">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password"
           style="width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;outline:none">
       </div>
       <div id="loginErr" style="color:#c62828;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
@@ -543,9 +548,9 @@
           <div class="card-title" style="margin-bottom:8px">Enter worker info in plain text</div>
           <p style="font-size:.82rem;color:#666;margin-bottom:14px">
             Type worker times and/or signature counts — e.g.
-            <em>"Maria 9am-5pm 47 sigs"</em>, <em>"Worker 2: 10am to 6:30pm, 33 signatures"</em>, or include a date: <em>"Maria Apr 23 47 sigs"</em>
+            <em>"Worker 1 9am-5pm 47 sigs"</em>, <em>"Worker 2: 10am to 6:30pm, 33 signatures"</em>, or include a date: <em>"Worker 1 Apr 23 47 sigs"</em>
           </p>
-          <textarea id="qeInput" rows="4" placeholder="e.g. Maria 9am-5pm 47 sigs&#10;Worker 3: 10am-4pm, 22 signatures&#10;Maria Apr 23 47 sigs&#10;Carlos 4/22 9am-5pm 33 sigs"
+          <textarea id="qeInput" rows="4" placeholder="e.g. Worker 1 9am-5pm 47 sigs&#10;Worker 3: 10am-4pm, 22 signatures&#10;Worker 1 Apr 23 47 sigs&#10;Worker 4 4/22 9am-5pm 33 sigs"
             style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:7px;font-size:.9rem;font-family:inherit;resize:vertical;outline:none"
             oninput="parseQuickEntry()"
           ></textarea>
@@ -805,15 +810,16 @@
   }
 
   async function submitLogin() {
-    const username = document.getElementById('loginUsername').value.trim().toLowerCase();
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
     const errEl = document.getElementById('loginErr');
     errEl.textContent = '';
-    if (!username) { errEl.textContent = 'Please enter your name.'; return; }
+    if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; return; }
     try {
       const data = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: username + '@app.local', password: username }),
+        body: JSON.stringify({ email, password }),
       }).then(async r => {
         if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
         return r.json();
@@ -839,7 +845,7 @@
 
   function applyRoleVisibility() {
     if (_role === 'field_manager') {
-      // Evan: workers + schedule + settings only
+      // Field managers: workers + schedule + settings only
       const allowed = new Set(['workers', 'schedule', 'settings']);
       document.querySelectorAll('.nav-item').forEach(el => {
         if (el.dataset.section && !allowed.has(el.dataset.section)) el.style.display = 'none';
@@ -1038,7 +1044,30 @@
   function openAddWorkerModal() {
     document.getElementById('addWorkerForm').reset();
     document.getElementById('addWorkerError').style.display = 'none';
+    syncWorkerRoleOptions(document.querySelector('#addWorkerForm select[name="role"]'));
     openModal('addWorkerModal');
+  }
+
+  function syncWorkerRoleOptions(select, selectedRole = '') {
+    const allRoles = [
+      ['petitioner', 'Petitioner'],
+      ['field_manager', 'Field Manager'],
+      ['office_worker', 'Office Worker'],
+      ['worker', 'Worker (general)'],
+      ['admin', 'Admin'],
+      ['boss', 'Boss'],
+    ];
+    const allowed = _role === 'boss'
+      ? allRoles
+      : _role === 'admin'
+        ? allRoles.filter(([value]) => value !== 'boss')
+        : allRoles.filter(([value]) => ['petitioner', 'worker'].includes(value));
+    select.innerHTML = allowed
+      .map(([value, label]) => `<option value="${value}">${label}</option>`)
+      .join('');
+    if (selectedRole && allowed.some(([value]) => value === selectedRole)) {
+      select.value = selectedRole;
+    }
   }
 
   async function submitAddWorker() {
@@ -1234,7 +1263,7 @@
     if (!w) return;
     document.getElementById('editWorkerId').value = w.id;
     document.getElementById('editWorkerName').value = w.full_name;
-    document.getElementById('editWorkerRole').value = w.role;
+    syncWorkerRoleOptions(document.getElementById('editWorkerRole'), w.role);
     document.getElementById('editWorkerPhone').value = w.phone || '';
     document.getElementById('editWorkerEmail').value = (w.email && !w.email.includes('@local')) ? w.email : '';
     document.getElementById('editWorkerWage').value = w.hourly_wage;

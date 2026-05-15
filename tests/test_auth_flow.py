@@ -46,6 +46,12 @@ def create_test_user(
     return user.id
 
 
+def auth_headers(user_id: int, role: str) -> dict[str, str]:
+    from petition_verifier.auth import create_token
+
+    return {"Authorization": f"Bearer {create_token(user_id, role)}"}
+
+
 @pytest.fixture
 async def client(app):
     await app.router.startup()
@@ -131,6 +137,129 @@ async def test_startup_recreates_owner_account_when_owner_password_is_set(tmp_pa
         assert verify_password("private-owner-password", user.password_hash)
     finally:
         await fastapi_app.router.shutdown()
+
+
+async def test_workers_list_hides_private_owner(client, monkeypatch):
+    monkeypatch.setenv("PVFY_OWNER_EMAIL", "private-owner@example.com")
+    create_test_user(
+        email="private-owner@example.com",
+        role="boss",
+        full_name="Private Owner",
+    )
+    admin_id = create_test_user(
+        email="admin@example.com",
+        role="admin",
+        full_name="Admin User",
+    )
+    create_test_user(
+        email="worker@example.com",
+        role="worker",
+        full_name="Worker User",
+    )
+
+    response = await client.get("/workers", headers=auth_headers(admin_id, "admin"))
+
+    assert response.status_code == 200
+    emails = {worker["email"] for worker in response.json()}
+    assert "private-owner@example.com" not in emails
+    assert {"admin@example.com", "worker@example.com"} <= emails
+
+
+async def test_non_owner_cannot_read_or_update_private_owner(client, monkeypatch):
+    monkeypatch.setenv("PVFY_OWNER_EMAIL", "private-owner@example.com")
+    owner_id = create_test_user(
+        email="private-owner@example.com",
+        role="boss",
+        full_name="Private Owner",
+    )
+    boss_id = create_test_user(
+        email="boss@example.com",
+        role="boss",
+        full_name="Non Owner Boss",
+    )
+
+    headers = auth_headers(boss_id, "boss")
+    read_response = await client.get(f"/workers/{owner_id}", headers=headers)
+    update_response = await client.patch(
+        f"/workers/{owner_id}",
+        json={"full_name": "Changed Owner"},
+        headers=headers,
+    )
+
+    assert read_response.status_code == 404
+    assert update_response.status_code == 404
+
+    from petition_verifier.storage import Database
+
+    assert Database().get_user_by_id(owner_id).full_name == "Private Owner"
+
+
+async def test_worker_create_and_update_cannot_claim_private_owner_email(client, monkeypatch):
+    monkeypatch.setenv("PVFY_OWNER_EMAIL", "private-owner@example.com")
+    boss_id = create_test_user(email="boss@example.com", role="boss", full_name="Boss")
+    worker_id = create_test_user(email="worker@example.com", role="worker", full_name="Worker")
+    headers = auth_headers(boss_id, "boss")
+
+    create_response = await client.post(
+        "/workers",
+        json={
+            "email": "private-owner@example.com",
+            "password": "secret123",
+            "role": "worker",
+            "full_name": "Fake Owner",
+        },
+        headers=headers,
+    )
+    update_response = await client.patch(
+        f"/workers/{worker_id}",
+        json={"email": "private-owner@example.com"},
+        headers=headers,
+    )
+
+    assert create_response.status_code == 403
+    assert update_response.status_code == 403
+
+
+async def test_field_manager_cannot_create_privileged_roles(client):
+    manager_id = create_test_user(
+        email="manager@example.com",
+        role="field_manager",
+        full_name="Manager",
+    )
+
+    response = await client.post(
+        "/workers",
+        json={
+            "email": "new-boss@example.com",
+            "password": "secret123",
+            "role": "boss",
+            "full_name": "New Boss",
+        },
+        headers=auth_headers(manager_id, "field_manager"),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_leaderboard_hides_private_owner(client, monkeypatch):
+    monkeypatch.setenv("PVFY_OWNER_EMAIL", "private-owner@example.com")
+    owner_id = create_test_user(
+        email="private-owner@example.com",
+        role="boss",
+        full_name="Private Owner",
+    )
+    worker_id = create_test_user(
+        email="worker@example.com",
+        role="worker",
+        full_name="Worker User",
+    )
+
+    response = await client.get("/leaderboard", headers=auth_headers(worker_id, "worker"))
+
+    assert response.status_code == 200
+    worker_ids = {entry["worker_id"] for entry in response.json()["leaderboard"]}
+    assert owner_id not in worker_ids
+    assert worker_id in worker_ids
 
 
 async def test_startup_bootstraps_admin_from_explicit_env(tmp_path, monkeypatch):

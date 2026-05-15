@@ -735,15 +735,21 @@ async def assign_project_to_worker(project_id: str, payload: AssignWorkerPayload
 
 @app.post("/seed-demo-data")
 async def seed_demo_data():
-    """Create demo users for development. Only works if no users exist."""
+    """Create demo users for development. Only works if explicitly enabled."""
     from .auth import hash_password
     from datetime import date, timedelta
+
+    if os.getenv("PVFY_ENABLE_DEMO_SEED", "").lower() != "true":
+        raise HTTPException(404, "Not found")
 
     existing = db.list_users()
     if existing:
         return {"ok": False, "message": f"Users already exist ({len(existing)} users). Skipping seed."}
 
-    pw = hash_password("password123")
+    demo_password = os.getenv("PVFY_DEMO_PASSWORD", "")
+    if len(demo_password) < 8:
+        raise HTTPException(400, "PVFY_DEMO_PASSWORD must be set to at least 8 characters.")
+    pw = hash_password(demo_password)
 
     boss = db.create_user("boss@petition.co", pw, "boss", "Jordan Boss", "+1-555-0100", 35.0)
     admin1 = db.create_user("admin1@petition.co", pw, "admin", "Alex Admin", "+1-555-0101", 28.0)
@@ -771,10 +777,6 @@ async def seed_demo_data():
     return {
         "ok": True,
         "message": "Seeded demo data",
-        "credentials": {
-            "boss": "boss@petition.co / password123",
-            "admin1": "admin1@petition.co / password123",
-            "admin2": "admin2@petition.co / password123",
-            "workers": [f"worker{i}@petition.co / password123" for i in range(1, 6)],
-        },
+        "users": ["boss@petition.co", "admin1@petition.co", "admin2@petition.co"]
+        + [f"worker{i}@petition.co" for i in range(1, 6)],
     }

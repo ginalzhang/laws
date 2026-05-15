@@ -1,17 +1,16 @@
-"""
-Seed script for petition verifier workforce management.
-Creates demo users, a pay period, and prints credentials.
-"""
+"""Seed script for petition verifier workforce management."""
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from src.petition_verifier.storage.database import Database
 from src.petition_verifier.auth import hash_password
+from src.petition_verifier.storage.database import Database
 
 
 def main():
@@ -23,7 +22,11 @@ def main():
         print("To re-seed, delete the database file: petition_verifier.db")
         return
 
-    pw = hash_password("password123")
+    demo_password = os.getenv("PVFY_DEMO_PASSWORD", "")
+    if len(demo_password) < 8:
+        print("Set PVFY_DEMO_PASSWORD to at least 8 characters before seeding.")
+        sys.exit(1)
+    pw = hash_password(demo_password)
 
     print("Creating users...")
     boss = db.create_user(
@@ -63,7 +66,7 @@ def main():
     print("\n" + "=" * 50)
     print("Seeded successfully!")
     print("=" * 50)
-    print("\nLogin credentials (all use password: password123):")
+    print("\nDemo users created with the password from PVFY_DEMO_PASSWORD:")
     print("  Boss:    boss@petition.co")
     print("  Admin 1: admin1@petition.co")
     print("  Admin 2: admin2@petition.co")

@@ -7,7 +7,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin, require_manager, require_worker
+from ..auth import (
+    filter_private_owner_records,
+    get_current_user,
+    is_private_owner_actor,
+    is_private_owner_record,
+    require_manager,
+    require_private_owner_for_target,
+    require_worker,
+)
 from ..storage import db
 
 router = APIRouter()
@@ -45,6 +53,7 @@ async def add_manual_shift(payload: ManualShiftRequest, user: dict = Depends(req
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     try:
         clock_in  = datetime.fromisoformat(payload.clock_in)
         clock_out = datetime.fromisoformat(payload.clock_out)
@@ -67,6 +76,7 @@ async def clock_in_at(payload: ClockAtRequest, user: dict = Depends(require_mana
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     try:
         clock_in_dt = datetime.fromisoformat(payload.clock_in)
     except ValueError:
@@ -99,6 +109,7 @@ async def clock_out_at(payload: ClockOutAtRequest, user: dict = Depends(require_
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     try:
         clock_out_dt = datetime.fromisoformat(payload.clock_out)
     except ValueError:
@@ -120,6 +131,7 @@ async def clock_in(payload: ClockRequest, user: dict = Depends(require_manager))
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     existing = db.get_active_shift(payload.worker_id)
     if existing:
         raise HTTPException(400, f"{worker.full_name} is already clocked in")
@@ -133,6 +145,7 @@ async def clock_out(payload: ClockRequest, user: dict = Depends(require_manager)
     worker = db.get_user_by_id(payload.worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     try:
         shift = db.clock_out(payload.worker_id)
     except ValueError:
@@ -143,7 +156,7 @@ async def clock_out(payload: ClockRequest, user: dict = Depends(require_manager)
 @router.get("/active")
 async def get_active_shifts(user: dict = Depends(require_manager)):
     """All currently clocked-in workers."""
-    workers = db.list_users()
+    workers = filter_private_owner_records(db.list_users())
     active = []
     for w in workers:
         shift = db.get_active_shift(w.id)
@@ -159,6 +172,10 @@ async def get_active_shift_for_worker(
     """Check clock-in status for one worker. Workers can only see themselves."""
     if user["role"] == "worker" and user["user_id"] != worker_id:
         raise HTTPException(403, "Cannot view other workers' shifts")
+    worker = db.get_user_by_id(worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    require_private_owner_for_target(worker, user)
     shift = db.get_active_shift(worker_id)
     if not shift:
         return {"active": False, "shift": None}
@@ -174,9 +191,19 @@ async def list_shifts(
 ):
     if user["role"] == "worker":
         worker_id = user["user_id"]
+    if worker_id is not None:
+        worker = db.get_user_by_id(worker_id)
+        if not worker:
+            raise HTTPException(404, "Worker not found")
+        require_private_owner_for_target(worker, user)
     dt_from = datetime.fromisoformat(date_from) if date_from else None
     dt_to   = datetime.fromisoformat(date_to)   if date_to   else None
     shifts  = db.list_shifts(worker_id=worker_id, date_from=dt_from, date_to=dt_to)
+    if worker_id is None and not is_private_owner_actor(user):
+        shifts = [
+            shift for shift in shifts
+            if not is_private_owner_record(db.get_user_by_id(shift.worker_id))
+        ]
     return [_shift_to_dict(s) for s in shifts]
 
 

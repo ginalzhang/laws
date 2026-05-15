@@ -38,10 +38,10 @@ Add to this file whenever you (or a future agent) make a mistake the codebase
 
 ## Auth quirks
 
-- Login is username-only. `_PERMANENT_USERS` list in `api.py` is recreated on every
-  startup. Don't "fix" it without coordination — these are the only working real-user
-  accounts.
-- Workers log in by single name with `password123` (yes, really — known short-term tradeoff).
+- Login is email/password only. Do not add source-code login names, source-code
+  passwords, username-derived emails, or username-as-password shortcuts.
+- The private owner account is configured through `PVFY_OWNER_EMAIL` and
+  `PVFY_OWNER_PASSWORD` only.
 
 ## Frontend
 
