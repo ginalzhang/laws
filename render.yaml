@@ -2,7 +2,7 @@ services:
   - type: web
     name: petition-verifier
     runtime: python
-    buildCommand: "pip install -r requirements-deploy.txt"
+    buildCommand: "pip install -r requirements-deploy.txt && cd web && npm ci && npm run build"
     preDeployCommand: "PYTHONPATH=src python -m petition_verifier.cli.main db upgrade"
     startCommand: "PYTHONPATH=src uvicorn petition_verifier.api:app --host 0.0.0.0 --port $PORT"
     envVars:

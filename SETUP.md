@@ -114,6 +114,20 @@ open http://localhost:8000
 The UI shows each signature as green (approved) / yellow (needs review) / red (rejected).
 Staff only needs to review the yellow rows — typically 20-30% of submissions.
 
+## React review queue preview
+
+The React/TypeScript review queue is served at `/review` after the frontend is
+built. The legacy HTML UI remains the default at `/`.
+
+```bash
+cd web
+npm install
+npm run build
+cd ..
+pvfy serve
+open http://localhost:8000/review
+```
+
 ## Swap to Reducto OCR (when ready)
 
 1. Add your API key to `.env`:

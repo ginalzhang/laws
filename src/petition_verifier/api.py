@@ -62,8 +62,11 @@ async def ensure_permanent_users():
             db.create_user(u["email"], hash_password(u["username"]), u["role"], u["full_name"])
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
+_WEB_DIST_DIR = Path(os.getenv("WEB_DIST_DIR", Path(__file__).parent.parent.parent / "web" / "dist"))
 if _UI_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_UI_DIR)), name="static")
+if (_WEB_DIST_DIR / "assets").exists():
+    app.mount("/review/assets", StaticFiles(directory=str(_WEB_DIST_DIR / "assets")), name="review-assets")
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(worker_router, prefix="/workers", tags=["workers"])
@@ -212,6 +215,15 @@ async def root():
     if login.exists():
         return HTMLResponse(login.read_text())
     return HTMLResponse("<h1>Petition Verifier API</h1><p>UI not found.</p>")
+
+
+@app.get("/review", response_class=HTMLResponse)
+@app.get("/review/{path:path}", response_class=HTMLResponse)
+async def react_review_app(path: str = ""):
+    index = _WEB_DIST_DIR / "index.html"
+    if index.exists():
+        return HTMLResponse(index.read_text())
+    raise HTTPException(503, "React review app has not been built. Run `npm run build` in web/.")
 
 
 @app.get("/projects")
@@ -722,4 +734,3 @@ async def seed_demo_data():
             "workers": [f"worker{i}@petition.co / password123" for i in range(1, 6)],
         },
     }
-

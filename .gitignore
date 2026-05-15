@@ -7,3 +7,5 @@ __pycache__/
 *.heic
 dist/
 *.egg-info/
+node_modules/
+web/.openapi.json
