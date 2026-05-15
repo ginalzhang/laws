@@ -48,6 +48,8 @@ router = APIRouter(prefix="/review", tags=["review"])
 UPLOAD_DIR = Path("packet_uploads")
 
 REVIEWER_ROLES = {"boss", "admin", "field_manager", "evan", "evann", "office_worker"}
+LOW_CONFIDENCE_FIELD_NAMES = {"name", "address", "date"}
+DEFAULT_OCR_CONFIDENCE_THRESHOLD = 0.85
 
 
 def _is_reviewer(user: dict) -> bool:
@@ -65,6 +67,57 @@ def _ensure_packet_access(packet, user: dict) -> None:
 def _require_reviewer(user: dict) -> None:
     if not _is_reviewer(user):
         raise HTTPException(403, "Review action requires staff access")
+
+
+def _ocr_confidence_threshold() -> float:
+    raw = os.getenv("OCR_CONFIDENCE_THRESHOLD", str(DEFAULT_OCR_CONFIDENCE_THRESHOLD))
+    try:
+        threshold = float(raw)
+    except ValueError:
+        return DEFAULT_OCR_CONFIDENCE_THRESHOLD
+    if threshold > 1:
+        threshold = threshold / 100.0
+    return max(0.0, min(1.0, threshold))
+
+
+def _confidence_as_unit(confidence: float | None) -> float:
+    if confidence is None:
+        return 1.0
+    try:
+        value = float(confidence)
+    except (TypeError, ValueError):
+        return 0.0
+    if value > 1:
+        value = value / 100.0
+    return max(0.0, min(1.0, value))
+
+
+def _normalise_low_confidence_fields(fields: list | None) -> list[str]:
+    normalised: list[str] = []
+    for field in fields or []:
+        key = str(field).strip().lower()
+        if key in ("print_name", "name"):
+            key = "name"
+        elif key in ("street_address", "raw_address", "address", "city", "zip", "zip_code"):
+            key = "address"
+        elif key == "date":
+            key = "date"
+        else:
+            continue
+        if key in LOW_CONFIDENCE_FIELD_NAMES and key not in normalised:
+            normalised.append(key)
+    return normalised
+
+
+def _low_confidence_fields_for_sig(sig, threshold: float | None = None) -> list[str]:
+    """Return field names the UI must hide pending human review."""
+    explicit = _normalise_low_confidence_fields(getattr(sig, "low_confidence_fields", []))
+    if explicit:
+        return explicit
+    threshold = _ocr_confidence_threshold() if threshold is None else threshold
+    if _confidence_as_unit(getattr(sig, "ocr_confidence", None)) < threshold:
+        return ["name", "address"]
+    return []
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -172,6 +225,9 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
                 "has_signature":     l.has_signature,
                 "ai_verdict":        l.ai_verdict,
                 "flags":             json.loads(l.flags_json or "[]"),
+                "low_confidence_fields": _normalise_low_confidence_fields(
+                    json.loads(l.low_confidence_fields or "[]")
+                ),
                 "voter_status":      l.voter_status,
                 "voter_confidence":  l.voter_confidence,
                 "voter_reason":      l.voter_reason,
@@ -211,6 +267,7 @@ async def get_packet_image(
 
 class ActionBody(BaseModel):
     action: str   # approved | rejected | escalated
+    override: bool = False
 
 
 @router.post("/packets/{packet_id}/lines/{line_no}/action")
@@ -226,7 +283,16 @@ async def set_line_action(
         raise HTTPException(404, "Packet not found")
     if body.action not in ("approved", "rejected", "escalated"):
         raise HTTPException(400, "action must be approved, rejected, or escalated")
-    db.set_packet_line_action(packet_id, line_no, body.action, current_user["user_id"])
+    try:
+        db.set_packet_line_action(
+            packet_id,
+            line_no,
+            body.action,
+            current_user["user_id"],
+            override_low_confidence=body.override,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"ok": True}
 
 
@@ -867,20 +933,21 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
         status    = "blank" if (not name and not street) else "new_signature"
         line_no   = max(1, len(page_rows) + 1)
 
-        conf = sig.ocr_confidence if sig.ocr_confidence is not None else 1.0
+        low_confidence_fields = _low_confidence_fields_for_sig(sig)
         flags: list[str] = []
-        if conf < 0.75:
+        if low_confidence_fields:
             flags.append("low_confidence_ocr")
 
         page_rows.append({
             "row_number":     line_no,
-            "name":           {"raw": name,   "normalized": name.upper(),   "ocr_confidence": "high"},
-            "street_address": {"raw": street, "normalized": street.upper(), "ocr_confidence": "high"},
+            "name":           {"raw": name,   "normalized": name.upper(),   "ocr_confidence": "low" if "name" in low_confidence_fields else "high"},
+            "street_address": {"raw": street, "normalized": street.upper(), "ocr_confidence": "low" if "address" in low_confidence_fields else "high"},
             "city":           {"raw": city,   "normalized": city.upper(),   "ocr_confidence": "high"},
             "zip":            {"raw": zip_,   "normalized": zip_,           "valid_format": valid_zip},
-            "date":           {"raw": sig.raw_date or "", "normalized": sig.raw_date or "", "ocr_confidence": "high"},
+            "date":           {"raw": sig.raw_date or "", "normalized": sig.raw_date or "", "ocr_confidence": "low" if "date" in low_confidence_fields else "high"},
             "signature_present": bool(sig.signature_present),
             "flags":          flags,
+            "low_confidence_fields": low_confidence_fields,
             "status":         status,
             "row_fingerprint": "",
         })
@@ -942,6 +1009,7 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             ai_verdict      = verdict,
             ai_reason       = "",
             flags_json      = json.dumps(flags),
+            low_confidence_fields = json.dumps(r.get("low_confidence_fields", [])),
         ))
 
     # ── Persist ───────────────────────────────────────────────────────────────
@@ -968,6 +1036,7 @@ def _blank_row(row_number: int) -> dict:
         "date":            {"raw": "", "normalized": "", "ocr_confidence": "none"},
         "signature_present": False,
         "flags":           [],
+        "low_confidence_fields": [],
         "status":          "blank",
         "row_fingerprint": "",
     }

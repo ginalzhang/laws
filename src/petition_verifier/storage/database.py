@@ -292,6 +292,7 @@ class PacketLineRow(Base):
     ai_verdict       = Column(String, default="needs_review")
     ai_reason        = Column(String, default="")
     flags_json       = Column(Text, default="[]")
+    low_confidence_fields = Column(Text, default="[]")    # JSON array: name|address|date
     # Voter roll matching
     voter_status     = Column(String, nullable=True)       # valid|invalid|uncertain
     voter_confidence = Column(Integer, nullable=True)       # 0-100
@@ -1308,7 +1309,13 @@ class Database:
                 session.commit()
 
     def set_packet_line_action(
-        self, packet_id: int, line_no: int, action: str, reviewer_id: int
+        self,
+        packet_id: int,
+        line_no: int,
+        action: str,
+        reviewer_id: int,
+        *,
+        override_low_confidence: bool = False,
     ) -> None:
         with self._Session() as session:
             line = (
@@ -1317,6 +1324,18 @@ class Database:
                 .first()
             )
             if line:
+                try:
+                    low_confidence_fields = json.loads(line.low_confidence_fields or "[]")
+                except Exception:
+                    low_confidence_fields = ["invalid_low_confidence_fields_json"]
+                if (
+                    action == "approved"
+                    and low_confidence_fields
+                    and not override_low_confidence
+                ):
+                    raise ValueError(
+                        "Low-confidence OCR fields must be reviewed before approval"
+                    )
                 line.action = action
                 line.reviewed_by = reviewer_id
                 line.reviewed_at = datetime.utcnow()
@@ -1338,9 +1357,11 @@ class Database:
                 try:
                     fraud_flags = json.loads(l.fraud_flags or "[]")
                     ai_flags = json.loads(l.flags_json or "[]")
+                    low_confidence_fields = json.loads(l.low_confidence_fields or "[]")
                 except Exception:
                     fraud_flags = ["invalid_flags_json"]
                     ai_flags = ["invalid_flags_json"]
+                    low_confidence_fields = ["invalid_low_confidence_fields_json"]
                 if not packet_line_bulk_approvable(
                     row_status=l.row_status,
                     has_signature=bool(l.has_signature),
@@ -1348,6 +1369,7 @@ class Database:
                     action=l.action,
                     ai_verdict=l.ai_verdict,
                     ai_flags=ai_flags,
+                    low_confidence_fields=low_confidence_fields,
                     fraud_flags=fraud_flags,
                     fraud_score=l.fraud_score,
                     review_decision=l.review_decision,

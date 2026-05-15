@@ -75,3 +75,40 @@ def test_high_confidence_match_without_signature_needs_review():
     assert result.approved == 0
     assert result.review == 1
     assert result.signatures[0].status == VerificationStatus.REVIEW
+
+
+def test_review_packet_low_confidence_fields_fall_back_from_row_confidence(monkeypatch):
+    from petition_verifier.models import ExtractedSignature
+    from petition_verifier.routes.review_routes import _low_confidence_fields_for_sig
+
+    monkeypatch.setenv("OCR_CONFIDENCE_THRESHOLD", "0.85")
+
+    low = ExtractedSignature(
+        line_number=1,
+        page=1,
+        raw_name="Reggie Ellison",
+        raw_address="123 Main St",
+        signature_present=True,
+        ocr_confidence=0.5,
+    )
+    high = ExtractedSignature(
+        line_number=2,
+        page=1,
+        raw_name="Jaime D Wone",
+        raw_address="456 Oak St",
+        signature_present=True,
+        ocr_confidence=92,
+    )
+    explicit = ExtractedSignature(
+        line_number=3,
+        page=1,
+        raw_name="Pat Lee",
+        raw_address="789 Pine St",
+        signature_present=True,
+        ocr_confidence=0.99,
+        low_confidence_fields=["print_name", "zip"],
+    )
+
+    assert _low_confidence_fields_for_sig(low) == ["name", "address"]
+    assert _low_confidence_fields_for_sig(high) == []
+    assert _low_confidence_fields_for_sig(explicit) == ["name", "address"]

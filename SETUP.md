@@ -119,6 +119,15 @@ THRESHOLD_APPROVE=80
 THRESHOLD_REVIEW=65
 ```
 
+Review packet OCR has a separate confidence gate. Fields below
+`OCR_CONFIDENCE_THRESHOLD` are hidden in the review table as unreadable until
+staff clicks through to inspect the raw OCR and petition image. Default: `0.85`.
+
+```bash
+# In .env:
+OCR_CONFIDENCE_THRESHOLD=0.85
+```
+
 ## Run tests
 
 ```bash

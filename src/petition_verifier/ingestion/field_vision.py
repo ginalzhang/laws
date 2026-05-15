@@ -837,6 +837,13 @@ def page_result_to_signatures(page_result: dict, page_num: int, line_start: int 
                       z["normalized"] or z["raw"]]
         raw_addr = ", ".join(p for p in addr_parts if p)
         conf = (_conf_to_float(n["ocr_confidence"]) + _conf_to_float(sa["ocr_confidence"])) / 2
+        low_confidence_fields = []
+        if n["ocr_confidence"] == "low":
+            low_confidence_fields.append("name")
+        if sa["ocr_confidence"] == "low":
+            low_confidence_fields.append("address")
+        if row["date"]["ocr_confidence"] == "low":
+            low_confidence_fields.append("date")
         sigs.append(ExtractedSignature(
             line_number=line_no,
             page=page_num,
@@ -845,6 +852,7 @@ def page_result_to_signatures(page_result: dict, page_num: int, line_start: int 
             raw_date=row["date"]["raw"],
             signature_present=row["signature_present"],
             ocr_confidence=round(conf, 1),
+            low_confidence_fields=low_confidence_fields,
         ))
         line_no += 1
     return sigs

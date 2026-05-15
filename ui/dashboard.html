@@ -423,9 +423,12 @@
     .rc-act.approve { background:#dcfce7;color:#15803d }
     .rc-act.reject  { background:#fee2e2;color:#991b1b }
     .rc-act.escalate { background:#fef3c7;color:#92400e }
+    .rc-act.review-ocr { background:#e8efff;color:#1a56db }
     .rc-act.done-approved  { background:#15803d;color:#fff;cursor:default }
     .rc-act.done-rejected  { background:#991b1b;color:#fff;cursor:default }
     .rc-act.done-escalated { background:#92400e;color:#fff;cursor:default }
+    .rc-unreadable { border:0;background:#fef3c7;color:#92400e;border-radius:6px;padding:3px 7px;font:inherit;font-size:.72rem;cursor:pointer;text-align:left;max-width:100%;white-space:normal }
+    .rc-unreadable:hover { background:#fde68a }
     /* Voter / fraud validation */
     .vs-valid    { color:#15803d;font-weight:600;font-size:.75rem }
     .vs-invalid  { color:#991b1b;font-weight:600;font-size:.75rem }
@@ -2955,6 +2958,32 @@
     return `<span style="font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:20px;background:${m.bg};color:${m.color}">${m.label}</span>`;
   }
 
+  function _rcLowFields(line) {
+    return Array.isArray(line.low_confidence_fields) ? line.low_confidence_fields : [];
+  }
+
+  function _rcHasLowField(line, field) {
+    return _rcLowFields(line).includes(field);
+  }
+
+  function _rcFieldCell(line, field, rawValue, displayValue) {
+    if (_rcHasLowField(line, field)) {
+      return `<button class="rc-unreadable" data-field="${_escHtml(field)}" data-raw="${_escHtml(rawValue || '')}" onclick="rcShowRawOcr(this)">(unreadable - click to review)</button>`;
+    }
+    return _escHtml(displayValue || rawValue) || '<span style="color:#c7c7cc">—</span>';
+  }
+
+  function rcShowRawOcr(btn) {
+    const field = btn.getAttribute('data-field') || 'field';
+    const raw = btn.getAttribute('data-raw') || '';
+    alert(`${field} raw OCR:\n\n${raw || '(blank)'}`);
+  }
+
+  function rcConfirmLowConfidenceApprove(packetId, lineNo) {
+    const ok = confirm('This row has low-confidence OCR. Approve only after checking the petition image against the raw text.');
+    if (ok) rcAct(packetId, lineNo, 'approved', true);
+  }
+
   function _rcRenderDetail(p) {
     // Header
     const hdr = document.getElementById('rcDetailHeader');
@@ -3052,8 +3081,13 @@
       const rowBg = hasFraud ? 'class="fraud-row"' : (rowMeta.rowBg ? `style="background:${rowMeta.rowBg}"` : '');
       const flags = (l.flags || []).map(f => `<span class="flag-chip">${f.replace(/_/g,' ')}</span>`).join('');
       const fraudChips = (l.fraud_flags || []).map(f => `<span class="fraud-chip">${f.replace(/_/g,' ')}</span>`).join('');
-      const nameCell = _escHtml(l.norm_name || l.raw_name) || '<span style="color:#c7c7cc">—</span>';
-      const addrCell = _escHtml(l.norm_address || l.raw_address) || '<span style="color:#c7c7cc">—</span>';
+      const lowFields = _rcLowFields(l);
+      const nameCell = _rcFieldCell(l, 'name', l.raw_name, l.norm_name || l.raw_name);
+      const addrCell = _rcFieldCell(l, 'address', l.raw_address, l.norm_address || l.raw_address);
+      const cityCell = _rcFieldCell(l, 'address', l.raw_city, l.raw_city);
+      const zipCell = _rcFieldCell(l, 'address', l.raw_zip, l.raw_zip);
+      const dateCell = _rcFieldCell(l, 'date', l.raw_date, l.raw_date);
+      const addrTitle = lowFields.includes('address') ? 'Low-confidence OCR; click to review raw text' : _escHtml(l.norm_address || l.raw_address);
       const voterCell = l.voter_status
         ? `<span class="vs-${l.voter_status}" title="${_escHtml(l.voter_reason || '')}">${l.voter_status} ${l.voter_confidence != null ? '(' + l.voter_confidence + '%)' : ''}</span>`
         : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';
@@ -3064,7 +3098,9 @@
       const actionHtml = l.action
         ? `<span class="rc-act done-${l.action}">${l.action}</span>`
         : showAction
-        ? `<button class="rc-act approve"  onclick="rcAct(${p.id},${l.line_no},'approved')">✓</button>` +
+        ? (lowFields.length
+          ? `<button class="rc-act review-ocr" onclick="rcConfirmLowConfidenceApprove(${p.id},${l.line_no})" title="Review unreadable OCR before approving">Review</button>`
+          : `<button class="rc-act approve"  onclick="rcAct(${p.id},${l.line_no},'approved')">✓</button>`) +
           `<button class="rc-act reject"   onclick="rcAct(${p.id},${l.line_no},'rejected')">✗</button>` +
           `<button class="rc-act escalate" onclick="rcAct(${p.id},${l.line_no},'escalated')">!</button>`
         : '—';
@@ -3072,10 +3108,10 @@
         <td>${l.line_no}</td>
         <td>${_rcStatusBadge(l.row_status)}</td>
         <td>${nameCell}</td>
-        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_escHtml(l.norm_address || l.raw_address)}">${addrCell}</td>
-        <td>${_escHtml(l.raw_city) || '<span style="color:#c7c7cc">—</span>'}</td>
-        <td>${_escHtml(l.raw_zip) || '<span style="color:#c7c7cc">—</span>'}</td>
-        <td>${_escHtml(l.raw_date) || '<span style="color:#c7c7cc">—</span>'}</td>
+        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${addrTitle}">${addrCell}</td>
+        <td>${cityCell}</td>
+        <td>${zipCell}</td>
+        <td>${dateCell}</td>
         <td style="text-align:center">${l.has_signature ? '✓' : '<span style="color:#c7c7cc">—</span>'}</td>
         <td>${voterCell}</td>
         <td>${fraudCell}</td>
@@ -3130,8 +3166,8 @@
     queueWrap.style.display = '';
     document.getElementById('rcQueueCount').textContent = `(${lines.length} flagged)`;
     document.getElementById('rcQueueBody').innerHTML = lines.map(l => {
-      const name = _escHtml(l.norm_name || l.raw_name || '—');
-      const addr = _escHtml(l.raw_address || '—');
+      const name = _rcFieldCell(l, 'name', l.raw_name, l.norm_name || l.raw_name || '—');
+      const addr = _rcFieldCell(l, 'address', l.raw_address, l.raw_address || '—');
       const chips = (l.fraud_flags || []).map(f => `<span class="fraud-chip">${f.replace(/_/g,' ')}</span>`).join('');
       const decided = l.review_decision;
       const fraudBtn = `<button class="rc-decision-btn fraud-btn${decided === 'confirmed_fraud' ? ' decided' : ''}" onclick="rcDecide(${p.id},${l.line_no},'confirmed_fraud')" ${decided ? 'disabled' : ''}>Confirm Fraud</button>`;
@@ -3148,11 +3184,11 @@
     document.getElementById('rcExportBar').style.display = '';
   }
 
-  async function rcAct(packetId, lineNo, action) {
+  async function rcAct(packetId, lineNo, action, overrideLowConfidence=false) {
     try {
       await api('/review/packets/' + packetId + '/lines/' + lineNo + '/action', {
         method: 'POST',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, override: overrideLowConfidence }),
       });
       await rcSelectPacket(packetId);
     } catch(e) { alert('Failed: ' + e.message); }

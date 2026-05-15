@@ -32,6 +32,11 @@ class ExtractedSignature(BaseModel):
     signature_bbox: Optional[BoundingBox] = None
     # OCR confidence from Tesseract (0-100); None if not available
     ocr_confidence: Optional[float] = None
+    # Per-field low-confidence markers ("name", "address", "city", "zip", "date").
+    # Populated by backends that score fields individually (e.g. Claude). Empty
+    # when the backend only gives a row-level confidence — the pipeline then
+    # derives a conservative fallback from ocr_confidence + the threshold.
+    low_confidence_fields: list[str] = Field(default_factory=list)
     # Grayscale grid-cell density vector of the handwritten content area.
     # Populated by the Vision backend for same-handwriting fraud detection.
     handwriting_vector: Optional[list] = None

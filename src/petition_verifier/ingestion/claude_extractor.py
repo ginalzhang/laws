@@ -218,6 +218,20 @@ class ClaudeProcessor(BasePDFProcessor):
             except (TypeError, ValueError):
                 line_num = line_start + len(sigs)
 
+            # Normalise to the set of field names used downstream
+            # (the prompt sometimes returns "print_name" — alias to "name"; the
+            # combined "address" field also covers city/zip in our schema).
+            normalised_low: list[str] = []
+            for f in low_fields if isinstance(low_fields, list) else []:
+                key = str(f).strip().lower()
+                if key in ("print_name", "name"):
+                    normalised_low.append("name")
+                elif key in ("address", "city", "zip"):
+                    if "address" not in normalised_low:
+                        normalised_low.append("address")
+                elif key == "date":
+                    normalised_low.append("date")
+
             sigs.append(ExtractedSignature(
                 line_number=line_num,
                 page=page_num,
@@ -226,5 +240,6 @@ class ClaudeProcessor(BasePDFProcessor):
                 raw_date="",
                 signature_present=has_sig,
                 ocr_confidence=confidence,
+                low_confidence_fields=normalised_low,
             ))
         return sigs

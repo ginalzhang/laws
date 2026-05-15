@@ -32,6 +32,7 @@ def packet_line_bulk_approvable(
     action: str | None = None,
     ai_verdict: str | None = None,
     ai_flags: list | None = None,
+    low_confidence_fields: list | None = None,
     fraud_flags: list | None = None,
     fraud_score: int | None = None,
     review_decision: str | None = None,
@@ -44,6 +45,7 @@ def packet_line_bulk_approvable(
         and ai_verdict != "likely_invalid"
         and voter_status == "valid"
         and not (ai_flags or [])
+        and not (low_confidence_fields or [])
         and not (fraud_flags or [])
         and (fraud_score or 0) == 0
         and review_decision != "confirmed_fraud"
