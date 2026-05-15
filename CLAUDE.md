@@ -32,9 +32,12 @@ Deploy is Render via `render.yaml` + `Procfile`. Python pinned to 3.11.
    in app startup. New DBs use `pvfy db upgrade`; existing production DBs with the
    baseline schema are stamped once with `pvfy db stamp head` before automatic
    deploy-time upgrades are enabled.
-3. **Login is username-only and a hardcoded permanent-user list lives in `api.py`**
-   (`_PERMANENT_USERS`). On startup these accounts are recreated if missing. Username == password
-   for these accounts (Gina, Evan). If you "fix" this without coordination you will lock people out.
+3. **Login users are database-backed.** Create admins with `pvfy admin create-user`
+   after migrations. For first deploy bootstrap only, set
+   `PVFY_BOOTSTRAP_ADMIN_EMAIL` + `PVFY_BOOTSTRAP_ADMIN_PASSWORD`; remove the
+   password env var after the account exists. For the private owner account,
+   set `PVFY_OWNER_EMAIL` + `PVFY_OWNER_PASSWORD` to recreate it as `boss`
+   after a DB wipe. Do not add source-code login names or passwords.
 4. **`tempfile.NamedTemporaryFile(delete=False)` is used in upload paths.** Always wrap
    in try/finally and `os.unlink` — leaked temp files have already been an issue.
 5. **N+1 query history.** Recent commits fixed several. When touching `routes/payroll_routes.py`,

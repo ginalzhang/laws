@@ -44,22 +44,66 @@ from .routes.payment_routes import router as payment_router
 
 app  = FastAPI(title="Petition Verifier", version="0.2.0")
 
-# ── Hardcoded permanent accounts ─────────────────────────────────────────────
-# These are recreated on startup if missing, so they survive DB wipes.
-# username = the login name they type; it's also their password.
-_PERMANENT_USERS = [
-    {"email": "arianafan2000@app.local", "username": "arianafan2000", "role": "boss",          "full_name": "Gina"},
-    {"email": "evan@app.local",          "username": "evan",           "role": "field_manager", "full_name": "Evan"},
-]
+_BOOTSTRAP_ADMIN_ROLES = {
+    "boss",
+    "admin",
+    "field_manager",
+    "worker",
+    "petitioner",
+    "office_worker",
+}
+
 
 @app.on_event("startup")
-async def ensure_permanent_users():
+async def ensure_schema_and_optional_admin_bootstrap():
     from .auth import hash_password
     check_schema_current()
-    for u in _PERMANENT_USERS:
-        existing = db.get_user_by_email(u["email"])
-        if not existing:
-            db.create_user(u["email"], hash_password(u["username"]), u["role"], u["full_name"])
+
+    owner_email = os.getenv("PVFY_OWNER_EMAIL", "").strip().lower()
+    owner_password = os.getenv("PVFY_OWNER_PASSWORD", "")
+    if owner_email or owner_password:
+        if not owner_email or not owner_password:
+            raise RuntimeError(
+                "Both PVFY_OWNER_EMAIL and PVFY_OWNER_PASSWORD are required "
+                "for owner bootstrap."
+            )
+        if len(owner_password) < 6:
+            raise RuntimeError("PVFY_OWNER_PASSWORD must be at least 6 characters.")
+        existing_owner = db.get_user_by_email(owner_email)
+        if not existing_owner:
+            db.create_user(
+                owner_email,
+                hash_password(owner_password),
+                "boss",
+                os.getenv("PVFY_OWNER_NAME", owner_email.split("@", maxsplit=1)[0]),
+            )
+
+    bootstrap_email = os.getenv("PVFY_BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+    bootstrap_password = os.getenv("PVFY_BOOTSTRAP_ADMIN_PASSWORD", "")
+    if not bootstrap_email and not bootstrap_password:
+        return
+    if not bootstrap_email or not bootstrap_password:
+        raise RuntimeError(
+            "Both PVFY_BOOTSTRAP_ADMIN_EMAIL and PVFY_BOOTSTRAP_ADMIN_PASSWORD "
+            "are required for startup admin bootstrap."
+        )
+    if len(bootstrap_password) < 6:
+        raise RuntimeError("PVFY_BOOTSTRAP_ADMIN_PASSWORD must be at least 6 characters.")
+    bootstrap_role = os.getenv("PVFY_BOOTSTRAP_ADMIN_ROLE", "boss")
+    if bootstrap_role not in _BOOTSTRAP_ADMIN_ROLES:
+        raise RuntimeError(
+            "PVFY_BOOTSTRAP_ADMIN_ROLE must be one of: "
+            f"{', '.join(sorted(_BOOTSTRAP_ADMIN_ROLES))}."
+        )
+
+    existing = db.get_user_by_email(bootstrap_email)
+    if not existing:
+        db.create_user(
+            bootstrap_email,
+            hash_password(bootstrap_password),
+            bootstrap_role,
+            os.getenv("PVFY_BOOTSTRAP_ADMIN_NAME", bootstrap_email.split("@", maxsplit=1)[0]),
+        )
 
 _UI_DIR = Path(__file__).parent.parent.parent / "ui"
 _WEB_DIST_DIR = Path(os.getenv("WEB_DIST_DIR", Path(__file__).parent.parent.parent / "web" / "dist"))

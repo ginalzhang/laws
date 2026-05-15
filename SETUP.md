@@ -69,6 +69,17 @@ The command prompts for a password unless `--password` or `PVFY_ADMIN_PASSWORD`
 is provided. Supported roles are `boss`, `admin`, `field_manager`, `worker`,
 `petitioner`, and `office_worker`.
 
+For a one-time deploy bootstrap, set `PVFY_BOOTSTRAP_ADMIN_EMAIL` and
+`PVFY_BOOTSTRAP_ADMIN_PASSWORD` before startup. The app creates that user only if
+it does not already exist. Optional env vars: `PVFY_BOOTSTRAP_ADMIN_NAME` and
+`PVFY_BOOTSTRAP_ADMIN_ROLE` (default: `boss`). Remove the bootstrap password env
+var after the first admin exists.
+
+The private owner account is configured entirely through env vars, not source
+code. To recreate it after a database wipe, set `PVFY_OWNER_EMAIL` and
+`PVFY_OWNER_PASSWORD` before startup; the app will create that account with the
+`boss` role if it is missing. Optional env var: `PVFY_OWNER_NAME`.
+
 ## Voter roll CSV format
 
 Required columns (case-insensitive):
