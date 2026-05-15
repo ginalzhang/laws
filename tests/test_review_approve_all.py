@@ -4,6 +4,7 @@ import json
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 
 from petition_verifier.routes import review_routes
 from petition_verifier.storage.database import Database, PacketLineRow, PacketRow
@@ -219,3 +220,69 @@ def test_voter_match_persists_top_suggestions(monkeypatch, tmp_path):
     assert len(suggestions) == 3
     assert suggestions[0]["name"] == "Reggie Ellison"
     assert suggestions[0]["score"] >= suggestions[1]["score"]
+
+
+def test_fraud_analysis_flags_similar_handwriting_from_row_crops(monkeypatch, tmp_path):
+    db = Database(f"sqlite:///{tmp_path / 'review-handwriting.db'}")
+
+    def crop(path):
+        img = Image.new("RGB", (320, 56), "white")
+        draw = ImageDraw.Draw(img)
+        draw.line((0, 0, 319, 0), fill="black", width=1)
+        draw.line((0, 55, 319, 55), fill="black", width=1)
+        draw.line((22, 0, 22, 55), fill="black", width=1)
+        draw.line((138, 0, 138, 55), fill="black", width=1)
+        draw.line((35, 16, 78, 36), fill="black", width=3)
+        draw.line((78, 36, 112, 15), fill="black", width=3)
+        draw.line((42, 42, 120, 42), fill="black", width=3)
+        img.save(path)
+
+    crop1 = tmp_path / "row-1.jpg"
+    crop2 = tmp_path / "row-2.jpg"
+    crop(crop1)
+    crop(crop2)
+
+    with db._Session() as session:
+        session.add(PacketRow(id=1, worker_id=1, original_name="packet.jpg", raw_path="packet.jpg"))
+        session.add_all([
+            PacketLineRow(
+                packet_id=1,
+                line_no=1,
+                row_status="new_signature",
+                raw_name="Jane Smith",
+                raw_address="123 Oak Ave",
+                has_signature=True,
+                crop_path=str(crop1),
+            ),
+            PacketLineRow(
+                packet_id=1,
+                line_no=2,
+                row_status="new_signature",
+                raw_name="Maria Garcia",
+                raw_address="456 Pine St",
+                has_signature=True,
+                crop_path=str(crop2),
+            ),
+        ])
+        session.commit()
+
+    app = FastAPI()
+    app.include_router(review_routes.router)
+    app.dependency_overrides[review_routes.get_current_user] = lambda: {
+        "user_id": 99,
+        "role": "boss",
+    }
+    monkeypatch.setattr(review_routes, "db", db)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    with TestClient(app) as client:
+        response = client.post("/review/packets/1/fraud-analysis")
+        detail = client.get("/review/packets/1")
+
+    assert response.status_code == 200
+    flags_by_line = {
+        line["line_no"]: line["fraud_flags"]
+        for line in detail.json()["lines"]
+    }
+    assert "same_handwriting" in flags_by_line[1]
+    assert "same_handwriting" in flags_by_line[2]

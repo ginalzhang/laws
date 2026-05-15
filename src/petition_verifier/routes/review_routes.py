@@ -903,6 +903,29 @@ def _detect_fraud_patterns(lines: list, county: str | None = None) -> list[dict]
                 if l.raw_date == most_common:
                     add_flag(l.id, "uniform_date", 15)
 
+    # Image-level handwriting similarity from persisted row crops.
+    crop_paths = {
+        l.line_no: l.crop_path
+        for l in active
+        if getattr(l, "crop_path", "")
+    }
+    if len(crop_paths) >= 2:
+        from ..matching.handwriting import find_similar_handwriting
+
+        line_by_no = {l.line_no: l for l in active}
+        for ln_a, ln_b, distance in find_similar_handwriting(crop_paths):
+            line_a = line_by_no.get(ln_a)
+            line_b = line_by_no.get(ln_b)
+            if line_a:
+                add_flag(line_a.id, "same_handwriting", 60)
+            if line_b:
+                add_flag(line_b.id, "same_handwriting", 60)
+            print(
+                f"[fraud] same_handwriting lines {ln_a}/{ln_b} "
+                f"(hash distance {distance})",
+                flush=True,
+            )
+
     # Cap at 100
     for r in results:
         r["fraud_score"] = min(r["fraud_score"], 100)
