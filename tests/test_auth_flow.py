@@ -62,6 +62,8 @@ async def client(app):
 
 
 async def test_created_user_can_login_and_read_profile(client):
+    from petition_verifier.auth import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+
     user_id = create_test_user()
 
     login = await client.post(
@@ -71,6 +73,21 @@ async def test_created_user_can_login_and_read_profile(client):
 
     assert login.status_code == 200
     token = login.json()["access_token"]
+    set_cookie_headers = login.headers.get_list("set-cookie")
+    assert login.cookies.get(ACCESS_COOKIE_NAME)
+    assert login.cookies.get(REFRESH_COOKIE_NAME)
+    assert any(
+        header.startswith(f"{ACCESS_COOKIE_NAME}=")
+        and "httponly" in header.lower()
+        and "max-age=900" in header.lower()
+        for header in set_cookie_headers
+    )
+    assert any(
+        header.startswith(f"{REFRESH_COOKIE_NAME}=")
+        and "httponly" in header.lower()
+        and "max-age=2592000" in header.lower()
+        for header in set_cookie_headers
+    )
 
     profile = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
@@ -83,6 +100,86 @@ async def test_created_user_can_login_and_read_profile(client):
         "phone": "",
         "hourly_wage": 25.0,
     }
+
+    cookie_profile = await client.get("/auth/me")
+
+    assert cookie_profile.status_code == 200
+    assert cookie_profile.json() == profile.json()
+
+
+async def test_refresh_issues_new_access_cookie(client):
+    from petition_verifier.auth import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+
+    create_test_user()
+    login = await client.post(
+        "/auth/login",
+        json={"email": "boss@example.com", "password": "secret123"},
+    )
+    old_access_token = login.cookies.get(ACCESS_COOKIE_NAME)
+    refresh_token = login.cookies.get(REFRESH_COOKIE_NAME)
+    client.cookies.clear()
+    client.cookies.set(REFRESH_COOKIE_NAME, refresh_token)
+
+    refresh = await client.post("/auth/refresh")
+
+    assert refresh.status_code == 200
+    assert refresh.cookies.get(ACCESS_COOKIE_NAME)
+    assert refresh.cookies.get(ACCESS_COOKIE_NAME) != old_access_token
+    assert refresh.cookies.get(REFRESH_COOKIE_NAME) is None
+    assert "access_token" in refresh.json()
+
+    profile = await client.get("/auth/me")
+
+    assert profile.status_code == 200
+    assert profile.json()["email"] == "boss@example.com"
+
+
+async def test_logout_clears_auth_cookies(client):
+    from petition_verifier.auth import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+
+    create_test_user()
+    login = await client.post(
+        "/auth/login",
+        json={"email": "boss@example.com", "password": "secret123"},
+    )
+    assert login.cookies.get(ACCESS_COOKIE_NAME)
+    assert login.cookies.get(REFRESH_COOKIE_NAME)
+
+    logout = await client.post("/auth/logout")
+
+    assert logout.status_code == 200
+    set_cookie_headers = logout.headers.get_list("set-cookie")
+    assert any(
+        header.startswith(f"{ACCESS_COOKIE_NAME}=")
+        and "max-age=0" in header.lower()
+        for header in set_cookie_headers
+    )
+    assert any(
+        header.startswith(f"{REFRESH_COOKIE_NAME}=")
+        and "max-age=0" in header.lower()
+        for header in set_cookie_headers
+    )
+
+    profile = await client.get("/auth/me")
+
+    assert profile.status_code == 401
+
+
+async def test_refresh_token_is_not_accepted_as_access(client):
+    from petition_verifier.auth import ACCESS_COOKIE_NAME, create_refresh_token
+
+    user_id = create_test_user()
+    refresh_token = create_refresh_token(user_id, "boss")
+
+    bearer_response = await client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+    client.cookies.set(ACCESS_COOKIE_NAME, refresh_token)
+    cookie_response = await client.get("/auth/me")
+
+    assert bearer_response.status_code == 401
+    assert cookie_response.status_code == 401
 
 
 async def test_login_rejects_bad_password(client):

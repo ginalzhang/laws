@@ -42,6 +42,9 @@ Add to this file whenever you (or a future agent) make a mistake the codebase
   passwords, username-derived emails, or username-as-password shortcuts.
 - The private owner account is configured through `PVFY_OWNER_EMAIL` and
   `PVFY_OWNER_PASSWORD` only.
+- Browser auth uses httpOnly access/refresh cookies. Do not store bearer tokens
+  in `localStorage`; bearer auth remains only as a compatibility fallback for
+  non-browser clients.
 
 ## Frontend
 

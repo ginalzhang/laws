@@ -80,6 +80,11 @@ code. To recreate it after a database wipe, set `PVFY_OWNER_EMAIL` and
 `PVFY_OWNER_PASSWORD` before startup; the app will create that account with the
 `boss` role if it is missing. Optional env var: `PVFY_OWNER_NAME`.
 
+Browser sessions use httpOnly cookies: a short-lived access cookie plus a
+longer-lived refresh cookie. Set `AUTH_COOKIE_SECURE=true` in HTTPS deployments.
+The API still accepts bearer tokens for scripts and CLI-style clients during the
+cutover.
+
 Demo seed data is disabled unless `PVFY_ENABLE_DEMO_SEED=true` is set. When
 enabled, it also requires `PVFY_DEMO_PASSWORD`.
 

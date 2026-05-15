@@ -3,11 +3,19 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from ..auth import (
+    ACCESS_COOKIE_NAME,
+    ACCESS_TOKEN_MAX_AGE_SECONDS,
+    REFRESH_COOKIE_NAME,
+    REFRESH_JWT_TYPE,
+    REFRESH_TOKEN_MAX_AGE_SECONDS,
+    create_access_token,
+    create_refresh_token,
     create_token,
+    decode_token,
     filter_private_owner_records,
     get_current_user,
     hash_password,
@@ -23,16 +31,88 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def _cookie_secure() -> bool:
+    return os.getenv("AUTH_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str | None = None) -> None:
+    response.set_cookie(
+        ACCESS_COOKIE_NAME,
+        access_token,
+        max_age=ACCESS_TOKEN_MAX_AGE_SECONDS,
+        path="/",
+        secure=_cookie_secure(),
+        httponly=True,
+        samesite="lax",
+    )
+    if refresh_token is not None:
+        response.set_cookie(
+            REFRESH_COOKIE_NAME,
+            refresh_token,
+            max_age=REFRESH_TOKEN_MAX_AGE_SECONDS,
+            path="/",
+            secure=_cookie_secure(),
+            httponly=True,
+            samesite="lax",
+        )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(
+        ACCESS_COOKIE_NAME,
+        path="/",
+        secure=_cookie_secure(),
+        httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path="/",
+        secure=_cookie_secure(),
+        httponly=True,
+        samesite="lax",
+    )
+
+
 @router.post("/login")
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, response: Response):
     user = db.get_user_by_email(payload.email)
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password")
     if not user.is_active:
         raise HTTPException(403, "Account is deactivated")
-    token = create_token(user.id, user.role)
+    token = create_access_token(user.id, user.role)
+    refresh_token = create_refresh_token(user.id, user.role)
+    _set_auth_cookies(response, token, refresh_token)
     return {
         "access_token": token,
+        "token_type": "bearer",
+        "role": user.role,
+        "user_id": user.id,
+        "full_name": user.full_name,
+    }
+
+
+@router.post("/refresh")
+async def refresh(request: Request, response: Response):
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh_token:
+        raise HTTPException(401, "Not authenticated")
+
+    payload = decode_token(refresh_token, expected_kind=REFRESH_JWT_TYPE)
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(401, "Invalid or expired token") from e
+
+    user = db.get_user_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "Invalid or expired token")
+
+    access_token = create_access_token(user.id, user.role)
+    _set_auth_cookies(response, access_token)
+    return {
+        "access_token": access_token,
         "token_type": "bearer",
         "role": user.role,
         "user_id": user.id,
@@ -80,8 +160,9 @@ async def change_password(payload: ChangePasswordRequest, user: dict = Depends(g
 
 
 @router.post("/logout")
-async def logout():
-    return {"ok": True, "message": "Token invalidated client-side"}
+async def logout(response: Response):
+    _clear_auth_cookies(response)
+    return {"ok": True, "message": "Token cookies cleared"}
 
 
 @router.get("/me")

@@ -817,17 +817,51 @@ function exportCsv() {
 }
 
 // ── Util ──────────────────────────────────────────────────────────────────────
-async function apiFetch(path, opts = {}) {
+const AUTH_METADATA_KEYS = ['pv_role', 'pv_user_id', 'pv_full_name', 'pv_name'];
+const LEGACY_TOKEN_KEY = ['pv', 'token'].join('_');
+
+localStorage.removeItem(LEGACY_TOKEN_KEY);
+
+function clearAuthMetadata() {
+  [...AUTH_METADATA_KEYS, LEGACY_TOKEN_KEY].forEach(key => localStorage.removeItem(key));
+}
+
+async function refreshSession() {
+  const res = await fetch('/auth/refresh', {
+    method: 'POST',
+    credentials: 'same-origin',
+  }).catch(() => null);
+  return !!res && res.ok;
+}
+
+async function logout() {
+  await fetch('/auth/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+  }).catch(() => {});
+  clearAuthMetadata();
+  window.location.href = '/static/login.html';
+}
+
+async function apiFetch(path, opts = {}, didRefresh = false) {
   const isJson = opts.body && typeof opts.body === 'string';
   const headers = { ...(opts.headers || {}) };
   const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === 'content-type');
   if (isJson && !hasContentType) headers['Content-Type'] = 'application/json';
-  const token = localStorage.getItem('pv_token');
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(API + path, {
     ...opts,
     headers,
+    credentials: 'same-origin',
   });
+  if (res.status === 401 && !didRefresh) {
+    if (await refreshSession()) return apiFetch(path, opts, true);
+    await logout();
+    throw new Error('Unauthorized');
+  }
+  if (res.status === 401) {
+    await logout();
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || res.statusText);

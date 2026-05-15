@@ -363,36 +363,92 @@
   });
 
   // ── Auth guard ─────────────────────────────────────────────────────────────
-  const token = localStorage.getItem('pv_token');
-  const role  = localStorage.getItem('pv_role');
-  const userId = parseInt(localStorage.getItem('pv_user_id') || '0');
-  const fullName = localStorage.getItem('pv_full_name') || '';
+  let role  = localStorage.getItem('pv_role');
+  let userId = parseInt(localStorage.getItem('pv_user_id') || '0');
+  let fullName = localStorage.getItem('pv_full_name') || '';
+  const AUTH_METADATA_KEYS = ['pv_role', 'pv_user_id', 'pv_full_name', 'pv_name'];
+  const LEGACY_TOKEN_KEY = ['pv', 'token'].join('_');
 
-  if (!token) window.location.href = '/static/login.html';
-  if (role === 'admin' || role === 'boss') window.location.href = '/static/dashboard.html';
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
 
-  document.getElementById('headerUser').textContent = fullName;
-
-  function api(path, opts = {}) {
-    return fetch(path, {
-      ...opts,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
-    }).then(async r => {
-      if (r.status === 401) { logout(); throw new Error('Unauthorized'); }
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
-        throw new Error(e.detail || `HTTP ${r.status}`);
-      }
-      return r.json();
-    });
+  function clearAuthMetadata() {
+    [...AUTH_METADATA_KEYS, LEGACY_TOKEN_KEY].forEach(key => localStorage.removeItem(key));
   }
 
-  function logout() {
-    localStorage.clear();
+  function storeAuthMetadata(data) {
+    if (data.role) {
+      role = data.role;
+      localStorage.setItem('pv_role', role);
+    }
+    if (data.user_id !== undefined && data.user_id !== null) {
+      userId = parseInt(String(data.user_id));
+      localStorage.setItem('pv_user_id', String(data.user_id));
+    }
+    if (data.full_name) {
+      fullName = data.full_name;
+      localStorage.setItem('pv_full_name', fullName);
+      localStorage.setItem('pv_name', fullName);
+    }
+  }
+
+  async function refreshSession() {
+    const r = await fetch('/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).catch(() => null);
+    if (!r || !r.ok) return false;
+    const data = await r.json().catch(() => ({}));
+    storeAuthMetadata(data);
+    return !!r && r.ok;
+  }
+
+  async function bootstrapAuth() {
+    if (!role && !await refreshSession()) {
+      window.location.href = '/static/login.html';
+      return;
+    }
+    if (role === 'admin' || role === 'boss') {
+      window.location.href = '/static/dashboard.html';
+      return;
+    }
+    document.getElementById('headerUser').textContent = fullName;
+    init();
+  }
+
+  async function api(path, opts = {}, didRefresh = false) {
+    const headers = { ...(opts.headers || {}) };
+    const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === 'content-type');
+    if (!(opts.body instanceof FormData) && !hasContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const r = await fetch(path, {
+      ...opts,
+      headers,
+      credentials: 'same-origin',
+    });
+    if (r.status === 401 && !didRefresh) {
+      if (await refreshSession()) return api(path, opts, true);
+      await logout();
+      throw new Error('Unauthorized');
+    }
+    if (r.status === 401) {
+      await logout();
+      throw new Error('Unauthorized');
+    }
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  }
+
+  async function logout() {
+    await fetch('/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).catch(() => {});
+    clearAuthMetadata();
     window.location.href = '/static/login.html';
   }
 
@@ -590,16 +646,10 @@
     btn.disabled = true;
 
     try {
-      const res = await fetch('/worker/upload', {
+      const data = await api('/worker/upload', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
         body: fd,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Upload failed');
-      }
-      const data = await res.json();
       const projectId = data.project_id;
       const cause = data.cause ? ` · ${data.cause}` : '';
 
@@ -660,7 +710,7 @@
     ]);
   }
 
-  init();
+  bootstrapAuth();
   </script>
 </body>
 </html>

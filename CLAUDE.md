@@ -37,7 +37,9 @@ Deploy is Render via `render.yaml` + `Procfile`. Python pinned to 3.11.
    `PVFY_BOOTSTRAP_ADMIN_EMAIL` + `PVFY_BOOTSTRAP_ADMIN_PASSWORD`; remove the
    password env var after the account exists. For the private owner account,
    set `PVFY_OWNER_EMAIL` + `PVFY_OWNER_PASSWORD` to recreate it as `boss`
-   after a DB wipe. Do not add source-code login names or passwords.
+   after a DB wipe. Browser auth uses httpOnly `access_token`/`refresh_token`
+   cookies; do not reintroduce localStorage bearer-token auth, source-code login
+   names, or source-code passwords.
 4. **`tempfile.NamedTemporaryFile(delete=False)` is used in upload paths.** Always wrap
    in try/finally and `os.unlink` — leaked temp files have already been an issue.
 5. **N+1 query history.** Recent commits fixed several. When touching `routes/payroll_routes.py`,

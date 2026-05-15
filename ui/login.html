@@ -102,16 +102,48 @@
   </div>
 
   <script>
-    // If already logged in, redirect
-    const existingToken = localStorage.getItem('pv_token');
-    const existingRole = localStorage.getItem('pv_role');
-    if (existingToken && existingRole) {
-      if (existingRole === 'worker') {
-        window.location.href = '/static/worker.html';
-      } else {
-        window.location.href = '/static/dashboard.html';
+    const AUTH_METADATA_KEYS = ['pv_role', 'pv_user_id', 'pv_full_name', 'pv_name'];
+    const LEGACY_TOKEN_KEY = ['pv', 'token'].join('_');
+
+    function clearAuthMetadata() {
+      [...AUTH_METADATA_KEYS, LEGACY_TOKEN_KEY].forEach(key => localStorage.removeItem(key));
+    }
+
+    function storeAuthMetadata(data) {
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+      localStorage.setItem('pv_role', data.role || '');
+      if (data.user_id !== undefined && data.user_id !== null) {
+        localStorage.setItem('pv_user_id', String(data.user_id));
+      }
+      if (data.full_name) {
+        localStorage.setItem('pv_full_name', data.full_name);
+        localStorage.setItem('pv_name', data.full_name);
       }
     }
+
+    function destinationForRole(role) {
+      return role === 'worker' ? '/static/worker.html' : '/static/dashboard.html';
+    }
+
+    async function refreshSession() {
+      const res = await fetch('/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+      }).catch(() => null);
+      if (!res || !res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      if (data.role) storeAuthMetadata(data);
+      return true;
+    }
+
+    // If an httpOnly session cookie is already present, rebuild local metadata and route.
+    refreshSession().then(ok => {
+      if (ok) {
+        window.location.href = destinationForRole(localStorage.getItem('pv_role') || '');
+      } else {
+        clearAuthMetadata();
+      }
+    });
 
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -128,22 +160,15 @@
         const res = await fetch('/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.detail || 'Login failed');
         }
-        localStorage.setItem('pv_token', data.access_token);
-        localStorage.setItem('pv_role', data.role);
-        localStorage.setItem('pv_user_id', data.user_id);
-        localStorage.setItem('pv_full_name', data.full_name);
-
-        if (data.role === 'worker') {
-          window.location.href = '/static/worker.html';
-        } else {
-          window.location.href = '/static/dashboard.html';
-        }
+        storeAuthMetadata(data);
+        window.location.href = destinationForRole(data.role);
       } catch (err) {
         errorEl.textContent = err.message;
         errorEl.classList.add('show');

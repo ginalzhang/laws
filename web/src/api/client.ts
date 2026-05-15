@@ -46,17 +46,53 @@ export type SignatureRow = {
 
 export type ReviewPayload = components["schemas"]["ReviewPayload"];
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+const AUTH_METADATA_KEYS = ["pv_role", "pv_user_id", "pv_full_name", "pv_name"];
+const LEGACY_TOKEN_KEY = ["pv", "token"].join("_");
 
-  const token = localStorage.getItem("pv_token");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+function clearAuthMetadata(): void {
+  [...AUTH_METADATA_KEYS, LEGACY_TOKEN_KEY].forEach((key) => localStorage.removeItem(key));
+}
+
+async function refreshSession(): Promise<boolean> {
+  const response = await fetch("/auth/refresh", {
+    method: "POST",
+    credentials: "same-origin",
+  }).catch(() => undefined);
+  return !!response?.ok;
+}
+
+async function logout(): Promise<void> {
+  await fetch("/auth/logout", {
+    method: "POST",
+    credentials: "same-origin",
+  }).catch(() => undefined);
+  clearAuthMetadata();
+  window.location.href = "/static/login.html";
+}
+
+async function request<T>(path: string, init?: RequestInit, didRefresh = false): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(path, {
     ...init,
     headers,
+    credentials: "same-origin",
   });
+
+  if (response.status === 401 && !didRefresh) {
+    if (await refreshSession()) {
+      return request<T>(path, init, true);
+    }
+    await logout();
+    throw new Error("Unauthorized");
+  }
+  if (response.status === 401) {
+    await logout();
+    throw new Error("Unauthorized");
+  }
 
   if (!response.ok) {
     const detail = await response.json().catch(() => undefined);

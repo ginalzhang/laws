@@ -775,19 +775,60 @@
 
   <script>
   // ── Auth ───────────────────────────────────────────────────────────────────
-  let _token = localStorage.getItem('pv_token') || '';
   let _role  = localStorage.getItem('pv_role')  || '';
-  let _name  = localStorage.getItem('pv_name')  || '';
+  let _name  = localStorage.getItem('pv_name') || localStorage.getItem('pv_full_name') || '';
+  let _userId = localStorage.getItem('pv_user_id') || '';
+  const AUTH_METADATA_KEYS = ['pv_role', 'pv_user_id', 'pv_full_name', 'pv_name'];
+  const LEGACY_TOKEN_KEY = ['pv', 'token'].join('_');
 
-  async function api(path, opts = {}) {
+  function clearAuthMetadata() {
+    [...AUTH_METADATA_KEYS, LEGACY_TOKEN_KEY].forEach(key => localStorage.removeItem(key));
+  }
+
+  function storeAuthMetadata(data) {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    if (data.role) {
+      _role = data.role;
+      localStorage.setItem('pv_role', _role);
+    }
+    if (data.user_id !== undefined && data.user_id !== null) {
+      _userId = String(data.user_id);
+      localStorage.setItem('pv_user_id', _userId);
+    }
+    if (data.full_name) {
+      _name = data.full_name;
+      localStorage.setItem('pv_name', _name);
+      localStorage.setItem('pv_full_name', _name);
+    }
+  }
+
+  async function refreshSession() {
+    const r = await fetch('/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).catch(() => null);
+    if (!r || !r.ok) return false;
+    const data = await r.json().catch(() => ({}));
+    if (data.role || data.user_id || data.full_name) storeAuthMetadata(data);
+    return true;
+  }
+
+  async function api(path, opts = {}, didRefresh = false) {
     const headers = { ...(opts.headers || {}) };
     const hasContentType = Object.keys(headers).some(h => h.toLowerCase() === 'content-type');
     if (!(opts.body instanceof FormData) && !hasContentType) {
       headers['Content-Type'] = 'application/json';
     }
-    if (_token) headers['Authorization'] = 'Bearer ' + _token;
-    const r = await fetch(path, { ...opts, headers });
-    if (r.status === 401) { doLogout(); return; }
+    const r = await fetch(path, { ...opts, headers, credentials: 'same-origin' });
+    if (r.status === 401 && !didRefresh) {
+      if (await refreshSession()) return api(path, opts, true);
+      await doLogout();
+      throw new Error('Unauthorized');
+    }
+    if (r.status === 401) {
+      await doLogout();
+      throw new Error('Unauthorized');
+    }
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       throw new Error(e.detail || `HTTP ${r.status}`);
@@ -795,11 +836,13 @@
     return r.json();
   }
 
-  function doLogout() {
-    localStorage.removeItem('pv_token');
-    localStorage.removeItem('pv_role');
-    localStorage.removeItem('pv_name');
-    _token = ''; _role = ''; _name = '';
+  async function doLogout() {
+    await fetch('/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).catch(() => {});
+    clearAuthMetadata();
+    _role = ''; _name = ''; _userId = '';
     showLoginScreen();
   }
 
@@ -823,17 +866,17 @@
       const data = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ email, password }),
       }).then(async r => {
         if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Login failed'); }
         return r.json();
       });
-      _token = data.access_token;
-      _role  = data.role;
-      _name  = data.full_name;
-      localStorage.setItem('pv_token', _token);
-      localStorage.setItem('pv_role',  _role);
-      localStorage.setItem('pv_name',  _name);
+      storeAuthMetadata(data);
+      if (_role === 'worker') {
+        window.location.href = '/static/worker.html';
+        return;
+      }
       initAuth();
     } catch(e) {
       errEl.textContent = e.message;
@@ -867,7 +910,12 @@
   }
 
   function initAuth() {
-    if (!_token) { showLoginScreen(); return; }
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    if (!_role) { showLoginScreen(); return; }
+    if (_role === 'worker') {
+      window.location.href = '/static/worker.html';
+      return;
+    }
     hideLoginScreen();
     document.getElementById('headerUser').textContent = _name || _role;
     applyRoleVisibility();
@@ -1158,6 +1206,17 @@
     saveRoster(roster);
     renderRosterPicker();
     loadOverview();
+  }
+
+  async function bootstrapAuth() {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    if (!_role) {
+      if (!await refreshSession()) {
+        showLoginScreen();
+        return;
+      }
+    }
+    initAuth();
   }
 
   function renderRosterPicker() {
@@ -1943,8 +2002,7 @@
 
   // ── Fraud alerts ───────────────────────────────────────────────────────────
   async function loadFraudAlerts() {
-    const role = localStorage.getItem('pv_role');
-    if (role !== 'boss' && role !== 'admin') return;
+    if (_role !== 'boss' && _role !== 'admin') return;
 
     const alerts = await api('/fraud-alerts').catch(() => []);
     if (!alerts || alerts.length === 0) return;
@@ -2193,7 +2251,7 @@
     navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
   }
 
-  initAuth();
+  bootstrapAuth();
   </script>
   </div><!-- /appLayout -->
 </body>
