@@ -436,6 +436,7 @@
     .vs-valid    { color:#15803d;font-weight:600;font-size:.75rem }
     .vs-invalid  { color:#991b1b;font-weight:600;font-size:.75rem }
     .vs-uncertain{ color:#92400e;font-weight:600;font-size:.75rem }
+    .voter-suggestion { display:block;font-size:.68rem;color:#3c3c43;background:#f2f2f7;border-radius:6px;padding:2px 5px;margin-top:3px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
     .fraud-chip  { font-size:.68rem;padding:2px 6px;border-radius:20px;background:#fee2e2;color:#991b1b;display:inline-block;margin:1px;white-space:nowrap }
     .fraud-row   { background:#fff8f8 !important }
     .rc-validity-bar { display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 }
@@ -2983,6 +2984,18 @@
     return `<div class="rc-row-crop-wrap"><img class="rc-row-crop" data-crop-line="${line.line_no}" alt="Row ${line.line_no} crop"></div>`;
   }
 
+  function _rcVoterCell(line) {
+    const status = line.voter_status
+      ? `<span class="vs-${line.voter_status}" title="${_escHtml(line.voter_reason || '')}">${line.voter_status} ${line.voter_confidence != null ? '(' + line.voter_confidence + '%)' : ''}</span>`
+      : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';
+    const suggestions = (line.voter_suggestions || []).slice(0, 3).map(v => {
+      const label = `${v.name || 'Unknown'}${v.score != null ? ' ' + v.score + '%' : ''}`;
+      const title = `${v.name || ''} — ${v.address || ''} ${v.zip || ''}`.trim();
+      return `<span class="voter-suggestion" title="${_escHtml(title)}">${_escHtml(label)}</span>`;
+    }).join('');
+    return status + suggestions;
+  }
+
   function _rcLoadCropImages(packetId) {
     document.querySelectorAll('.rc-row-crop[data-crop-line]').forEach(async img => {
       const lineNo = img.getAttribute('data-crop-line');
@@ -3113,9 +3126,7 @@
       const dateCell = _rcFieldCell(l, 'date', l.raw_date, l.raw_date);
       const cropCell = _rcCropCell(l);
       const addrTitle = lowFields.includes('address') ? 'Low-confidence OCR; click to review raw text' : _escHtml(l.norm_address || l.raw_address);
-      const voterCell = l.voter_status
-        ? `<span class="vs-${l.voter_status}" title="${_escHtml(l.voter_reason || '')}">${l.voter_status} ${l.voter_confidence != null ? '(' + l.voter_confidence + '%)' : ''}</span>`
-        : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';
+      const voterCell = _rcVoterCell(l);
       const fraudCell = l.fraud_score > 0
         ? `<span style="font-size:.75rem;font-weight:600;color:${l.fraud_score > 60 ? '#991b1b' : l.fraud_score > 30 ? '#92400e' : '#3c3c43'}">${l.fraud_score}</span>`
         : '<span style="color:#c7c7cc;font-size:.72rem">—</span>';

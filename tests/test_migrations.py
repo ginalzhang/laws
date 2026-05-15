@@ -31,3 +31,4 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path):
     }
     assert "low_confidence_fields" in columns
     assert "crop_path" in columns
+    assert "voter_suggestions_json" in columns

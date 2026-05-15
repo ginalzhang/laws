@@ -298,6 +298,7 @@ class PacketLineRow(Base):
     voter_status     = Column(String, nullable=True)       # valid|invalid|uncertain
     voter_confidence = Column(Integer, nullable=True)       # 0-100
     voter_reason     = Column(String, nullable=True)
+    voter_suggestions_json = Column(Text, default="[]")    # top-K voter roll candidates
     # Fraud detection
     fraud_flags      = Column(Text, default="[]")          # JSON array of fraud pattern strings
     fraud_score      = Column(Integer, default=0)          # 0-100 risk score
@@ -1398,7 +1399,7 @@ class Database:
                 session.commit()
 
     def bulk_update_voter_match(self, results: list[dict]) -> None:
-        """results: list of {line_id, voter_status, voter_confidence, voter_reason}"""
+        """results: list of voter match payloads keyed by line_id."""
         with self._Session() as session:
             for r in results:
                 line = session.query(PacketLineRow).filter_by(id=r["line_id"]).first()
@@ -1406,6 +1407,10 @@ class Database:
                     line.voter_status     = r["voter_status"]
                     line.voter_confidence = r["voter_confidence"]
                     line.voter_reason     = r.get("voter_reason", "")
+                    if "voter_suggestions" in r:
+                        line.voter_suggestions_json = json.dumps(
+                            r.get("voter_suggestions") or []
+                        )
             session.commit()
 
     def bulk_update_fraud(self, results: list[dict]) -> None:

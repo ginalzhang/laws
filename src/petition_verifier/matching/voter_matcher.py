@@ -74,25 +74,24 @@ class VoterMatcher:
     def from_dataframe(cls, df: pd.DataFrame) -> "VoterMatcher":
         return cls(df)
 
-    def match(self, sig: NormalizedSignature) -> VoterMatch | None:
-        """Return the best voter roll match, or None if the roll is empty."""
+    def candidates(self, sig: NormalizedSignature, limit: int = 3) -> list[VoterMatch]:
+        """Return the top voter roll candidates for staff review."""
         if not self._keys:
-            return None
+            return []
 
         query = sig.search_key
         if not query.strip():
-            return None
+            return []
 
         # Stage 1: fast top-N on combined key
         candidates = process.extract(
             query,
             self._keys,
             scorer=fuzz.token_sort_ratio,
-            limit=TOP_N,
+            limit=max(TOP_N, limit),
         )
 
-        best_match: VoterMatch | None = None
-        best_score = -1.0
+        scored: list[VoterMatch] = []
 
         for _matched_key, _score, idx in candidates:
             row = self._df.iloc[idx]
@@ -113,15 +112,19 @@ class VoterMatcher:
 
             confidence = NAME_WEIGHT * name_score + ADDRESS_WEIGHT * address_score
 
-            if confidence > best_score:
-                best_score = confidence
-                best_match = VoterMatch(
-                    voter_id=str(row["voter_id"]),
-                    voter_name=f"{row.get('first_name', '')} {row.get('last_name', '')}".strip(),
-                    voter_address=str(row.get("street_address", "")),
-                    confidence=round(confidence, 1),
-                    name_score=round(name_score, 1),
-                    address_score=round(address_score, 1),
-                )
+            scored.append(VoterMatch(
+                voter_id=str(row["voter_id"]),
+                voter_name=f"{row.get('first_name', '')} {row.get('last_name', '')}".strip(),
+                voter_address=str(row.get("street_address", "")),
+                confidence=round(confidence, 1),
+                name_score=round(name_score, 1),
+                address_score=round(address_score, 1),
+            ))
 
-        return best_match
+        scored.sort(key=lambda match: match.confidence, reverse=True)
+        return scored[:limit]
+
+    def match(self, sig: NormalizedSignature) -> VoterMatch | None:
+        """Return the best voter roll match, or None if the roll is empty."""
+        candidates = self.candidates(sig, limit=1)
+        return candidates[0] if candidates else None

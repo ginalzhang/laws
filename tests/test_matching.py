@@ -75,6 +75,18 @@ def test_fuzzy_name_match():
     assert m.voter_id == "V001"
 
 
+def test_voter_matcher_returns_top_candidates():
+    matcher = VoterMatcher.from_dataframe(VOTER_ROLL)
+    sig = _make_sig("Jane Smyth", "123 Main St Springfield CA")
+    n = normalize_signature(sig)
+
+    candidates = matcher.candidates(n, limit=3)
+
+    assert len(candidates) == 3
+    assert candidates[0].voter_id == "V001"
+    assert candidates[0].confidence >= candidates[1].confidence
+
+
 def test_low_confidence_for_wrong_person():
     matcher = VoterMatcher.from_dataframe(VOTER_ROLL)
     sig = _make_sig("Xyz Qwerty", "999 Nowhere Blvd Faketown ZZ")

@@ -351,6 +351,7 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
                 "voter_status":      l.voter_status,
                 "voter_confidence":  l.voter_confidence,
                 "voter_reason":      l.voter_reason,
+                "voter_suggestions": json.loads(l.voter_suggestions_json or "[]"),
                 "fraud_flags":       json.loads(l.fraud_flags or "[]"),
                 "fraud_score":       l.fraud_score or 0,
                 "review_decision":   l.review_decision,
@@ -519,6 +520,12 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
                 key=lambda v: _sim(l.raw_name, v["name"]) * 0.6 + _sim(l.raw_address or "", v["address"]) * 0.4,
                 reverse=True,
             )[:5]
+            suggestions = _voter_suggestions(
+                l.raw_name,
+                l.raw_address or "",
+                l.raw_zip or "",
+                voters,
+            )
             candidates_text = "\n".join(
                 f"  {i+1}. Name: {v['name']} | Address: {v['address']} | ZIP: {v['zip']}"
                 for i, v in enumerate(scored)
@@ -553,10 +560,14 @@ async def run_voter_match(packet_id: int, current_user=Depends(get_current_user)
                     "voter_status": verdict.get("status", "uncertain"),
                     "voter_confidence": int(verdict.get("confidence", 50)),
                     "voter_reason": verdict.get("reason", ""),
+                    "voter_suggestions": suggestions,
                 })
             except Exception:
                 # Fall back to difflib for this row
-                results.append({"line_id": l.id, **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters)})
+                results.append({
+                    "line_id": l.id,
+                    **_fuzzy_voter_match(l.raw_name, l.raw_address or "", l.raw_zip or "", voters),
+                })
     else:
         # No API key — pure difflib
         for l in active:
@@ -771,25 +782,47 @@ def _parse_voter_roll(text: str) -> list[dict]:
     return voters
 
 
-def _fuzzy_voter_match(name: str, address: str, zip_: str, voters: list[dict]) -> dict:
-    best_score, best_voter = 0.0, None
+def _voter_suggestions(
+    name: str,
+    address: str,
+    zip_: str,
+    voters: list[dict],
+    limit: int = 3,
+) -> list[dict]:
+    suggestions = []
     for v in voters:
         name_sim = _sim(name, v["name"])
         addr_sim = _sim(address, v["address"]) if address and v["address"] else 0.0
         zip_ok = 1.0 if zip_ and v["zip"] and zip_.strip()[:5] == v["zip"] else 0.0
         score = name_sim * 0.55 + addr_sim * 0.30 + zip_ok * 0.15
-        if score > best_score:
-            best_score = score; best_voter = v
-    confidence = int(best_score * 100)
+        suggestions.append({
+            "name": v["name"],
+            "address": v["address"],
+            "zip": v["zip"],
+            "score": int(score * 100),
+            "name_score": int(name_sim * 100),
+            "address_score": int(addr_sim * 100),
+        })
+    suggestions.sort(key=lambda item: item["score"], reverse=True)
+    return suggestions[:limit]
+
+
+def _fuzzy_voter_match(name: str, address: str, zip_: str, voters: list[dict]) -> dict:
+    suggestions = _voter_suggestions(name, address, zip_, voters)
+    best_voter = suggestions[0] if suggestions else None
+    confidence = best_voter["score"] if best_voter else 0
     if confidence >= 72:
         return {"voter_status": "valid", "voter_confidence": confidence,
-                "voter_reason": f"Matched: {best_voter['name']} — {best_voter['address']}"}
+                "voter_reason": f"Matched: {best_voter['name']} — {best_voter['address']}",
+                "voter_suggestions": suggestions}
     elif confidence >= 45:
         match_str = f"{best_voter['name']} — {best_voter['address']}" if best_voter else "none"
         return {"voter_status": "uncertain", "voter_confidence": confidence,
-                "voter_reason": f"Partial match ({confidence}%): {match_str}"}
+                "voter_reason": f"Partial match ({confidence}%): {match_str}",
+                "voter_suggestions": suggestions}
     return {"voter_status": "invalid", "voter_confidence": confidence,
-            "voter_reason": "No voter roll match found"}
+            "voter_reason": "No voter roll match found",
+            "voter_suggestions": suggestions}
 
 
 # ── Fraud detection helpers ────────────────────────────────────────────────────

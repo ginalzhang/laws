@@ -171,3 +171,51 @@ def test_packet_line_crop_route_serves_stored_crop_with_packet_access(monkeypatc
     assert response.status_code == 200
     assert response.content == b"fake-crop"
     assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_voter_match_persists_top_suggestions(monkeypatch, tmp_path):
+    db = Database(f"sqlite:///{tmp_path / 'review-voters.db'}")
+    voter_roll = "\n".join([
+        "first,last,address,city,zip",
+        "Reggie,Ellison,123 Oak Ave,Pasadena,91101",
+        "Boyce,Shelton,999 Pine St,Pasadena,91101",
+        "Rachel,Ellis,123 Oak Avenue,Pasadena,91101",
+    ])
+    with db._Session() as session:
+        session.add(PacketRow(
+            id=1,
+            worker_id=1,
+            original_name="packet.jpg",
+            raw_path="packet.jpg",
+            voter_roll_text=voter_roll,
+        ))
+        session.add(PacketLineRow(
+            packet_id=1,
+            line_no=1,
+            row_status="new_signature",
+            raw_name="Reggie Elison",
+            raw_address="123 Oak Ave",
+            raw_zip="91101",
+            has_signature=True,
+        ))
+        session.commit()
+
+    app = FastAPI()
+    app.include_router(review_routes.router)
+    app.dependency_overrides[review_routes.get_current_user] = lambda: {
+        "user_id": 99,
+        "role": "boss",
+    }
+    monkeypatch.setattr(review_routes, "db", db)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    with TestClient(app) as client:
+        match_response = client.post("/review/packets/1/voter-match")
+        detail_response = client.get("/review/packets/1")
+
+    assert match_response.status_code == 200
+    line = detail_response.json()["lines"][0]
+    suggestions = line["voter_suggestions"]
+    assert len(suggestions) == 3
+    assert suggestions[0]["name"] == "Reggie Ellison"
+    assert suggestions[0]["score"] >= suggestions[1]["score"]

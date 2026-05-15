@@ -98,6 +98,8 @@ The UI shows each signature as green (approved) / yellow (needs review) / red (r
 Staff only needs to review the yellow rows — typically 20-30% of submissions.
 Review packet uploads also store per-row image crops under `packet_uploads/row_crops/`
 so staff can compare OCR text with the source handwriting inline.
+When a voter roll is saved and matched, the review table stores and shows the
+top voter-roll candidates for each row as staff suggestions.
 
 Consensus extraction is feature-flagged while the eval set is expanded:
 
