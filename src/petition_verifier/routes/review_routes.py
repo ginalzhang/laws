@@ -120,6 +120,47 @@ def _low_confidence_fields_for_sig(sig, threshold: float | None = None) -> list[
     return []
 
 
+def _fallback_row_bands(height: int, row_count: int) -> list[tuple[int, int]]:
+    top = int(height * 0.57)
+    bottom = int(height * 0.88)
+    row_h = max(1, (bottom - top) // max(1, row_count))
+    return [
+        (top + i * row_h, bottom if i == row_count - 1 else top + (i + 1) * row_h)
+        for i in range(row_count)
+    ]
+
+
+def _save_row_crops(preprocessed, packet_id: int, raw_path: Path, row_count: int) -> dict[int, str]:
+    """Persist row crop thumbnails for fast staff review."""
+    row_count = max(1, row_count)
+    try:
+        from ..ingestion.field_vision import detect_rows, detect_table_bbox
+
+        row_bands = detect_rows(preprocessed, detect_table_bbox(preprocessed))
+    except Exception as exc:
+        print(f"[_process_packet pkt={packet_id}] row crop detection failed: {exc}", flush=True)
+        row_bands = []
+
+    if len(row_bands) < row_count:
+        row_bands = _fallback_row_bands(preprocessed.height, row_count)
+    else:
+        row_bands = row_bands[:row_count]
+
+    crop_dir = raw_path.parent / "row_crops" / f"packet_{packet_id}"
+    crop_dir.mkdir(parents=True, exist_ok=True)
+    crop_paths: dict[int, str] = {}
+    for idx, (y_top, y_bot) in enumerate(row_bands, start=1):
+        y1 = max(0, int(y_top) - 6)
+        y2 = min(preprocessed.height, int(y_bot) + 6)
+        if y2 <= y1:
+            continue
+        crop = preprocessed.crop((0, y1, preprocessed.width, y2))
+        path = crop_dir / f"row_{idx}.jpg"
+        crop.save(path, "JPEG", quality=88)
+        crop_paths[idx] = str(path)
+    return crop_paths
+
+
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @router.post("/upload")
@@ -236,6 +277,7 @@ async def get_packet(packet_id: int, current_user=Depends(get_current_user)):
                 "review_decision":   l.review_decision,
                 "action":            l.action,
                 "reviewed_at":       l.reviewed_at.isoformat() if l.reviewed_at else None,
+                "has_crop":          bool(l.crop_path),
             }
             for l in lines
         ],
@@ -261,6 +303,25 @@ async def get_packet_image(
     if not path.exists():
         raise HTTPException(404, "Image file not found")
     return FileResponse(str(path))
+
+
+@router.get("/packets/{packet_id}/lines/{line_no}/crop")
+async def get_packet_line_crop(
+    packet_id: int,
+    line_no: int,
+    current_user=Depends(get_current_user),
+):
+    packet, lines = db.get_packet_detail(packet_id)
+    if not packet:
+        raise HTTPException(404, "Packet not found")
+    _ensure_packet_access(packet, current_user)
+    line = next((candidate for candidate in lines if candidate.line_no == line_no), None)
+    if not line or not line.crop_path:
+        raise HTTPException(404, "Row crop not found")
+    path = Path(line.crop_path)
+    if not path.exists():
+        raise HTTPException(404, "Row crop file not found")
+    return FileResponse(str(path), media_type="image/jpeg")
 
 
 # ── Row action ────────────────────────────────────────────────────────────────
@@ -958,6 +1019,10 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
         if i not in filled:
             page_rows.append(_blank_row(i))
     page_rows.sort(key=lambda r: r["row_number"])
+    row_count = max((r["row_number"] for r in page_rows), default=7)
+    crop_paths = _save_row_crops(preprocessed, packet_id, raw_path, row_count)
+    for r in page_rows:
+        r["crop_path"] = crop_paths.get(r["row_number"], "")
 
     # ── Versioning ────────────────────────────────────────────────────────────
     if prev_rows:
@@ -1010,6 +1075,7 @@ def _do_process(packet_id: int, raw_path: Path) -> None:
             ai_reason       = "",
             flags_json      = json.dumps(flags),
             low_confidence_fields = json.dumps(r.get("low_confidence_fields", [])),
+            crop_path       = r.get("crop_path", ""),
         ))
 
     # ── Persist ───────────────────────────────────────────────────────────────
@@ -1037,6 +1103,7 @@ def _blank_row(row_number: int) -> dict:
         "signature_present": False,
         "flags":           [],
         "low_confidence_fields": [],
+        "crop_path":       "",
         "status":          "blank",
         "row_fingerprint": "",
     }

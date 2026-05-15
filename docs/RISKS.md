@@ -15,7 +15,7 @@ Changing any of this is a product/security decision. If a task touches auth, doc
 - PostgreSQL URLs starting with `postgres://` are rewritten to `postgresql://`.
 - Tables are created with `Base.metadata.create_all`.
 - Some schema changes are applied by best-effort `ALTER TABLE` statements at startup and errors are swallowed.
-- Review packet files are stored in `packet_uploads/` relative to the process working directory.
+- Review packet files and persisted row crops are stored in `packet_uploads/` relative to the process working directory.
 - Render deploys may have ephemeral local filesystem behavior, so DB rows can outlive uploaded files unless persistent storage is configured.
 
 ## OCR And External Services

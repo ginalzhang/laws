@@ -104,6 +104,8 @@ def test_low_confidence_line_approval_requires_explicit_override(monkeypatch, tm
 
 def test_packet_detail_includes_low_confidence_fields_and_raw_values(monkeypatch, tmp_path):
     db = Database(f"sqlite:///{tmp_path / 'review-detail.db'}")
+    crop_path = tmp_path / "row-1.jpg"
+    crop_path.write_bytes(b"fake-crop")
     with db._Session() as session:
         session.add(PacketRow(id=1, worker_id=1, original_name="packet.jpg", raw_path="packet.jpg"))
         session.add(PacketLineRow(
@@ -116,6 +118,7 @@ def test_packet_detail_includes_low_confidence_fields_and_raw_values(monkeypatch
             norm_address="123 MAIN ST",
             has_signature=True,
             low_confidence_fields=json.dumps(["name", "address"]),
+            crop_path=str(crop_path),
         ))
         session.commit()
 
@@ -135,3 +138,36 @@ def test_packet_detail_includes_low_confidence_fields_and_raw_values(monkeypatch
     assert line["low_confidence_fields"] == ["name", "address"]
     assert line["raw_name"] == "Reggie Ellison"
     assert line["raw_address"] == "123 Main St"
+    assert line["has_crop"] is True
+
+
+def test_packet_line_crop_route_serves_stored_crop_with_packet_access(monkeypatch, tmp_path):
+    db = Database(f"sqlite:///{tmp_path / 'review-crop.db'}")
+    crop_path = tmp_path / "row-1.jpg"
+    crop_path.write_bytes(b"fake-crop")
+    with db._Session() as session:
+        session.add(PacketRow(id=1, worker_id=1, original_name="packet.jpg", raw_path="packet.jpg"))
+        session.add(PacketLineRow(
+            packet_id=1,
+            line_no=1,
+            row_status="new_signature",
+            raw_name="Reggie Ellison",
+            has_signature=True,
+            crop_path=str(crop_path),
+        ))
+        session.commit()
+
+    app = FastAPI()
+    app.include_router(review_routes.router)
+    app.dependency_overrides[review_routes.get_current_user] = lambda: {
+        "user_id": 99,
+        "role": "boss",
+    }
+    monkeypatch.setattr(review_routes, "db", db)
+
+    with TestClient(app) as client:
+        response = client.get("/review/packets/1/lines/1/crop")
+
+    assert response.status_code == 200
+    assert response.content == b"fake-crop"
+    assert response.headers["content-type"] == "image/jpeg"

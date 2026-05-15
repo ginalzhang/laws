@@ -30,3 +30,4 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path):
         for row in conn.execute("pragma table_info(review_packet_lines)")
     }
     assert "low_confidence_fields" in columns
+    assert "crop_path" in columns

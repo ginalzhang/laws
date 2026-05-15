@@ -67,7 +67,7 @@ make smoke-local
 
 ## Runtime Gotchas
 - Local DB defaults to `sqlite:///./petition_verifier.db`.
-- Review packet uploads use `packet_uploads/` relative to the process working directory.
+- Review packet uploads and row crops use `packet_uploads/` relative to the process working directory.
 - OCR behavior changes with `OCR_BACKEND`, `ANTHROPIC_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, and `REDUCTO_API_KEY`.
 - Review packet low-confidence OCR fields are controlled by `OCR_CONFIDENCE_THRESHOLD` (default `0.85`) and are hidden in the UI until staff reviews them.
 - Startup creates/updates permanent demo accounts in `api.py`.

@@ -293,6 +293,7 @@ class PacketLineRow(Base):
     ai_reason        = Column(String, default="")
     flags_json       = Column(Text, default="[]")
     low_confidence_fields = Column(Text, default="[]")    # JSON array: name|address|date
+    crop_path        = Column(String, default="")          # persisted row image crop
     # Voter roll matching
     voter_status     = Column(String, nullable=True)       # valid|invalid|uncertain
     voter_confidence = Column(Integer, nullable=True)       # 0-100

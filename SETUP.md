@@ -96,6 +96,8 @@ open http://localhost:8000
 
 The UI shows each signature as green (approved) / yellow (needs review) / red (rejected).
 Staff only needs to review the yellow rows — typically 20-30% of submissions.
+Review packet uploads also store per-row image crops under `packet_uploads/row_crops/`
+so staff can compare OCR text with the source handwriting inline.
 
 ## Swap to Reducto OCR (when ready)
 
