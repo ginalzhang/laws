@@ -7,7 +7,11 @@ once each route group gets covered.
 from __future__ import annotations
 
 import os
+import sys
+
 import pytest
+from alembic import command
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 
 
@@ -16,7 +20,11 @@ def app(tmp_path_factory):
     # Point at a tempfile SQLite DB so the real one is never touched.
     db_path = tmp_path_factory.mktemp("db") / "smoke.db"
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+    command.upgrade(Config("alembic.ini"), "head")
+    import petition_verifier.storage as storage  # noqa: PLC0415
+    storage.db.reset()
     # Import after env is set so the app picks up the test DB URL.
+    sys.modules.pop("petition_verifier.api", None)
     from petition_verifier.api import app as fastapi_app  # noqa: PLC0415
     return fastapi_app
 
@@ -34,6 +42,10 @@ class TestAppShape:
     def test_app_imports(self, app):
         assert app is not None
         assert app.title == "Petition Verifier"
+
+    async def test_startup_runs_schema_check(self, app):
+        await app.router.startup()
+        await app.router.shutdown()
 
     def test_no_fix_endpoints(self, app):
         """The /fix-activate-users and /fix-reset-boss endpoints were security

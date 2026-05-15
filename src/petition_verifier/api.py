@@ -32,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .storage import db
+from .storage.database import check_schema_current
 from .auth import get_current_user
 from .routes.auth_routes import router as auth_router
 from .routes.worker_routes import router as worker_router
@@ -54,6 +55,7 @@ _PERMANENT_USERS = [
 @app.on_event("startup")
 async def ensure_permanent_users():
     from .auth import hash_password
+    check_schema_current()
     for u in _PERMANENT_USERS:
         existing = db.get_user_by_email(u["email"])
         if not existing:
@@ -720,5 +722,4 @@ async def seed_demo_data():
             "workers": [f"worker{i}@petition.co / password123" for i in range(1, 6)],
         },
     }
-
 

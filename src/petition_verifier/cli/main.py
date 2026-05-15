@@ -21,10 +21,13 @@ from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env")
 
 app     = typer.Typer(name="pvfy", help="Petition signature verification pipeline")
+db_app  = typer.Typer(help="Database migration commands")
 console = Console()
+app.add_typer(db_app, name="db")
 
 
 def _require_voter_roll() -> Path:
@@ -38,6 +41,73 @@ def _require_voter_roll() -> Path:
         console.print(f"[red]Error:[/red] Voter roll not found: {p}")
         raise typer.Exit(1)
     return p
+
+
+def _alembic_config():
+    from alembic.config import Config
+
+    return Config(str(PROJECT_ROOT / "alembic.ini"))
+
+
+@db_app.command("upgrade")
+def db_upgrade(
+    revision: str = typer.Argument("head", help="Alembic revision to upgrade to"),
+) -> None:
+    """Apply database migrations."""
+    from alembic import command
+    from ..storage.database import has_unversioned_application_schema
+
+    if revision == "head" and has_unversioned_application_schema():
+        console.print(
+            "[red]Error:[/red] Existing application tables are not Alembic-versioned. "
+            "If this is the current production schema, run [bold]pvfy db stamp head[/bold] "
+            "once before enabling automatic migration upgrades."
+        )
+        raise typer.Exit(1)
+
+    command.upgrade(_alembic_config(), revision)
+
+
+@db_app.command("revision")
+def db_revision(
+    message: str = typer.Option(..., "--message", "-m", help="Migration message"),
+    autogenerate: bool = typer.Option(False, "--autogenerate", "-a"),
+) -> None:
+    """Create a new Alembic migration revision."""
+    from alembic import command
+
+    command.revision(_alembic_config(), message=message, autogenerate=autogenerate)
+
+
+@db_app.command("stamp")
+def db_stamp(
+    revision: str = typer.Argument("head", help="Alembic revision to stamp"),
+) -> None:
+    """Mark an existing database as being at a revision without running DDL."""
+    from alembic import command
+
+    command.stamp(_alembic_config(), revision)
+
+
+@db_app.command("downgrade")
+def db_downgrade(
+    revision: str = typer.Argument("-1", help="Alembic revision to downgrade to"),
+) -> None:
+    """Roll back database migrations."""
+    from alembic import command
+    from alembic.migration import MigrationContext
+    from ..storage.database import create_database_engine
+
+    with create_database_engine().connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    if current == "0001_baseline" and revision in {"-1", "base"}:
+        console.print(
+            "[red]Error:[/red] Refusing to downgrade below the baseline migration; "
+            "that would remove the app's schema. Restore from backup instead."
+        )
+        raise typer.Exit(1)
+
+    command.downgrade(_alembic_config(), revision)
 
 
 @app.command()
@@ -64,6 +134,8 @@ def process(
         result = pipeline.process(pdf, project_id=project_id)
 
     if save_db:
+        from ..storage.database import check_schema_current
+        check_schema_current()
         db = Database()
         db.save_project(result)
         console.print(f"[green]Saved project {result.project_id} to database.[/green]")
@@ -98,6 +170,9 @@ def batch(
 
     vr_path = voter_roll or _require_voter_roll()
     pipeline = Pipeline(voter_roll_csv=vr_path)
+    if save_db:
+        from ..storage.database import check_schema_current
+        check_schema_current()
     db = Database() if save_db else None
 
     if output_dir:

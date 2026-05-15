@@ -28,22 +28,26 @@ Deploy is Render via `render.yaml` + `Procfile`. Python pinned to 3.11.
 
 1. **`postgres://` URLs break SQLAlchemy 2.x.** Render gives you `postgres://...`; the app
    must rewrite to `postgresql://`. Don't undo that translation if you see it.
-2. **Login is username-only and a hardcoded permanent-user list lives in `api.py`**
+2. **Database schema is Alembic-only.** Do not reintroduce `Base.metadata.create_all()`
+   in app startup. New DBs use `pvfy db upgrade`; existing production DBs with the
+   baseline schema are stamped once with `pvfy db stamp head` before automatic
+   deploy-time upgrades are enabled.
+3. **Login is username-only and a hardcoded permanent-user list lives in `api.py`**
    (`_PERMANENT_USERS`). On startup these accounts are recreated if missing. Username == password
    for these accounts (Gina, Evan). If you "fix" this without coordination you will lock people out.
-3. **`tempfile.NamedTemporaryFile(delete=False)` is used in upload paths.** Always wrap
+4. **`tempfile.NamedTemporaryFile(delete=False)` is used in upload paths.** Always wrap
    in try/finally and `os.unlink` — leaked temp files have already been an issue.
-4. **N+1 query history.** Recent commits fixed several. When touching `routes/payroll_routes.py`,
+5. **N+1 query history.** Recent commits fixed several. When touching `routes/payroll_routes.py`,
    `routes/shift_routes.py`, or `storage/database.py`, use SQLAlchemy `selectinload`/`joinedload`
    for collections rather than lazy access in a loop.
-5. **Tab/data caching.** `Cache tab data so switching tabs is instant` introduced a client-side
+6. **Tab/data caching.** `Cache tab data so switching tabs is instant` introduced a client-side
    cache. If you fix a bug and it still appears, hard-reload (cmd+shift+R) before assuming you're wrong.
-6. **`.env` is gitignored.** Don't commit it, don't print its values into logs, and don't add
+7. **`.env` is gitignored.** Don't commit it, don't print its values into logs, and don't add
    new "fix-*" unauthenticated admin endpoints — there used to be `/fix-activate-users` and
    `/fix-reset-boss`; both were removed for being open password-reset holes. Don't reintroduce.
-7. **OCR backends have different output shapes.** Reducto returns structured fields; Tesseract +
+8. **OCR backends have different output shapes.** Reducto returns structured fields; Tesseract +
    Vision return raw text the pipeline parses. Mock at the `ExtractedSignature` boundary, not at the OCR call.
-8. **The matching layer uses dataclasses, the rest of the app uses Pydantic.** This is intentional
+9. **The matching layer uses dataclasses, the rest of the app uses Pydantic.** This is intentional
    (matching is pure logic, Pydantic is for API edges). Don't homogenize without a reason.
 
 ## Test discipline

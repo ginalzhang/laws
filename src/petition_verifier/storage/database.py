@@ -23,17 +23,25 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, Integer, String, Text,
-    ForeignKey, create_engine, text, func, case,
+    ForeignKey, create_engine, inspect, text, func, case,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
 from ..models import ProjectResult, VerificationResult, VerificationStatus
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db")
-# Render gives postgres:// but SQLAlchemy 2.x requires postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+def normalize_database_url(url: str) -> str:
+    # Render gives postgres:// but SQLAlchemy 2.x requires postgresql://.
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
+def get_database_url() -> str:
+    return normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./petition_verifier.db"))
+
+
+DATABASE_URL = get_database_url()
 
 
 class Base(DeclarativeBase):
@@ -193,9 +201,10 @@ class PayrollRecordRow(Base):
     calculated_at    = Column(DateTime, default=datetime.utcnow)
 
 
-def init_db(url: str = DATABASE_URL) -> sessionmaker:
+def create_database_engine(url: str | None = None):
+    url = normalize_database_url(url) if url is not None else get_database_url()
     is_postgres = url.startswith("postgresql")
-    engine = create_engine(
+    return create_engine(
         url,
         echo=False,
         pool_size=5,
@@ -204,12 +213,49 @@ def init_db(url: str = DATABASE_URL) -> sessionmaker:
         connect_args={"options": "-c statement_timeout=30000"},
         execution_options={"prepared_statement_cache_size": 0},
     ) if is_postgres else create_engine(url, echo=False)
-    Base.metadata.create_all(engine)
+
+
+def init_db(url: str | None = None) -> sessionmaker:
+    engine = create_database_engine(url)
     return sessionmaker(bind=engine)
 
 
+def check_schema_current(url: str | None = None) -> None:
+    """Fail loudly when the database has not been migrated to Alembic head."""
+    from alembic.config import Config
+    from alembic.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parents[3]
+    config = Config(str(root / "alembic.ini"))
+    script = ScriptDirectory.from_config(config)
+    expected = script.get_current_head()
+
+    engine = create_database_engine(url)
+    with engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+
+    if current != expected:
+        raise RuntimeError(
+            "Database schema is not at the Alembic head revision "
+            f"(current={current or 'none'}, expected={expected}). "
+            "Run `pvfy db upgrade` for a new database, or `alembic stamp head` "
+            "once for an existing production database that already has the baseline schema."
+        )
+
+
+def has_unversioned_application_schema(url: str | None = None) -> bool:
+    """Return true when app tables exist but Alembic has not versioned the DB."""
+    engine = create_database_engine(url)
+    with engine.connect() as conn:
+        tables = set(inspect(conn).get_table_names())
+
+    app_tables = set(Base.metadata.tables)
+    return "alembic_version" not in tables and bool(tables & app_tables)
+
+
 class Database:
-    def __init__(self, url: str = DATABASE_URL):
+    def __init__(self, url: str | None = None):
         self._Session = init_db(url)
 
     # ── Existing petition methods ─────────────────────────────────────────────
@@ -958,4 +1004,3 @@ class Database:
                 session.expunge(s)
                 result.setdefault(s.worker_id, []).append(s)
             return result
-

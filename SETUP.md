@@ -28,6 +28,35 @@ cp .env.example .env
 #   DATABASE_URL=sqlite:///./petition_verifier.db  (default)
 ```
 
+## Database migrations
+
+Schema changes are managed by Alembic only. New databases need to be migrated
+before the app starts:
+
+```bash
+pvfy db upgrade
+```
+
+To create a migration after changing SQLAlchemy models:
+
+```bash
+pvfy db revision -m "describe change" --autogenerate
+```
+
+For an existing production database that already has the baseline schema, stamp
+it once instead of running the baseline DDL:
+
+```bash
+pvfy db stamp head
+```
+
+The deploy hook intentionally refuses to run the baseline migration if it sees
+application tables without an `alembic_version` row. Stamp the existing DB first,
+then deploy. Render runs `pvfy db upgrade` before promoting a deploy. For
+migrations after the baseline, roll back the most recent schema change with
+`pvfy db downgrade`, then redeploy the previous app version. Do not downgrade
+below the baseline; restore from backup instead.
+
 ## Voter roll CSV format
 
 Required columns (case-insensitive):
